@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+*.manifest
+*.spec
+
+# Data / storage
+data/chroma/*
+!data/chroma/.gitkeep
+logs/*
+!logs/.gitkeep
+*.db
+*.sqlite
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project-specific
+.kilo/
+kilocode/
+.opencode/
+node_modules/
+.env
+.env.*
+service/*.plist
+Library/LaunchAgents/*.plist
+
+# Backups
+backups/
+*.tar.gz
+*.tar.gz.enc
+*.age
