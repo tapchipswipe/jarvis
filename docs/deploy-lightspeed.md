@@ -111,7 +111,12 @@ Sync sources:
 
  ## 8. Backup to TrueNAS
 
-Weekly encrypted backup runs Saturday at 11pm, idle-aware. Configure:
+First, create the backup folder on TrueNAS:
+```bash
+ssh truenas "mkdir -p /mnt/indiana/folders/second-brain"
+```
+
+Weekly encrypted backup runs Saturday at 11pm, idle-aware. Configure on Lightspeed:
 ```bash
 export BACKUP_NAS_HOST=truenas
 export BACKUP_NAS_PATH=/mnt/indiana/folders/second-brain
