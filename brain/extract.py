@@ -1,4 +1,6 @@
-import ollama
+import json
+import urllib.request
+import urllib.error
 
 PROMPT_EXTRACT = """You are a knowledge extraction engine. Read the text below and output ONLY valid JSON with two arrays:
 {"tags": ["topic1", "topic2", ...], "entities": ["Person", "Place", "Concept", ...]}
@@ -11,11 +13,29 @@ Rules:
 TEXT:
 {text}"""
 
+_OLLAMA_HOST = "127.0.0.1"
+_OLLAMA_PORT = 11434
+
+
+def _ollama_generate(model: str, prompt: str) -> str:
+    payload = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
+    req = urllib.request.Request(
+        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get("response", "")
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        return ""
+
 
 def extract_metadata(text: str, model: str = "qwen2.5:7b-instruct-q4_K_M") -> dict:
     try:
-        response = ollama.generate(model=model, prompt=PROMPT_EXTRACT.format(text=text[:2000]), stream=False)
-        raw = response.get("response", "").strip()
+        raw = _ollama_generate(model, PROMPT_EXTRACT.format(text=text[:2000]))
+        raw = raw.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         data = json.loads(raw)

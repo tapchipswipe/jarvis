@@ -1,10 +1,28 @@
-import ollama
+import json
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from brain.store import fingerprint
 from brain.embed import get_embedding
 from brain.ingest import chunk_document
 
 DEFAULT_CHAT_MODEL = "llama3.1:8b-instruct-q4_K_M"
+_OLLAMA_HOST = "127.0.0.1"
+_OLLAMA_PORT = 11434
+
+
+def _ollama_chat(model: str, messages: list[dict]) -> dict:
+    payload = json.dumps({"model": model, "messages": messages, "stream": False}).encode()
+    req = urllib.request.Request(
+        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.loads(resp.read().decode())
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        return {"message": {"content": f"[ollama connection error: {e}]"}}
 
 
 class Brain:
@@ -25,11 +43,11 @@ class Brain:
             "Answer using the context provided. If the context is incomplete, say so. Keep answers concise and actionable.\n\n"
             f"RELEVANT MEMORIES:\n{context}"
         )
-        response = ollama.chat(model=self.model, messages=[
+        response = _ollama_chat(model=self.model, messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_query},
         ])
-        answer = response["message"]["content"]
+        answer = response.get("message", {}).get("content", "[no response]")
         if verbose:
             conf = self._confidence(memories)
             answer = f"[confidence: {conf}]\n\n{answer}"
@@ -61,13 +79,12 @@ class Brain:
             f"RELEVANT MEMORIES:\n{context}"
         )
         messages = [{"role": "system", "content": system_prompt}] + session[-20:]
-        response = ollama.chat(model=self.model, messages=messages)
-        session.append(response["message"])
-        answer = response["message"]["content"]
+        response = _ollama_chat(model=self.model, messages=messages)
+        session.append({"role": "assistant", "content": response.get("message", {}).get("content", "")})
+        answer = response.get("message", {}).get("content", "[no response]")
         conf = self._confidence(memories)
-        answer = f"[confidence: {conf}] {answer}"
         source_count = len(memories)
-        return answer, memories, source_count
+        return f"[confidence: {conf}] {answer}", memories, source_count
 
     def save_session(self, session: list[dict]) -> bool:
         user_turns = sum(1 for m in session if m["role"] == "user")
@@ -155,7 +172,7 @@ class Brain:
             self.store.add(cid, "upgrade", feature_request, ct, chunk["text"], tags, meta, emb)
             added += 1
         try:
-            upgrades_path = Path("/Users/lucasdespot/second_brain/UPGRADES.md")
+            upgrades_path = Path("C:/data/second-brain/UPGRADES.md")
             if upgrades_path.exists():
                 with open(upgrades_path, "a") as f:
                     ts = datetime.utcnow().strftime("%Y-%m-%d")
