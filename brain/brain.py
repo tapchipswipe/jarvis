@@ -12,17 +12,33 @@ _OLLAMA_PORT = 11434
 
 
 def _ollama_chat(model: str, messages: list[dict]) -> dict:
-    payload = json.dumps({"model": model, "messages": messages, "stream": False}).encode()
+    prompt = _messages_to_prompt(messages)
+    payload = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
     req = urllib.request.Request(
-        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/chat",
+        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/generate",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read().decode())
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode())
+            return {"message": {"content": data.get("response", "")}}
     except (urllib.error.URLError, urllib.error.HTTPError) as e:
         return {"message": {"content": f"[ollama connection error: {e}]"}}
+
+
+def _messages_to_prompt(messages: list[dict]) -> str:
+    parts = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "system":
+            parts.append(f"System: {content}")
+        elif role == "user":
+            parts.append(f"User: {content}")
+        elif role == "assistant":
+            parts.append(f"Assistant: {content}")
+    return "\n\n".join(parts)
 
 
 class Brain:

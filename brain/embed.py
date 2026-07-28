@@ -10,16 +10,20 @@ _OLLAMA_PORT = 11434
 def _ollama_embed(model: str, texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    payload = json.dumps({"model": model, "input": texts}).encode()
+    payload = json.dumps({"model": model, "prompt": texts if len(texts) > 1 else texts[0], "stream": False}).encode()
     req = urllib.request.Request(
-        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/embed",
+        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/embeddings",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = json.loads(resp.read().decode())
-            return data.get("embeddings", [])
+            if "embedding" in data:
+                return [data["embedding"]]
+            if "embeddings" in data:
+                return data["embeddings"]
+            return []
     except (urllib.error.URLError, urllib.error.HTTPError):
         return []
 
