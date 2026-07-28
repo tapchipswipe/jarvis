@@ -139,3 +139,27 @@ class Brain:
             self.store.add(cid, "correction", memory_id, ct, chunk["text"], tags, meta, emb)
             added += 1
         return added
+
+    def upgrade(self, feature_request: str, status: str = "requested") -> int:
+        fid = fingerprint("upgrade", feature_request, feature_request, datetime.utcnow().isoformat())
+        if self.store.exists(fid):
+            return 0
+        tags = ["upgrade", status]
+        meta = {"status": status}
+        chunks = chunk_document(feature_request, metadata=meta)
+        emb = get_embedding(feature_request)
+        added = 0
+        for i, chunk in enumerate(chunks):
+            cid = f"{fid}-{i}"
+            ct = datetime.utcnow().isoformat()
+            self.store.add(cid, "upgrade", feature_request, ct, chunk["text"], tags, meta, emb)
+            added += 1
+        try:
+            upgrades_path = Path("/Users/lucasdespot/second_brain/UPGRADES.md")
+            if upgrades_path.exists():
+                with open(upgrades_path, "a") as f:
+                    ts = datetime.utcnow().strftime("%Y-%m-%d")
+                    f.write(f"- `[{status}]` {ts} — {feature_request}\n")
+        except Exception:
+            pass
+        return added

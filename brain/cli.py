@@ -157,7 +157,7 @@ def chat(model, verbose):
     brain = Brain(store, model=model) if model else Brain(store)
     session = []
     last_memories = []
-    click.echo("Chat with your second brain. Ctrl+C or /quit to exit. Commands: /sources /clear /alerts /quit")
+    click.echo("Chat with your second brain. Ctrl+C or /quit to exit. Commands: /sources /clear /alerts /upgrade /quit")
     try:
         while True:
             user_input = click.prompt("you")
@@ -184,6 +184,14 @@ def chat(model, verbose):
                 continue
             if user_input.strip().lower() == "/alerts":
                 _show_alerts(brain)
+                continue
+            if user_input.strip().lower().startswith("/upgrade "):
+                feature = user_input.strip()[9:]
+                added = brain.upgrade(feature)
+                if added:
+                    click.echo(f"brain: Upgrade request recorded: {feature}")
+                else:
+                    click.echo("brain: Already recorded.")
                 continue
             response, memories, source_count = brain.chat(session, user_input)
             last_memories = memories
@@ -220,6 +228,17 @@ def _show_alerts(brain: Brain):
             click.echo(f"    {item['content'][:150]}")
         if len(items) > 3:
             click.echo(f"  ... and {len(items) - 3} more")
+
+
+@cli.command()
+@click.argument("feature_request")
+@click.option("--status", default="requested", help="Initial status")
+def upgrade(feature_request, status):
+    store = Store()
+    brain = Brain(store)
+    added = brain.upgrade(feature_request, status=status)
+    store.close()
+    click.echo(f"Upgrade recorded: {added} chunk(s). Request: {feature_request}")
 
 
 @cli.command()

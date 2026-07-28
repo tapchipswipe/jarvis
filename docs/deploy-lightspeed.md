@@ -111,7 +111,16 @@ Sync sources:
 
  ## 8. Backup to TrueNAS
 
-Weekly encrypted backup runs Saturday at 11pm (idle-aware). Restore:
+Weekly encrypted backup runs Saturday at 11pm, idle-aware. Configure:
+```bash
+export BACKUP_NAS_HOST=truenas
+export BACKUP_NAS_PATH=/mnt/indiana/folders/second-brain
+export BACKUP_PASSPHRASE="your-encryption-passphrase"
+```
+
+Backup excludes ChromaDB (rebuildable) and creates an encrypted tar.gz on TrueNAS.
+
+Restore:
 ```bash
 age -d -o backup.tar.gz < backup-YYYY-MM-DD.tar.gz.enc
 ```

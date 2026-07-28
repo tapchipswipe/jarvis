@@ -25,6 +25,7 @@ You are the Second Brain agent living inside the `second_brain/` project.
 - `/timeline [--days/-n]` -> `python -m brain.cli timeline`
 - `/graph [-n]` -> `python -m brain.cli graph`
 - `/alerts [--hours/-n]` -> `python -m brain.cli alerts`
+- `/upgrade <feature>` -> `python -m brain.cli upgrade <feature>` — records a feature request
 - `/alerts` -> `python -m brain.cli alerts`
 
 ## Rules

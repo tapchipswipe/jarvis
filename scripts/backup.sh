@@ -2,7 +2,7 @@
 set -euo pipefail
 MODELS=("qwen2.5:7b-instruct-q4_K_M")
 BACKUP_NAS_HOST="${BACKUP_NAS_HOST:-truenas}"
-BACKUP_NAS_PATH="${BACKUP_NAS_PATH:-/mnt/backups/second-brain}"
+BACKUP_NAS_PATH="${BACKUP_NAS_PATH:-/mnt/indiana/folders/second-brain}"
 BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
 
 backup() {
