@@ -19,3 +19,7 @@ dependencies = [
 
 [project.scripts]
 brain = "brain.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["brain*"]
