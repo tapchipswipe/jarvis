@@ -1,0 +1,10 @@
+{
+  "model": "kilo-auto/free",
+  "small_model": "kilo-auto/free",
+  "default_agent": "brain",
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+  "snapshot": false
+}
