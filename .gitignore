@@ -41,7 +41,8 @@ ehthumbs.db
 Thumbs.db
 
 # Project-specific
-.kilo/
+# .kilo/ is tracked for Agent Manager config, but local worktrees are ignored
+.kilo/worktrees/
 kilocode/
 .opencode/
 node_modules/
