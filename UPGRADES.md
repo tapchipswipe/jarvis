@@ -1,6 +1,6 @@
 # Brain Upgrades
 
-Feature requests and planned upgrades for the Second Brain. Each entry is also stored as a memory with the `upgrade` tag.
+Feature requests and planned upgrades for the Jarvis. Each entry is also stored as a memory with the `upgrade` tag.
 
 ## Format
 

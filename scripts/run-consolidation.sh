@@ -1,4 +1,4 @@
 #!/bin/bash
 set -euo pipefail
-cd /data/second-brain
-/opt/homebrew/bin/python3 -m brain.consolidation "$1" >> /data/second-brain/logs/consolidation.log 2>&1
+cd /data/jarvis
+/opt/homebrew/bin/python3 -m jarvis.consolidation "$1" >> /data/jarvis/logs/consolidation.log 2>&1

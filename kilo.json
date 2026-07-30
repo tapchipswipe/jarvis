@@ -1,10 +1,28 @@
 {
+  "$schema": "https://app.kilo.ai/config.json",
   "model": "kilo-auto/free",
   "small_model": "kilo-auto/free",
-  "default_agent": "brain",
+  "default_agent": "jarvis",
   "compaction": {
     "auto": true,
     "prune": true
   },
-  "snapshot": false
+  "snapshot": false,
+  "permission": {
+    "bash": "allow"
+  },
+  "indexing": {
+    "enabled": true,
+    "provider": "ollama",
+    "model": "nomic-embed-text",
+    "vectorStore": "lancedb",
+    "ollama": {
+      "baseURL": "http://localhost:11434"
+    },
+    "lancedb": {},
+    "searchMinScore": 0.4,
+    "searchMaxResults": 50,
+    "embeddingBatchSize": 60,
+    "scannerMaxBatchRetries": 3
+  }
 }

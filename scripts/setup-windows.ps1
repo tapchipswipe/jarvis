@@ -1,16 +1,16 @@
-# Second Brain — One-Time Windows Setup Script
+# Jarvis — One-Time Windows Setup Script
 # Run this as Administrator on Lightspeed (Dell G7)
 
 param(
     [string]$RepoUrl = "https://github.com/tapchipswipe/despotbrain.git",
-    [string]$InstallPath = "C:\data\second-brain",
+    [string]$InstallPath = "C:\data\jarvis",
     [string]$NasHost = "truenas",
-    [string]$NasPath = "/mnt/indiana/folders/second-brain"
+    [string]$NasPath = "/mnt/indiana/folders/jarvis"
 )
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== Second Brain Windows Setup ===" -ForegroundColor Cyan
+Write-Host "=== Jarvis Windows Setup ===" -ForegroundColor Cyan
 
 # 1. Check prerequisites
 Write-Host "`n[1/6] Checking prerequisites..."
@@ -66,14 +66,14 @@ Write-Host "  Model ready"
 
 # 6. Install service
 Write-Host "`n[6/6] Installing Windows service..."
-$serviceName = "SecondBrain"
+$serviceName = "Jarvis"
 if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
     Write-Host "  Service already exists, stopping..."
     Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
     nssm remove $serviceName confirm
 }
-nssm install $serviceName $venvPython (Join-Path $InstallPath "brain\service_windows.py")
-nssm set $serviceName DisplayName "Second Brain Service"
+nssm install $serviceName $venvPython (Join-Path $InstallPath "jarvis\service_windows.py")
+nssm set $serviceName DisplayName "Jarvis Service"
 nssm set $serviceName Start SERVICE_AUTO_START
 nssm set $serviceName AppDirectory $InstallPath
 nssm set $serviceName AppStdout (Join-Path $InstallPath "logs\service.log")
@@ -94,6 +94,6 @@ Write-Host "  (Set BACKUP_PASSPHRASE manually in System Properties)"
 Write-Host "`n=== Setup Complete ===" -ForegroundColor Green
 Write-Host "Next steps:"
 Write-Host "  1. Set BACKUP_PASSPHRASE in System Properties"
-Write-Host "  2. Run: python -m brain.cli status"
-Write-Host "  3. Check service: nssm status SecondBrain"
-Write-Host "  4. From Mac: scp file lightspeed:/data/second-brain/inbox/<device_id>/"
+Write-Host "  2. Run: python -m jarvis.cli status"
+Write-Host "  3. Check service: nssm status Jarvis"
+Write-Host "  4. From Mac: scp file lightspeed:/data/jarvis/inbox/<device_id>/"

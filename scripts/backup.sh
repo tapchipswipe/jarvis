@@ -2,16 +2,16 @@
 set -euo pipefail
 MODELS=("qwen2.5:7b-instruct-q4_K_M")
 BACKUP_NAS_HOST="${BACKUP_NAS_HOST:-truenas}"
-BACKUP_NAS_PATH="${BACKUP_NAS_PATH:-/mnt/indiana/folders/second-brain}"
+BACKUP_NAS_PATH="${BACKUP_NAS_PATH:-/mnt/indiana/folders/jarvis}"
 BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
 
 backup() {
     echo "[$(date)] Starting backup..."
     TMPDIR=$(mktemp -d)
-    ARCHIVE="$TMPDIR/second-brain-backup.tar.gz"
-    ENCRYPTED="$TMPDIR/second-brain-backup.tar.gz.age"
+    ARCHIVE="$TMPDIR/jarvis-backup.tar.gz"
+    ENCRYPTED="$TMPDIR/jarvis-backup.tar.gz.age"
 
-    tar -czf "$ARCHIVE" -C /data second-brain --exclude='chroma' --exclude='*.log'
+    tar -czf "$ARCHIVE" -C /data jarvis --exclude='chroma' --exclude='*.log'
     if command -v age >/dev/null 2>&1 && [ -n "$BACKUP_PASSPHRASE" ]; then
         age -p -o "$ENCRYPTED" "$ARCHIVE" <<< "$BACKUP_PASSPHRASE"
     elif command -v gpg >/dev/null 2>&1 && [ -n "$BACKUP_PASSPHRASE" ]; then

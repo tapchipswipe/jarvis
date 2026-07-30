@@ -1,25 +1,23 @@
 [project]
-name = "second-brain"
+name = "jarvis"
 version = "0.1.0"
-description = "Local second brain agent with ambient collection"
+description = "Local second jarvis agent with ambient collection"
 requires-python = ">=3.10"
 dependencies = [
     "chromadb>=0.4.22",
-    "ollama>=0.1.0",
     "click>=8.1.0",
     "watchdog>=3.0.0",
-    "beautifulsoup4>=4.12.0",
-    "lxml>=4.9.0",
     "requests>=2.31.0",
     "rich>=13.0.0",
-    "trafilatura>=1.6.0",
-    "semantic-text-chunker>=0.2.0",
-    "keyring>=24.0.0",
 ]
 
+[project.optional-dependencies]
+semantic = ["semantic-text-chunker>=0.2.0"]
+
 [project.scripts]
-brain = "brain.cli:cli"
+jarvis = "jarvis.cli:cli"
+jarvis-monitor = "jarvis.monitor:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["brain*"]
+include = ["jarvis*"]

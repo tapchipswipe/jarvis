@@ -1,4 +1,4 @@
-# Second Brain — Distributed Architecture
+# Jarvis — Distributed Architecture
 
 ```
 Any Device (Mac / laptop)
@@ -6,7 +6,7 @@ Any Device (Mac / laptop)
   │ watchdog observes local folders
   │ on change: scp to Lightspeed
   ▼
-Lightspeed (Dell G7) — brain runtime
+Lightspeed (Dell G7) — jarvis runtime
   ├── Ollama (Qwen 2.5 7B)
   ├── ChromaDB + SQLite
   ├── Inbox watcher (device pushes)

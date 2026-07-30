@@ -1,15 +1,15 @@
-# Second Brain
+# Jarvis
 
-Local first brain agent. Ambient collection + local LLM reasoning.
+Local first jarvis agent. Ambient collection + local LLM reasoning.
 
 ## Quick start
 
 ```bash
-python -m brain.cli status
-python -m brain.cli chat
-python -m brain.cli search "what did I do last week"
-python -m brain.cli sync
-python -m brain.cli remember "something important"
+python -m jarvis.cli status
+python -m jarvis.cli chat
+python -m jarvis.cli search "what did I do last week"
+python -m jarvis.cli sync
+python -m jarvis.cli remember "something important"
 ```
 
 ## Architecture

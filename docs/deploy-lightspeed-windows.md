@@ -1,6 +1,6 @@
 # Deployment: Lightspeed (Dell G7 — Windows)
 
-Lightspeed runs the brain runtime: Ollama, ChromaDB, agent loop, and the inbox watcher.
+Lightspeed runs the jarvis runtime: Ollama, ChromaDB, agent loop, and the inbox watcher.
 All other devices push new files to Lightspeed over SSH/Tailscale.
 
 ## 1. Prerequisites on Lightspeed
@@ -16,7 +16,7 @@ All other devices push new files to Lightspeed over SSH/Tailscale.
 ## 2. Directory layout on Lightspeed
 
 ```
-C:\data\second-brain\
+C:\data\jarvis\
 ├── chroma\            # ChromaDB vectors
 ├── meta.db            # SQLite metadata
 ├── inbox\             # Push target for remote devices
@@ -30,15 +30,15 @@ C:\data\second-brain\
 ## 3. Clone the repo
 
 ```powershell
-git clone https://github.com/tapchipswipe/despotbrain.git C:\data\second-brain
-cd C:\data\second-brain
+git clone https://github.com/tapchipswipe/despotjarvis.git C:\data\jarvis
+cd C:\data\jarvis
 ```
 
 ## 4. Python setup
 
 ```powershell
-python -m venv C:\data\second-brain\.venv
-C:\data\second-brain\.venv\Scripts\Activate.ps1
+python -m venv C:\data\jarvis\.venv
+C:\data\jarvis\.venv\Scripts\Activate.ps1
 pip install -e .
 ```
 
@@ -64,11 +64,11 @@ curl http://localhost:11434/api/tags
 Create a service that keeps the inbox watcher + file watcher running:
 
 ```powershell
-nssm install SecondBrain "C:\data\second-brain\.venv\Scripts\python.exe" "C:\data\second-brain\brain\service.py"
-nssm set SecondBrain DisplayName "Second Brain Service"
-nssm set SecondBrain Start SERVICE_AUTO_START
-nssm set SecondBrain AppDirectory "C:\data\second-brain"
-nssm start SecondBrain
+nssm install Jarvis "C:\data\jarvis\.venv\Scripts\python.exe" "C:\data\jarvis\jarvis\service.py"
+nssm set Jarvis DisplayName "Jarvis Service"
+nssm set Jarvis Start SERVICE_AUTO_START
+nssm set Jarvis AppDirectory "C:\data\jarvis"
+nssm start Jarvis
 ```
 
 ## 7. Install scheduled tasks (Task Scheduler)
@@ -77,10 +77,10 @@ Run PowerShell as Administrator and execute:
 
 ```powershell
 # Create scheduled task for consolidation and backup
-$action = New-ScheduledTaskAction -Execute "C:\data\second-brain\.venv\Scripts\python.exe" -Argument "C:\data\second-brain\brain\consolidation.py daily"
+$action = New-ScheduledTaskAction -Execute "C:\data\jarvis\.venv\Scripts\python.exe" -Argument "C:\data\jarvis\jarvis\consolidation.py daily"
 $trigger = New-ScheduledTaskTrigger -Daily -At 04:00AM
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-Register-ScheduledTask -TaskName "SecondBrain-Daily" -Action $action -Trigger $trigger -Settings $settings -Description "Daily session consolidation"
+Register-ScheduledTask -TaskName "Jarvis-Daily" -Action $action -Trigger $trigger -Settings $settings -Description "Daily session consolidation"
 ```
 
 This is simplified. For full scheduled tasks, see Section 9 below.
@@ -89,9 +89,9 @@ This is simplified. For full scheduled tasks, see Section 9 below.
 
 On Lightspeed, set these in System Properties → Advanced → Environment Variables:
 
-- `PYTHONPATH` = `C:\data\second-brain`
+- `PYTHONPATH` = `C:\data\jarvis`
 - `BACKUP_NAS_HOST` = `truenas` (or TrueNAS Tailscale IP)
-- `BACKUP_NAS_PATH` = `/mnt/indiana/folders/second-brain` (on TrueNAS)
+- `BACKUP_NAS_PATH` = `/mnt/indiana/folders/jarvis` (on TrueNAS)
 - `BACKUP_PASSPHRASE` = your encryption passphrase
 
 Alternative: Set them in the service/task environment.
@@ -104,35 +104,35 @@ Run these commands in **Administrator PowerShell**:
 # Helper function
 function New-BrainTask {
     param($Name, $Script, $Argument, $At)
-    $action = New-ScheduledTaskAction -Execute "C:\data\second-brain\.venv\Scripts\python.exe" -Argument "$Script $Argument"
+    $action = New-ScheduledTaskAction -Execute "C:\data\jarvis\.venv\Scripts\python.exe" -Argument "$Script $Argument"
     $trigger = New-ScheduledTaskTrigger -Daily -At $At
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable
-    Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Settings $settings -Description "Second Brain: $Name" -Force
+    Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Settings $settings -Description "Jarvis: $Name" -Force
 }
 
 # Daily consolidation at 04:00
-New-BrainTask -Name "SecondBrain-Daily" -Script "C:\data\second-brain\brain\consolidation.py" -Argument "daily" -At "04:00AM"
+New-BrainTask -Name "Jarvis-Daily" -Script "C:\data\jarvis\jarvis\consolidation.py" -Argument "daily" -At "04:00AM"
 
 # Weekly reflection at 06:00 on Sundays
 $weeklyTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "06:00AM"
-$weeklyAction = New-ScheduledTaskAction -Execute "C:\data\second-brain\.venv\Scripts\python.exe" -Argument "C:\data\second-brain\brain\consolidation.py weekly"
+$weeklyAction = New-ScheduledTaskAction -Execute "C:\data\jarvis\.venv\Scripts\python.exe" -Argument "C:\data\jarvis\jarvis\consolidation.py weekly"
 $weeklySettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable
-Register-ScheduledTask -TaskName "SecondBrain-Weekly" -Action $weeklyAction -Trigger $weeklyTrigger -Settings $weeklySettings -Force
+Register-ScheduledTask -TaskName "Jarvis-Weekly" -Action $weeklyAction -Trigger $weeklyTrigger -Settings $weeklySettings -Force
 
 # Monthly arc at 06:00 on 1st of month
 $monthlyTrigger = New-ScheduledTaskTrigger -Once -At "06:00AM" -RepetitionInterval (New-TimeSpan -Days 30)
-$monthlyAction = New-ScheduledTaskAction -Execute "C:\data\second-brain\.venv\Scripts\python.exe" -Argument "C:\data\second-brain\brain\consolidation.py monthly"
+$monthlyAction = New-ScheduledTaskAction -Execute "C:\data\jarvis\.venv\Scripts\python.exe" -Argument "C:\data\jarvis\jarvis\consolidation.py monthly"
 $monthlySettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable
-Register-ScheduledTask -TaskName "SecondBrain-Monthly" -Action $monthlyAction -Trigger $monthlyTrigger -Settings $monthlySettings -Force
+Register-ScheduledTask -TaskName "Jarvis-Monthly" -Action $monthlyAction -Trigger $monthlyTrigger -Settings $monthlySettings -Force
 
 # Model update check at 03:00
-New-BrainTask -Name "SecondBrain-ModelUpdate" -Script "C:\data\second-brain\brain\model_update.py" -Argument "" -At "03:00AM"
+New-BrainTask -Name "Jarvis-ModelUpdate" -Script "C:\data\jarvis\jarvis\model_update.py" -Argument "" -At "03:00AM"
 
 # Backup to TrueNAS at 23:00 on Saturday
-$backupAction = New-ScheduledTaskAction -Execute "C:\data\second-brain\.venv\Scripts\python.exe" -Argument "C:\data\second-brain\brain\backup.py"
+$backupAction = New-ScheduledTaskAction -Execute "C:\data\jarvis\.venv\Scripts\python.exe" -Argument "C:\data\jarvis\jarvis\backup.py"
 $backupTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday -At "11:00PM"
 $backupSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable
-Register-ScheduledTask -TaskName "SecondBrain-Backup" -Action $backupAction -Trigger $backupTrigger -Settings $backupSettings -Force
+Register-ScheduledTask -TaskName "Jarvis-Backup" -Action $backupAction -Trigger $backupTrigger -Settings $backupSettings -Force
 ```
 
 ## 10. Ollama Tailscale access
@@ -159,7 +159,7 @@ Any device (Mac / laptop)
   ├── watchdog observes ~/Documents, ~/obsidian, ~/notes
   │
   └── If Tailscale reachable:
-        scp file → lightspeed:/data/second-brain/inbox/<this_device_id>/
+        scp file → lightspeed:/data/jarvis/inbox/<this_device_id>/
         (Windows accepts forward slashes in paths for scp)
         
 Lightspeed (Dell G7 — Windows)
@@ -186,20 +186,20 @@ Lightspeed (Dell G7 — Windows)
 From Lightspeed PowerShell:
 ```powershell
 # Test Python
-python -m brain.cli status
+python -m jarvis.cli status
 
 # Test Ollama
 ollama list
 
 # Test service
-nssm status SecondBrain
+nssm status Jarvis
 
 # Test scheduled tasks
-Get-ScheduledTask | Where-Object {$_.TaskName -like "SecondBrain*"}
+Get-ScheduledTask | Where-Object {$_.TaskName -like "Jarvis*"}
 ```
 
 From your Mac:
 ```bash
-scp ~/notes/test.md lightspeed:/data/second-brain/inbox/<mac_device_id>/
-ssh lightspeed "python -m brain.cli search test"
+scp ~/notes/test.md lightspeed:/data/jarvis/inbox/<mac_device_id>/
+ssh lightspeed "python -m jarvis.cli search test"
 ```

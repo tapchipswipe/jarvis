@@ -1,4 +1,4 @@
-# Second Brain — Windows Backup Script
+# Jarvis — Windows Backup Script
 param(
     [ValidateSet("backup","model-update")]
     [string]$Action = "backup"
@@ -8,14 +8,14 @@ $ErrorActionPreference = "Stop"
 $nasHost = $env:BACKUP_NAS_HOST
 $nasPath = $env:BACKUP_NAS_PATH
 $passphrase = $env:BACKUP_PASSPHRASE
-$dataRoot = "C:\data\second-brain"
+$dataRoot = "C:\data\jarvis"
 
 function Backup-Data {
     Write-Host "[$(Get-Date)] Starting backup..."
     $tmpDir = Join-Path $env:TEMP "sb-backup-$(Get-Random)"
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-    $archive = Join-Path $tmpDir "second-brain-backup.tar.gz"
-    $encrypted = Join-Path $tmpDir "second-brain-backup.tar.gz.enc"
+    $archive = Join-Path $tmpDir "jarvis-backup.tar.gz"
+    $encrypted = Join-Path $tmpDir "jarvis-backup.tar.gz.enc"
 
     if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
         Write-Host "ERROR: tar not found. Install Git Bash or WSL."
@@ -48,7 +48,7 @@ function Backup-Data {
             Remove-Item $tmpDir -Recurse -Force
             exit 1
         }
-        $remotePath = if ($nasPath) { "$nasHost:$nasPath" } else { "$nasHost:/mnt/indiana/folders/second-brain" }
+        $remotePath = if ($nasPath) { "$nasHost:$nasPath" } else { "$nasHost:/mnt/indiana/folders/jarvis" }
         & scp -o StrictHostKeyChecking=no $encrypted $remotePath 2>&1 | Out-Null
     }
 

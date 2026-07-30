@@ -1,4 +1,4 @@
-# Second Brain — Windows Idle-Aware Runner
+# Jarvis — Windows Idle-Aware Runner
 # Only runs if current time is in the allowed window AND system is idle
 
 param(

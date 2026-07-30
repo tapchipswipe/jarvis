@@ -1,16 +1,16 @@
 # Lightspeed crontab — add with `crontab -e` on the Dell G7
 
 # Model update check (idle-aware, runs 1am–6am when idle)
-0 3 * * * /bin/bash /data/second-brain/scripts/run-model-update.sh
+0 3 * * * /bin/bash /data/jarvis/scripts/run-model-update.sh
 
 # Daily consolidation at 04:00 (idle-aware)
-0 4 * * * /bin/bash /data/second-brain/scripts/consolidate-daily.sh
+0 4 * * * /bin/bash /data/jarvis/scripts/consolidate-daily.sh
 
 # Weekly reflection at 06:00 on Sundays (idle-aware)
-0 6 * * 0 /bin/bash /data/second-brain/scripts/consolidate-weekly.sh
+0 6 * * 0 /bin/bash /data/jarvis/scripts/consolidate-weekly.sh
 
 # Monthly arc at 06:00 on the 1st (idle-aware)
-0 6 1 * * /bin/bash /data/second-brain/scripts/consolidate-monthly.sh
+0 6 1 * * /bin/bash /data/jarvis/scripts/consolidate-monthly.sh
 
 # Weekly encrypted backup to TrueNAS (idle-aware, Saturday 11pm)
-0 23 * * 6 /bin/bash /data/second-brain/scripts/run-backup.sh
+0 23 * * 6 /bin/bash /data/jarvis/scripts/run-backup.sh

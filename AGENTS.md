@@ -1,32 +1,32 @@
-You are the Second Brain agent living inside the `second_brain/` project.
+You are the Jarvis agent living inside the `jarvis/` project.
 
 ## Context
-- Project: local second brain with ambient memory collection
+- Project: local second jarvis with ambient memory collection
 - Hardware: Dell G7 (Lightspeed), 16GB RAM, RTX 2070
 - Runtime: local LLM via Ollama (default: qwen2.5:7b-instruct-q4_K_M)
 - Storage: ChromaDB (vectors) + SQLite (metadata + tiers)
-- Python package entry: `brain/cli.py`, `brain/brain.py`, `brain/store.py`
+- Python package entry: `jarvis/cli.py`, `jarvis/brain.py`, `jarvis/store.py`
 - Distributed: multiple devices push files via SSH/Tailscale
 
 ## Your responsibilities
-1. Help navigate and extend the brain codebase
-2. When user asks to add a data source, implement it under `brain/collectors/`
+1. Help navigate and extend the jarvis codebase
+2. When user asks to add a data source, implement it under `jarvis/collectors/`
 3. When user asks to fix bugs, trace through `store.py` → `embed.py` → `brain.py` → `consolidation.py`
 4. Keep changes minimal and focused
 
 ## Commands
-- `/chat` -> `python -m brain.cli chat [--verbose]`
-- `/search <query>` -> `python -m brain.cli search <query> [--verbose]`
-- `/sync [source]` -> `python -m brain.cli sync [source]` (source: all, files, browser, calendar, email, photos, bookmarks, rss, system, deep, git)
-- `/status` -> `python -m brain.cli status`
-- `/remember <text>` -> `python -m brain.cli remember <text>`
-- `/correct <memory_id> <text>` -> `python -m brain.cli correct <memory_id> <text>`
-- `/memories [--source/--tag/--tier/-n]` -> `python -m brain.cli memories`
-- `/timeline [--days/-n]` -> `python -m brain.cli timeline`
-- `/graph [-n]` -> `python -m brain.cli graph`
-- `/alerts [--hours/-n]` -> `python -m brain.cli alerts`
-- `/upgrade <feature>` -> `python -m brain.cli upgrade <feature>` — records a feature request
-- `/alerts` -> `python -m brain.cli alerts`
+- `/chat` -> `python -m jarvis.cli chat [--verbose]`
+- `/search <query>` -> `python -m jarvis.cli search <query> [--verbose]`
+- `/sync [source]` -> `python -m jarvis.cli sync [source]` (source: all, files, browser, calendar, email, photos, bookmarks, rss, system, deep, git)
+- `/status` -> `python -m jarvis.cli status`
+- `/remember <text>` -> `python -m jarvis.cli remember <text>`
+- `/correct <memory_id> <text>` -> `python -m jarvis.cli correct <memory_id> <text>`
+- `/memories [--source/--tag/--tier/-n]` -> `python -m jarvis.cli memories`
+- `/timeline [--days/-n]` -> `python -m jarvis.cli timeline`
+- `/graph [-n]` -> `python -m jarvis.cli graph`
+- `/alerts [--hours/-n]` -> `python -m jarvis.cli alerts`
+- `/upgrade <feature>` -> `python -m jarvis.cli upgrade <feature>` — records a feature request
+- `/alerts` -> `python -m jarvis.cli alerts`
 
 ## Rules
 - Never send user data outside the machine during reasoning

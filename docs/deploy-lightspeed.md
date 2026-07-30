@@ -1,6 +1,6 @@
 # Deployment: Lightspeed (Dell G7)
 
-Lightspeed runs the brain runtime: Ollama, ChromaDB, agent loop, and the inbox watcher.
+Lightspeed runs the jarvis runtime: Ollama, ChromaDB, agent loop, and the inbox watcher.
 All other devices push new files to Lightspeed over SSH/Tailscale.
 
 ## 1. Prerequisites on Lightspeed
@@ -10,7 +10,7 @@ sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
 tailscale ip -4 lightspeed
 
 python3 --version  # >= 3.10
-pip install -e /path/to/second_brain
+pip install -e /path/to/jarvis
 ollama serve &
 ollama pull qwen2.5:7b-instruct-q4_K_M
 ```
@@ -18,7 +18,7 @@ ollama pull qwen2.5:7b-instruct-q4_K_M
 ## 2. Directory layout on Lightspeed
 
 ```
-/data/second-brain/
+/data/jarvis/
 ├── chroma/            # ChromaDB vectors
 ├── meta.db            # SQLite metadata
 ├── inbox/             # Push target for remote devices
@@ -42,16 +42,16 @@ ssh user@lightspeed "echo ok"
 
 ```bash
 mkdir -p ~/Library/LaunchAgents
-cp second_brain/service/*.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.user.second-brain.plist
-tail -f /data/second-brain/logs/service.log
+cp jarvis/service/*.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.user.jarvis.plist
+tail -f /data/jarvis/logs/service.log
 ```
 
 ## 5. Install cron jobs on Lightspeed
 
 ```bash
-mkdir -p /data/second-brain/scripts
-chmod +x /data/second-brain/scripts/*.sh
+mkdir -p /data/jarvis/scripts
+chmod +x /data/jarvis/scripts/*.sh
 crontab -e
 # Paste contents of scripts/crontab.txt
 ```
@@ -61,7 +61,7 @@ All jobs are idle-aware: 1am–6am, and only when system idle ≥30 minutes.
 Verify:
 ```bash
 crontab -l
-tail -f /data/second-brain/logs/consolidation.log
+tail -f /data/jarvis/logs/consolidation.log
 ```
 
 ## 6. Environment variables
@@ -73,7 +73,7 @@ On every device that pushes:
 On Lightspeed:
 - `PYTHONPATH` includes the project path
 - Ollama is running and reachable
-- `/data/second-brain/` is writable
+- `/data/jarvis/` is writable
 
 Ollama remote access:
 ```bash
@@ -91,7 +91,7 @@ Backup:
 
 Run from Lightspeed:
 ```bash
-python -m brain.cli sync
+python -m jarvis.cli sync
 ```
 
 Sync sources:
@@ -113,13 +113,13 @@ Sync sources:
 
 First, create the backup folder on TrueNAS:
 ```bash
-ssh truenas "mkdir -p /mnt/indiana/folders/second-brain"
+ssh truenas "mkdir -p /mnt/indiana/folders/jarvis"
 ```
 
 Weekly encrypted backup runs Saturday at 11pm, idle-aware. Configure on Lightspeed:
 ```bash
 export BACKUP_NAS_HOST=truenas
-export BACKUP_NAS_PATH=/mnt/indiana/folders/second-brain
+export BACKUP_NAS_PATH=/mnt/indiana/folders/jarvis
 export BACKUP_PASSPHRASE="your-encryption-passphrase"
 ```
 
@@ -138,9 +138,9 @@ Any device (Mac / laptop)
   ├── watchdog observes ~/Documents, ~/obsidian, ~/notes
   │
   └── If Tailscale reachable:
-        scp file → lightspeed:/data/second-brain/inbox/<this_device_id>/
+        scp file → lightspeed:/data/jarvis/inbox/<this_device_id>/
         
-Lightspeed (brain runtime)
+Lightspeed (jarvis runtime)
   │
   ├── Inbox watcher detects new file
   ├── Exact content match → merge device tags (no duplicate entry)

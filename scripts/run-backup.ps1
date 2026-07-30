@@ -1,4 +1,4 @@
-# Second Brain — Windows Idle-Aware Backup Runner
+# Jarvis — Windows Idle-Aware Backup Runner
 param()
 $ErrorActionPreference = "Stop"
 
