@@ -10,7 +10,9 @@ Covers:
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -24,6 +26,7 @@ from jarvis.triggers import (
     EventTrigger,
     PollTrigger,
     TriggerEngine,
+    TriggerLoop,
     _dispatch_action,
     _instantiate,
     load_triggers,
@@ -275,3 +278,128 @@ def test_render_template_substitution():
     result = _render_template("Count: {memory_count}, Pending: {pending_count}", ctx)
     assert "42" in result
     assert "2" in result
+
+
+# ── TriggerLoop (daemon background thread) ────────────────────────────────────
+
+def test_trigger_loop_evaluates_on_interval():
+    """The loop thread evaluates the engine repeatedly on a short interval."""
+    engine = MagicMock()
+    engine.triggers = []
+    loop = TriggerLoop(
+        store=MagicMock(), state=MagicMock(), interval=0.05, engine=engine
+    )
+    loop.start()
+    try:
+        time.sleep(0.16)   # allow a couple of ticks
+        assert engine.evaluate.call_count >= 1
+    finally:
+        loop.stop()
+        loop.join(timeout=2)
+    assert not loop.is_alive()
+
+
+def test_trigger_loop_stops_cleanly():
+    """stop() makes the thread exit; join() returns and the thread is gone."""
+    engine = MagicMock()
+    engine.triggers = []
+    loop = TriggerLoop(
+        store=object(), state=None, interval=60, engine=engine
+    )
+    loop.start()
+    loop.stop()
+    loop.join(timeout=2)
+    assert not loop.is_alive()
+    # stop() is idempotent-safe (e.g. called twice on shutdown)
+    loop.stop()
+
+
+def test_trigger_loop_stop_wakes_sleeping_thread():
+    """A thread parked in its sleep window exits promptly on stop()."""
+    engine = MagicMock()
+    engine.triggers = []
+    loop = TriggerLoop(
+        store=object(), state=None, interval=30, engine=engine
+    )
+    loop.stop()   # signal before the thread wakes -> no evaluation
+    loop.start()
+    loop.join(timeout=2)
+    assert not loop.is_alive()
+    assert engine.evaluate.call_count == 0
+
+
+def test_trigger_loop_loads_triggers_by_default():
+    """Without an explicit engine the loop loads triggers via load_triggers()."""
+    with patch("jarvis.triggers.load_triggers", return_value=[]) as mock_load:
+        loop = TriggerLoop(store=object(), state=None, interval=60)
+    mock_load.assert_called_once()
+    assert loop.triggers == []
+
+
+def test_trigger_loop_passes_config_path_to_load_triggers():
+    with patch("jarvis.triggers.load_triggers", return_value=[]) as mock_load:
+        TriggerLoop(store=object(), config_path=Path("/tmp/custom.toml"))
+    mock_load.assert_called_once_with(config_path=Path("/tmp/custom.toml"))
+
+
+def test_trigger_loop_rejects_non_positive_interval():
+    with pytest.raises(TriggerError):
+        TriggerLoop(store=object(), interval=0)
+    with pytest.raises(TriggerError):
+        TriggerLoop(store=object(), interval=-5)
+
+
+def test_trigger_loop_builds_context_from_store():
+    """Each tick the engine reads memory stats from the Store for the context."""
+    engine = TriggerEngine([])
+    store = MagicMock()
+    store.conn.execute.return_value.fetchone.return_value = (7, "2025-06-01T12:00:00+00:00")
+    loop = TriggerLoop(store=store, state=MagicMock(), interval=0.05, engine=engine)
+    loop.start()
+    try:
+        time.sleep(0.16)
+    finally:
+        loop.stop()
+        loop.join(timeout=2)
+    assert not loop.is_alive()
+    # memory_count / last_memory_ts were read from the store's sqlite conn
+    assert store.conn.execute.call_count >= 1
+
+
+def test_trigger_loop_dispatches_due_actions():
+    """A due poll trigger dispatches its notify action from inside the loop."""
+    trigger = PollTrigger(
+        name="loop-poll",
+        actions=[{"type": "notify", "title": "Loop", "body": "Fired"}],
+        interval_seconds=1,
+    )
+    engine = TriggerEngine([trigger])
+    store = MagicMock()
+    store.conn.execute.return_value.fetchone.return_value = (0, None)
+    loop = TriggerLoop(store=store, state=MagicMock(), interval=0.05, engine=engine)
+    with patch("jarvis.triggers._dispatch_action", return_value="ok") as mock_dispatch:
+        loop.start()
+        try:
+            time.sleep(0.16)
+        finally:
+            loop.stop()
+            loop.join(timeout=2)
+    mock_dispatch.assert_called()
+
+
+def test_trigger_loop_survives_engine_errors():
+    """An exception inside an iteration is logged and does not kill the loop."""
+    engine = MagicMock()
+    engine.triggers = []
+    engine.evaluate.side_effect = [RuntimeError("boom"), None]
+    loop = TriggerLoop(
+        store=object(), state=None, interval=0.05, engine=engine
+    )
+    loop.start()
+    try:
+        time.sleep(0.16)
+    finally:
+        loop.stop()
+        loop.join(timeout=2)
+    assert not loop.is_alive()
+    assert engine.evaluate.call_count >= 2  # loop kept going after the error

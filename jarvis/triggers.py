@@ -8,6 +8,8 @@ Trigger types
 TimeTrigger   – cron-like schedule; evaluated every minute of each hour.
 EventTrigger  – one-shot; fires once when a named event fires.
 PollTrigger   – fixed-interval poll; uses a fixed cadence in seconds.
+TriggerLoop   – daemon background thread that evaluates triggers on a
+                fixed cadence (wraps TriggerEngine; see TriggerLoop).
 
 Action types
 ------------
@@ -28,6 +30,7 @@ import logging
 import os
 import platform
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -548,3 +551,83 @@ def _instantiate(raw: dict) -> Trigger:
     # Remaining keys are kwargs
     kwargs = {k: v for k, v in raw.items() if k not in ("type", "name", "actions")}
     return cls(name=name, actions=actions, **kwargs)
+
+
+# ── TriggerLoop (daemon background thread) ───────────────────────────────────
+
+DEFAULT_POLL_INTERVAL = 60  # seconds between trigger evaluations
+
+
+class TriggerLoop(threading.Thread):
+    """Background thread that evaluates triggers on a fixed cadence.
+
+    Owns a :class:`TriggerEngine` built from :func:`load_triggers` and calls
+    ``engine.evaluate(store, state)`` every ``interval`` seconds. Each tick the
+    engine builds a :class:`TriggerContext` from the Store/state snapshot and
+    dispatches due actions (notify/brief/escalate) on schedule.
+
+    Usage (from the daemon)::
+
+        loop = TriggerLoop(store=store, state=daemon_state)
+        loop.start()
+        ...
+        loop.stop()
+        loop.join(timeout=5)
+
+    Iteration errors are logged and never kill the loop; ``stop()`` signals a
+    clean shutdown and the thread exits on its next wakeup (daemon thread, so
+    it never blocks interpreter exit on its own).
+    """
+
+    def __init__(
+        self,
+        store: Any,
+        state: Any = None,
+        *,
+        interval: int = DEFAULT_POLL_INTERVAL,
+        config_path: Optional[Path] = None,
+        engine: Optional[TriggerEngine] = None,
+    ) -> None:
+        super().__init__(name="trigger-loop", daemon=True)
+        self.store = store
+        self.state = state
+        interval = float(interval)
+        if interval <= 0:
+            raise TriggerError(
+                f"TriggerLoop interval must be positive, got {interval}"
+            )
+        self.interval = int(interval) if interval.is_integer() else interval
+        self._stop_event = threading.Event()
+        self.engine = (
+            engine
+            if engine is not None
+            else TriggerEngine(load_triggers(config_path=config_path))
+        )
+        self.trigger_count = len(self.engine.triggers)
+
+    @property
+    def triggers(self) -> list[Trigger]:
+        """The triggers loaded into this loop's engine."""
+        return self.engine.triggers
+
+    def stop(self) -> None:
+        """Signal the loop to stop; the thread exits on its next wakeup."""
+        self._stop_event.set()
+
+    def run(self) -> None:
+        logger.info(
+            "Trigger loop started (interval=%ds, %d trigger(s))",
+            self.interval, self.trigger_count,
+        )
+        while not self._stop_event.is_set():
+            tick = time.monotonic()
+            try:
+                self.engine.evaluate(self.store, self.state)
+            except Exception as exc:          # noqa: BLE001
+                logger.error(
+                    "Trigger loop iteration failed: %s", exc, exc_info=True
+                )
+            # Sleep out the remainder of the interval; stop() wakes us early.
+            elapsed = time.monotonic() - tick
+            self._stop_event.wait(max(0.0, self.interval - elapsed))
+        logger.info("Trigger loop stopped")

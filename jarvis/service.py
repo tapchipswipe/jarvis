@@ -10,6 +10,8 @@ LOG_FILE = Path("/data/jarvis/logs/daemon.log")
 DAEMON_MODULE = "jarvis.sync.daemon"
 VERSION_COMMAND_PATH = Path(__file__).resolve().parent / "cli.py"
 
+TRIGGER_INTERVAL = 60  # seconds between trigger evaluations in this process
+
 running = True
 
 
@@ -24,6 +26,28 @@ def signal_handler(signum, frame):
     global running
     running = False
     log("Shutting down...")
+
+
+def start_trigger_loop():
+    """Start the background trigger thread for this service process.
+
+    The loop loads triggers via ``jarvis.triggers.load_triggers()``, evaluates
+    them every ``TRIGGER_INTERVAL`` seconds with a TriggerContext built from
+    the Store, and dispatches due actions (notify/brief/escalate) on schedule.
+    Returns the TriggerLoop, or None if it could not be started (the service
+    keeps running either way; failures are logged).
+    """
+    try:
+        from jarvis.triggers import TriggerLoop
+        from jarvis.store import Store
+
+        loop = TriggerLoop(store=Store(), interval=TRIGGER_INTERVAL)
+        loop.start()
+        log(f"Trigger loop started (interval={loop.interval}s, {loop.trigger_count} trigger(s))")
+        return loop
+    except Exception as exc:        # noqa: BLE001
+        log(f"Trigger loop not started: {exc}")
+        return None
 
 
 def write_pid():
@@ -45,6 +69,9 @@ def main():
     # Run the version command to display Jarvis version
     subprocess.run([sys.executable, str(VERSION_COMMAND_PATH)])
 
+    # Background trigger thread (time/poll/event triggers fire on schedule)
+    trigger_loop = start_trigger_loop()
+
     project_root = Path(__file__).resolve().parent.parent
     env = os.environ.copy()
     env["PYTHONPATH"] = str(project_root)
@@ -63,6 +90,10 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        if trigger_loop is not None:
+            trigger_loop.stop()
+            trigger_loop.join(timeout=5)
+            log("Trigger loop stopped")
         proc.terminate()
         try:
             proc.wait(timeout=10)
