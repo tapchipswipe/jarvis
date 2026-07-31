@@ -546,6 +546,79 @@ async def api_status():
         return JSONResponse({"mode": "coding", "queue_stats": tq.stats(), "running": _mayor_instance is not None})
     finally:
         tq.close()
+
+
+# ── Knowledge Graph API Routes ─────────────────────────────────────────────────
+
+_ENTITY_COLS = "id, canonical_name, entity_type, source_count, first_seen, last_seen"
+
+
+@app.get("/api/entities")
+async def api_entities(q: str | None = None, type: str | None = None, limit: int = 50):
+    """List/search knowledge graph entities.
+
+    Supports:
+      ?q=      — substring (and fuzzy) search over canonical names
+      ?type=   — filter by entity_type (e.g. person, organization, place)
+      ?limit=  — max results (clamped to 1..500, default 50)
+    """
+    if limit < 1:
+        limit = 1
+    if limit > 500:
+        limit = 500
+    store = _get_store()
+    try:
+        where = []
+        params: list = []
+        if q:
+            where.append("canonical_name LIKE ?")
+            params.append(f"%{q}%")
+        if type:
+            where.append("entity_type = ?")
+            params.append(type)
+        sql = f"SELECT {_ENTITY_COLS} FROM entities"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY source_count DESC, canonical_name ASC LIMIT ?"
+        rows = store.conn.execute(sql, (*params, limit)).fetchall()
+        entities = [dict(r) for r in rows]
+        # When searching, also surface the closest exact/fuzzy match even if its
+        # canonical name doesn't contain the literal substring (mirrors daemon).
+        if q:
+            from jarvis.graph import resolve_entity
+            eid = resolve_entity(store, q)
+            if eid and not any(e["id"] == eid for e in entities):
+                row = store.conn.execute(
+                    f"SELECT {_ENTITY_COLS} FROM entities WHERE id = ?",
+                    (eid,),
+                ).fetchone()
+                if row:
+                    entities.insert(0, dict(row))
+        return JSONResponse({"entities": entities, "count": len(entities)})
+    finally:
+        store.close()
+
+
+@app.get("/api/entities/{entity_id}/relationships")
+async def api_entity_relationships(entity_id: str):
+    """Return relationship edges for a single entity (reuses graph.get_related)."""
+    store = _get_store()
+    try:
+        row = store.conn.execute(
+            f"SELECT {_ENTITY_COLS} FROM entities WHERE id = ?",
+            (entity_id,),
+        ).fetchone()
+        if not row:
+            return JSONResponse({"error": "entity not found"}, status_code=404)
+        from jarvis.graph import get_related
+        relationships = get_related(store, entity_id)
+        return JSONResponse({
+            "entity_id": entity_id,
+            "relationships": relationships,
+            "count": len(relationships),
+        })
+    finally:
+        store.close()
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
 def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL):

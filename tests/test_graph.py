@@ -203,3 +203,136 @@ def test_infer_relationships_creates_edges(store):
 
     rows = store.conn.execute("SELECT * FROM relationships").fetchall()
     assert len(rows) >= 1
+
+
+# ── Knowledge Graph HTTP API (dashboard endpoints) ─────────────────────────────
+
+
+@pytest.fixture()
+def api_client(tmp_path, monkeypatch, mock_chroma_client):
+    """TestClient for the dashboard app backed by a temp Store per request.
+
+    Mirrors the real dashboard: every API request opens a fresh Store on the
+    same SQLite file (and closes it after the response), so endpoints that
+    call store.close() in a finally block are exercised exactly as in prod.
+    """
+    from fastapi.testclient import TestClient
+    from jarvis import dashboard
+    from jarvis.store import Store
+
+    chroma_dir = tmp_path / "chroma"
+    db_path = tmp_path / "meta.db"
+    chroma_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        "jarvis.store.chromadb.PersistentClient",
+        lambda *a, **k: mock_chroma_client,
+    )
+    monkeypatch.setattr(
+        dashboard, "_get_store",
+        lambda: Store(chroma_dir=chroma_dir, db_path=db_path),
+    )
+
+    class _Api:
+        client = TestClient(dashboard.app)
+
+        def store(self):
+            return Store(chroma_dir=chroma_dir, db_path=db_path)
+
+    yield _Api()
+
+
+def _seed_graph(api):
+    store = api.store()
+    try:
+        e1 = upsert_entity(store, "John Doe", entity_type="person")
+        e2 = upsert_entity(store, "Jane Smith", entity_type="person")
+        e3 = upsert_entity(store, "Acme Corp", entity_type="organization")
+        store.add_relationship(e1, e2, "co_participant", "mem1", 0.55)
+        store.add_relationship(e1, e3, "works_at", "mem2", 0.9)
+        return e1, e2, e3
+    finally:
+        store.close()
+
+
+def test_api_entities_lists_all(api_client):
+    _seed_graph(api_client)
+    resp = api_client.client.get("/api/entities")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 3
+    names = {e["canonical_name"] for e in body["entities"]}
+    assert names == {"john doe", "jane smith", "acme corp"}
+
+
+def test_api_entities_search_q(api_client):
+    _seed_graph(api_client)
+    resp = api_client.client.get("/api/entities", params={"q": "jane"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["entities"][0]["canonical_name"] == "jane smith"
+
+
+def test_api_entities_search_type(api_client):
+    _seed_graph(api_client)
+    resp = api_client.client.get("/api/entities", params={"type": "person"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 2
+    assert all(e["entity_type"] == "person" for e in body["entities"])
+
+
+def test_api_entities_limit(api_client):
+    _seed_graph(api_client)
+    resp = api_client.client.get("/api/entities", params={"limit": 2})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 2
+
+
+def test_api_entities_fuzzy_search_resolves(api_client):
+    _seed_graph(api_client)
+    # "Jon Doe" doesn't substring-match, but fuzzy resolution surfaces "john doe".
+    resp = api_client.client.get("/api/entities", params={"q": "Jon Doe"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert any(e["canonical_name"] == "john doe" for e in body["entities"])
+
+
+def test_api_entities_empty(api_client):
+    resp = api_client.client.get("/api/entities")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {"entities": [], "count": 0}
+
+
+def test_api_entity_relationships(api_client):
+    e1, e2, e3 = _seed_graph(api_client)
+    resp = api_client.client.get(f"/api/entities/{e1}/relationships")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["entity_id"] == e1
+    assert body["count"] == 2
+    assert {r["entity_name"] for r in body["relationships"]} == {"jane smith", "acme corp"}
+    assert {r["relation"] for r in body["relationships"]} == {"co_participant", "works_at"}
+
+
+def test_api_entity_relationships_none(api_client):
+    store = api_client.store()
+    try:
+        e1 = upsert_entity(store, "Isolated Entity", entity_type="person")
+    finally:
+        store.close()
+    resp = api_client.client.get(f"/api/entities/{e1}/relationships")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["relationships"] == []
+    assert body["count"] == 0
+
+
+def test_api_entity_relationships_not_found(api_client):
+    resp = api_client.client.get("/api/entities/does-not-exist/relationships")
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "entity not found"
+
