@@ -52,16 +52,30 @@ def _walk_safari(node):
 
 
 def _walk_chrome(bm_path):
-    import sqlite3
+    """Parse Chrome Bookmarks JSON file and extract bookmark entries."""
+    import json
     results = []
     try:
-        conn = sqlite3.connect(f"file:{bm_path}?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
-        cur = conn.execute("SELECT name, url, date_created FROM bookmarks WHERE url IS NOT NULL ORDER BY date_created DESC LIMIT 500")
-        rows = cur.fetchall()
-        conn.close()
-        for row in rows:
-            results.append({"name": row["name"], "url": row["url"], "date": row["date_created"]})
+        data = json.loads(bm_path.read_bytes())
+        roots = data.get("roots", {})
+        for root_key in ("bookmark_bar", "other", "synced"):
+            root = roots.get(root_key, {})
+            results.extend(_walk_chrome_children(root))
     except Exception:
         pass
+    return results
+
+
+def _walk_chrome_children(node):
+    """Recursively walk Chrome bookmark tree nodes."""
+    results = []
+    children = node.get("children", [])
+    for child in children:
+        if child.get("type") == "url":
+            url = child.get("url", "")
+            name = child.get("name", "")
+            date_added = child.get("date_added", "")
+            results.append({"name": name, "url": url, "date": date_added})
+        elif child.get("type") == "folder":
+            results.extend(_walk_chrome_children(child))
     return results

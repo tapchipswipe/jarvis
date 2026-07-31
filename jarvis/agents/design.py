@@ -26,7 +26,7 @@ Rules:
 
 class DesignAgent(BaseAgent):
     name = "design"
-    model = "qwen2.5-coder:14b"
+    model = "qwen2.5:7b-instruct-q4_K_M"
     description = "Dashboard UI/UX improvements, CSS, visualizations"
 
     def execute(self, task: dict) -> dict:

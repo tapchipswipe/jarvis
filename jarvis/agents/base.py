@@ -24,7 +24,7 @@ import logging
 
 logger = logging.getLogger("jarvis.agents")
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "127.0.0.1")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "100.102.0.99")
 OLLAMA_PORT = os.environ.get("OLLAMA_PORT", "11434")
 OLLAMA_URL = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
@@ -33,7 +33,7 @@ class BaseAgent:
     """Base class for all coding agents."""
 
     name: str = "base"
-    model: str = "qwen2.5-coder:14b"
+    model: str = "qwen2.5:7b-instruct-q4_K_M"
     description: str = "Base agent — does nothing specific"
 
     def __init__(self, project_root: str | Path):

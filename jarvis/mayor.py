@@ -44,14 +44,14 @@ logger = logging.getLogger("jarvis.mayor")
 # ── Configuration ────────────────────────────────────────────────────────────
 
 MAYOR_PORT = int(os.environ.get("MAYOR_PORT", "8767"))
-OLLAMA_URL = f"http://{os.environ.get('OLLAMA_HOST', '127.0.0.1')}:{os.environ.get('OLLAMA_PORT', '11434')}"
+OLLAMA_URL = f"http://{os.environ.get('OLLAMA_HOST', '100.102.0.99')}:{os.environ.get('OLLAMA_PORT', '11434')}"
 PROJECT_ROOT = Path(os.environ.get("JARVIS_ROOT", str(Path.home() / "jarvis")))
 
 DAY_START = 8   # 8am
 DAY_END = 23    # 11pm
 
 IDEA_PARSER_MODEL = "llama3.2:1b"
-CODING_MODEL = "qwen2.5-coder:14b"
+CODING_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 MEMORY_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 
 POLL_INTERVAL = 30  # seconds between task queue checks

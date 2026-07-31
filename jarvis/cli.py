@@ -220,7 +220,7 @@ def classify_recent(limit, model, dry_run):
 
 
 @cli.command()
-@click.option("--source", default="all", help="Target for sync: all, files, browser, calendar, email, photos, bookmarks, rss, system, deep, git")
+@click.option("--source", default="all", help="Target for sync: all, files, browser, calendar, email, photos, bookmarks, rss, system, deep, git, shell, kilo, notes, reminders, contacts, messages, photos_ocr")
 def sync(source):
     from jarvis.collectors.sync_runner import run_sync
     click.echo(f"Running scheduled sync ({source})...")

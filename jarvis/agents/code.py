@@ -32,7 +32,7 @@ Rules:
 
 class CodeAgent(BaseAgent):
     name = "code"
-    model = "qwen2.5-coder:14b"
+    model = "qwen2.5:7b-instruct-q4_K_M"
     description = "Writes features, fixes bugs, refactors code"
 
     def find_relevant_files(self, task: dict) -> list[str]:

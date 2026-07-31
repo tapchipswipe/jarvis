@@ -3,6 +3,7 @@ jarvis/agent.py - Agent loop with tool use for Jarvis.
 Communicates with Ollama via urllib only (no requests library).
 """
 import json
+import os
 import urllib.request
 import urllib.error
 
@@ -11,7 +12,7 @@ from jarvis.store import Store
 from jarvis.sessions import SessionDB
 from jarvis.tools import TOOLS_SCHEMA, execute_tool
 
-_OLLAMA_HOST = "127.0.0.1"
+_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "100.102.0.99")
 _OLLAMA_PORT = 11434
 DEFAULT_CHAT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 MAX_STEPS = 8
