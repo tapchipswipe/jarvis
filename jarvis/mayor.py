@@ -99,7 +99,7 @@ def ensure_model_loaded(model: str) -> bool:
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=60)
+        urllib.request.urlopen(req, timeout=15)
         logger.info("Model loaded: %s", model)
         return True
     except Exception as e:
@@ -146,7 +146,7 @@ def parse_idea(idea: str) -> dict | None:
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode())
             response_text = result.get("response", "")
             # The format:json parameter should return valid JSON
