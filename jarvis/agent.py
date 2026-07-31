@@ -13,9 +13,27 @@ from jarvis.sessions import SessionDB
 from jarvis.tools import TOOLS_SCHEMA, execute_tool
 
 _OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "100.102.0.99")
-_OLLAMA_PORT = 11434
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+_OLLAMA_PORT = _env_int("OLLAMA_PORT", 11434)
 DEFAULT_CHAT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
+CHAT_MODEL_FALLBACKS = [
+    "qwen2.5:7b-instruct-q4_K_M",
+    "qwen2.5:7b-instruct",
+    "qwen2.5",
+]
 MAX_STEPS = 8
+
+
+def _ollama_url(path: str) -> str:
+    return f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}{path}"
 
 SYSTEM_PROMPT = (
     "You are Jarvis, a private ambient memory agent. You have tools to look up "
@@ -40,7 +58,7 @@ def _ollama_chat(model, messages, tools=None, stream=True):
 
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/chat",
+        _ollama_url("/api/chat"),
         data=data,
         headers={"Content-Type": "application/json"},
     )
@@ -71,7 +89,7 @@ def _ollama_chat(model, messages, tools=None, stream=True):
             payload["stream"] = False
             data2 = json.dumps(payload).encode("utf-8")
             req2 = urllib.request.Request(
-                f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/chat",
+                _ollama_url("/api/chat"),
                 data=data2,
                 headers={"Content-Type": "application/json"},
             )
@@ -135,6 +153,44 @@ def _parse_tool_call(response):
     if not name:
         return None
     return name, args
+
+
+def resolve_chat_models(override: str | None = None) -> list[str]:
+    """Return the ordered list of chat models to try.
+
+    Priority: explicit override > JARVIS_CHAT_MODEL (comma-separated) >
+    JARVIS_CHAT_MODEL_FALLBACKS (comma-separated) > CHAT_MODEL_FALLBACKS.
+    """
+    if override:
+        return [override]
+    env_model = os.environ.get("JARVIS_CHAT_MODEL")
+    if env_model:
+        models = [m.strip() for m in env_model.split(",") if m.strip()]
+        if models:
+            return models
+    env_fallbacks = os.environ.get("JARVIS_CHAT_MODEL_FALLBACKS")
+    if env_fallbacks:
+        models = [m.strip() for m in env_fallbacks.split(",") if m.strip()]
+        if models:
+            return models
+    return list(CHAT_MODEL_FALLBACKS)
+
+
+def _chat_with_fallback(messages, tools=None, stream=True, model_override=None):
+    """Call Ollama, trying each configured model until one responds.
+
+    A model that returns a connection error (unavailable/not pulled) is
+    skipped in favor of the next model in the fallback list.
+    """
+    errors = []
+    for model in resolve_chat_models(model_override):
+        resp = _ollama_chat(model, messages, tools=tools, stream=stream)
+        if "[ollama connection error" in _extract_text(resp):
+            errors.append(_extract_text(resp))
+            continue
+        return resp
+    return {"message": {"content": errors[-1] if errors else ""}}
+
 
 def _inject_rag_context(session_db, user_message, model: str | None = None) -> str:
     store = None
@@ -235,9 +291,9 @@ def run_turn(
 
         # 6. Main agent loop - stream=True, fallback built into _ollama_chat
         for step in range(max_steps):
-            resp = _ollama_chat(
-                model or DEFAULT_CHAT_MODEL, ollama_messages,
-                tools=TOOLS_SCHEMA, stream=True,
+            resp = _chat_with_fallback(
+                ollama_messages, tools=TOOLS_SCHEMA, stream=True,
+                model_override=model,
             )
 
             text = _extract_text(resp)

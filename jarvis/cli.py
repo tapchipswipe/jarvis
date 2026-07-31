@@ -1,6 +1,7 @@
 import click
 import json
 import os
+from pathlib import Path
 from jarvis.store import Store
 from jarvis.brain import Brain
 from jarvis.embed import get_embedding
@@ -348,9 +349,94 @@ def explore(source, tag, tier, route, device, n, offset):
     if len(rows) > n:
         click.echo(f"\n[dim]... and {len(rows) - n} more. Use --offset {offset + n} to continue.[/dim]")
 
+@cli.command()
+@click.option("--format", "fmt", type=click.Choice(["json", "markdown", "md"], case_sensitive=False), default="json", help="Export format: json or markdown")
+@click.option("--output", "-o", default=None, help="Output path ('-' for stdout; default: timestamped file under the jarvis data dir)")
+@click.option("--source", default=None, help="Filter by source")
+@click.option("--tier", default=None, help="Filter by tier (raw, session, reflection, arc)")
+def export(fmt, output, source, tier):
+    """Export all memories to JSON or Markdown.
+
+    Writes a timestamped file by default; use --output - to print to stdout.
+    """
+    fmt = "markdown" if fmt == "md" else fmt
+    store = Store()
+    try:
+        query = "SELECT * FROM memories WHERE superseded = 0"
+        params = []
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        if tier:
+            query += " AND tier = ?"
+            params.append(tier)
+        query += " ORDER BY timestamp DESC"
+        rows = [dict(r) for r in store.conn.execute(query, params).fetchall()]
+    finally:
+        store.close()
+
+    for r in rows:
+        r["tags"] = json.loads(r["tags"]) if r.get("tags") else []
+        r["metadata"] = json.loads(r["metadata"]) if r.get("metadata") else {}
+
+    if fmt == "json":
+        payload = {
+            "exported_at": datetime.utcnow().isoformat(),
+            "count": len(rows),
+            "memories": rows,
+        }
+        content = json.dumps(payload, indent=2, default=str)
+    else:
+        content = _render_markdown(rows)
+
+    if output == "-":
+        click.echo(content)
+        return
+    if output:
+        out_path = Path(output)
+    else:
+        out_path = _export_default_dir() / _export_filename(fmt)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(content, encoding="utf-8")
+    click.echo(f"Exported {len(rows)} memory/memories to {out_path}")
+
+
+def _export_default_dir() -> Path:
+    """Directory for timestamped exports (override with JARVIS_DATA_DIR)."""
+    data_dir = os.environ.get("JARVIS_DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "exports"
+    return Path.home() / "jarvis" / "data" / "exports"
+
+
+def _export_filename(fmt: str) -> str:
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    ext = "md" if fmt == "markdown" else "json"
+    return f"jarvis-export-{stamp}.{ext}"
+
+
+def _render_markdown(rows: list[dict]) -> str:
+    lines = ["# Jarvis Memory Export", ""]
+    lines.append(f"**Exported:** {datetime.utcnow().isoformat()}")
+    lines.append(f"**Memories:** {len(rows)}")
+    lines.append("")
+    for r in rows:
+        tags = ", ".join(r.get("tags") or [])
+        lines.append(f"## [{r.get('tier', 'raw')}] {r.get('timestamp', '')}")
+        lines.append(f"- **Source:** {r.get('source', '')}")
+        lines.append(f"- **ID:** {r.get('id', '')}")
+        if tags:
+            lines.append(f"- **Tags:** {tags}")
+        if r.get("route") and r.get("route") != "unclassified":
+            lines.append(f"- **Route:** {r.get('route')}")
+        lines.append("")
+        lines.append((r.get("content") or "").strip())
+        lines.append("")
+    return "\n".join(lines)
+
 
 @cli.command()
-@click.option("--model", default=None, help="Model override")
+@click.option("--model", default=lambda: os.environ.get("JARVIS_CHAT_MODEL"), help="Chat model override (defaults to JARVIS_CHAT_MODEL env, then agent fallback list)")
 @click.option("--verbose", is_flag=True, help="Show tool calls and sources")
 @click.option("--new", "is_new", is_flag=True, help="Start a fresh session")
 @click.option("--resume", default=None, help="Resume session by ID")
