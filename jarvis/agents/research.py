@@ -26,7 +26,7 @@ Rules:
 
 class ResearchAgent(BaseAgent):
     name = "research"
-    model = "llama3.2:1b"
+    model = "qwen2.5:7b-instruct-q4_K_M"
     description = "Architecture docs, codebase analysis, feature planning"
 
     def execute(self, task: dict) -> dict:

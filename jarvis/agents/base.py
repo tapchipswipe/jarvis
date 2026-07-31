@@ -33,7 +33,7 @@ class BaseAgent:
     """Base class for all coding agents."""
 
     name: str = "base"
-    model: str = "llama3.2:1b"
+    model: str = "qwen2.5:7b-instruct-q4_K_M"
     description: str = "Base agent — does nothing specific"
 
     def __init__(self, project_root: str | Path):
@@ -68,7 +68,7 @@ class BaseAgent:
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            with urllib.request.urlopen(req, timeout=600) as resp:
                 result = json.loads(resp.read().decode())
                 return result.get("response", "")
         except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as e:
