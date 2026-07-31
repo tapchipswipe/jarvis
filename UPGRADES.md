@@ -18,4 +18,7 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[planned]` 2025-01-15 — Add incremental vector re-indexing so new memories get embedded without full re-sync
 - `[planned]` 2025-01-15 — Implement memory decay / tier promotion schedule so raw memories auto-promote to session tier after 7 days
 - `[requested]` 2025-01-15 — Multi-user support with isolated per-user storage directories and access control
-- `[planned]` 2025-01-15 — CLI `/export` command to dump all memories as JSON or Markdown for portability
+- `[done]` 2026-07-31 — CLI `/export` command to dump all memories as JSON or Markdown for portability
+- `[done]` 2026-07-31 — Embedding cache (SQLite-backed + in-memory) so repeated embeddings are served without re-calling Ollama
+- `[done]` 2026-07-31 — Daemon trigger loop thread evaluating time/poll/event triggers on a fixed cadence
+- `[done]` 2026-07-31 — Knowledge graph HTTP endpoints: `/api/entities` and `/api/entities/{id}/relationships`
