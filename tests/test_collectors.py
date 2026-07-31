@@ -114,6 +114,24 @@ class TestShellCollector:
         assert _parse_zsh_line(": 1712345678:0;ls -la") == "ls -la"
         assert _parse_zsh_line("") is None
         assert _parse_zsh_line("plain command") == "plain command"
+
+    def test_parse_bash_line(self):
+        from jarvis.collectors.shell import _parse_bash_line
+        assert _parse_bash_line("ls -la") == "ls -la"
+        assert _parse_bash_line("") is None
+
+    def test_parse_fish_line(self):
+        from jarvis.collectors.shell import _parse_fish_line
+        assert _parse_fish_line("- cmd: ls -la") == "cmd: ls -la"
+        assert _parse_fish_line("") is None
+
+    @patch("jarvis.collectors.shell.HISTORY_PATHS", [])
+    def test_sync_shell_no_history(self, mock_store):
+        from jarvis.collectors.shell import sync_shell
+        count = sync_shell(mock_store)
+        assert count == 0
+
+
 # ---------------------------------------------------------------------------
 # calendar collector
 # ---------------------------------------------------------------------------
@@ -328,22 +346,6 @@ class TestRemindersCollector:
         mock_conn.return_value.execute.return_value = mock_cursor
         count = sync_reminders(mock_store)
         assert isinstance(count, int)
-
-    def test_parse_bash_line(self):
-        from jarvis.collectors.shell import _parse_bash_line
-        assert _parse_bash_line("ls -la") == "ls -la"
-        assert _parse_bash_line("") is None
-
-    def test_parse_fish_line(self):
-        from jarvis.collectors.shell import _parse_fish_line
-        assert _parse_fish_line("- cmd: ls -la") == "cmd: ls -la"
-        assert _parse_fish_line("") is None
-
-    @patch("jarvis.collectors.shell.HISTORY_PATHS", [])
-    def test_sync_shell_no_history(self, mock_store):
-        from jarvis.collectors.shell import sync_shell
-        count = sync_shell(mock_store)
-        assert count == 0
 
 
 # ---------------------------------------------------------------------------

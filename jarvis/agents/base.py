@@ -33,7 +33,7 @@ class BaseAgent:
     """Base class for all coding agents."""
 
     name: str = "base"
-    model: str = "qwen2.5:7b-instruct-q4_K_M"
+    model: str = "llama3.2:1b"
     description: str = "Base agent — does nothing specific"
 
     def __init__(self, project_root: str | Path):

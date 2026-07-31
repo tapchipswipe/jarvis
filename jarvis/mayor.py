@@ -51,7 +51,7 @@ DAY_START = 8   # 8am
 DAY_END = 23    # 11pm
 
 IDEA_PARSER_MODEL = "llama3.2:1b"
-CODING_MODEL = "qwen2.5:7b-instruct-q4_K_M"
+CODING_MODEL = "llama3.2:1b"
 MEMORY_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 
 POLL_INTERVAL = 30  # seconds between task queue checks
