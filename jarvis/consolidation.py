@@ -28,9 +28,9 @@ def summarize_cluster(memories: list[dict], prompt: str) -> str | None:
         return None
     combined = "\n\n".join(f"[{m['timestamp']}] [{m['source']}] {m['content']}" for m in memories)
     brain_store = Store()
-    jarvis = Brain(jarvis_store)
+    jarvis = Brain(brain_store)
     try:
-        resp, _ = brain.query(f"{prompt}\n\nMESSAGES:\n{combined}", n_results=0)
+        resp, _ = jarvis.query(f"{prompt}\n\nMESSAGES:\n{combined}", n_results=0)
         return resp
     except Exception:
         return None

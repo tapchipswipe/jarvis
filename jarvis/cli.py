@@ -6,7 +6,9 @@ from jarvis.brain import Brain
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
 from jarvis.classifier import classify
+from jarvis.consolidation import run_daily, run_weekly, run_monthly
 from jarvis.routes import classify_existing
+from jarvis.sessions import SessionDB
 from datetime import datetime, timedelta
 
 
@@ -104,25 +106,6 @@ def timeline(days, n):
         click.echo(f"{r['timestamp']} [{r['source']}] {tags}")
         click.echo(f"  {r['content'][:200]}")
         click.echo("")
-
-
-@cli.command()
-@click.option("-n", default=30, help="Number of top tags/entities")
-def graph(n):
-    store = Store()
-    cur = store.conn.execute("SELECT tags FROM memories WHERE superseded = 0")
-    from collections import Counter
-    tag_counts = Counter()
-    for row in cur:
-        for tag in json.loads(row["tags"]):
-            tag_counts[tag] += 1
-    store.close()
-    if not tag_counts:
-        click.echo("No tags found.")
-        return
-    click.echo("Top tags/entities:")
-    for tag, count in tag_counts.most_common(n):
-        click.echo(f"  {tag}: {count}")
 
 
 @cli.command()
@@ -363,63 +346,73 @@ def explore(source, tag, tier, route, device, n, offset):
 
 @cli.command()
 @click.option("--model", default=None, help="Model override")
-@click.option("--verbose", is_flag=True, help="Show full source context")
-def chat(model, verbose):
+@click.option("--verbose", is_flag=True, help="Show tool calls and sources")
+@click.option("--new", "is_new", is_flag=True, help="Start a fresh session")
+@click.option("--resume", default=None, help="Resume session by ID")
+@click.option("--max-steps", default=8, type=int, help="Max agent steps per turn")
+def chat(model, verbose, is_new, resume, max_steps):
+    """Chat with your Jarvis agent. Supports multi-turn dialogue with tool use."""
+    session_db = SessionDB()
     store = Store()
-    brain = Brain(store, model=model) if model else Brain(store)
-    session = []
-    last_memories = []
-    click.echo("Chat with your Jarvis. Ctrl+C or /quit to exit. Commands: /sources /clear /alerts /upgrade /quit")
+
+    # Determine session ID
+    session_id = None
+    if resume:
+        session_id = resume
+        session = session_db.get_session(session_id)
+        if not session:
+            click.echo(f"Session {session_id} not found. Starting a new session.")
+            is_new = True
+            session_id = None
+    if is_new or not session_id:
+        title = click.prompt("Session title", default="New Chat")
+        session_id = session_db.create_session(title=title)
+        click.echo(f"New session: {session_id}")
+
+    # Show history
+    messages = session_db.get_messages(session_id, limit=20)
+    if messages:
+        click.echo(f"--- Session loaded ({len(messages)} messages) ---")
+        for m in messages[-10:]:
+            role_badge = {"user": "you", "assistant": "jarvis", "tool": "tool"}.get(m["role"], m["role"])
+            content_preview = (m.get("content") or "")[:120]
+            click.echo(f"  [{role_badge}] {content_preview}")
+
+    click.echo("Commands: /quit  /clear  /sources")
     try:
         while True:
             user_input = click.prompt("you")
             if user_input.strip().lower() in ("/quit", "/exit", "/q"):
-                if brain.save_session(session):
-                    click.echo("Session saved.")
-                click.echo("Exiting chat.")
+                click.echo("Session saved. Goodbye.")
                 break
             if user_input.strip().lower() == "/clear":
-                session.clear()
-                last_memories = []
+                session_db.append_message(session_id, "user", "/clear")
+                session_db.append_message(session_id, "assistant", "Session cleared.")
                 click.echo("Session cleared.")
                 continue
             if user_input.strip().lower() == "/sources":
-                if not last_memories:
-                    click.echo("No sources from last response.")
-                    continue
-                click.echo("Sources:")
-                for m in last_memories:
-                    tags = ", ".join(json.loads(m["tags"])) if m["tags"] else ""
-                    click.echo(f"  [{m['source']}] [{m['tier']}] {m['timestamp']} {tags}")
-                    click.echo(f"    {m['content'][:250]}")
-                    click.echo(f"    id={m['id']}")
+                msgs = session_db.get_messages(session_id, limit=100)
+                tool_msgs = [m for m in msgs if m["role"] == "system" or ("tool" in (m.get("tool_calls") or "{}"))]
+                click.echo(f"Last {len(tool_msgs)} tool interactions:")
+                for m in tool_msgs[-10:]:
+                    tc = m.get("tool_calls") or "{}"
+                    click.echo(f"  {m['role']}: {json.dumps(tc)[:100]}")
                 continue
-            if user_input.strip().lower() == "/alerts":
-                _show_alerts(brain)
-                continue
-            if user_input.strip().lower().startswith("/upgrade "):
-                feature = user_input.strip()[9:]
-                added = brain.upgrade(feature)
-                if added:
-                    click.echo(f"jarvis: Upgrade request recorded: {feature}")
-                else:
-                    click.echo("jarvis: Already recorded.")
-                continue
-            response, memories, source_count = brain.chat(session, user_input)
-            last_memories = memories
-            click.echo(f"jarvis: {response}")
-            badge = f"[{source_count} sources]" if source_count > 0 else "[no sources]"
-            click.echo(f"  {badge}")
-            if verbose and memories:
-                click.echo("  Details:")
-                for m in memories[:3]:
-                    tags = ", ".join(json.loads(m["tags"])) if m["tags"] else ""
-                    click.echo(f"    - [{m['source']}] {m['timestamp']} {tags}")
-                    click.echo(f"      {m['content'][:200]}")
+
+            answer, tool_log = run_turn(
+                user_input, session_id, session_db,
+                store_db=store, max_steps=max_steps, verbose=verbose
+            )
+            click.echo(f"jarvis: {answer}")
+            if verbose and tool_log:
+                click.echo(f"  [tools: {len(tool_log)} calls]")
+                for entry in tool_log:
+                    click.echo(f"    → {entry['tool']}({json.dumps(entry['args'])[:80]})")
     except click.Abort:
-        click.echo("\nExiting chat.")
+        click.echo("\nGoodbye.")
     finally:
         store.close()
+        session_db.close()
 
 
 def _show_alerts(brain: Brain):
@@ -477,6 +470,105 @@ def alerts(hours, n):
             click.echo(f"    {item['content'][:150]}")
         if len(items) > 3:
             click.echo(f"  ... and {len(items) - 3} more")
+
+
+
+
+@cli.command()
+@click.argument("title")
+@click.argument("body")
+def notify(title, body):
+    """Send a test notification (terminal-notifier → osascript → log)."""
+    from jarvis.notify import send_notification
+    send_notification(title, body)
+    click.echo(f"Sent: [{title}] {body}")
+
+
+
+consolidate = click.Group(name="consolidate")
+cli.add_command(consolidate, name="consolidate")
+
+
+@consolidate.command()
+def daily():
+    added = run_daily()
+    click.echo(f"Daily consolidation complete. {added} new session summary(ies) stored.")
+
+
+@consolidate.command()
+def weekly():
+    added = run_weekly()
+    if added:
+        click.echo(f"Weekly consolidation complete. {added} new reflection(s) stored.")
+    else:
+        click.echo("Weekly consolidation skipped (insufficient sessions).")
+
+
+
+@cli.command(name="graph")
+@click.argument("action", default="build")
+@click.option("--hours", default=24, help="Lookback window for inference")
+@click.option("-n", default=500, help="Max memories to scan")
+def graph_cmd(action, hours, n):
+    """Knowledge Graph utilities.
+
+    jarvis graph build   - run entity extraction + relationship inference
+    """
+    if action != "build":
+        click.echo(f"Unknown graph action: {action}")
+        return
+    store = Store()
+    try:
+        from jarvis.graph import infer_relationships
+        from jarvis.extract_entities import extract_entities
+    except ImportError as e:
+        click.echo(f"Graph modules unavailable: {e}")
+        store.close()
+        return
+    click.echo(f"Scanning last {hours}h of memories (limit {n})...")
+    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+    rows = store.conn.execute(
+        "SELECT id, source, content FROM memories WHERE tier = 'raw' AND timestamp >= ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?",
+        (cutoff, n)
+    ).fetchall()
+    entities_linked = 0
+    for row in rows:
+        mid = row["id"]
+        source = row["source"] or ""
+        content = row["content"] or ""
+        ents = extract_entities(content, source_type=source)
+        for ent in ents:
+            eid = store.get_or_create_entity(ent["name"], entity_type=ent.get("type", "person"))
+            if eid:
+                store.link_memory_entity(mid, eid)
+                entities_linked += 1
+    infer_relationships(store, limit_hours=hours, max_memories=n)
+    stats = store.conn.execute(
+        "SELECT entity_type, COUNT(*) as c FROM entities GROUP BY entity_type"
+    ).fetchall()
+    click.echo(f"Linked {entities_linked} entity mentions.")
+    if stats:
+        click.echo("Entities:" + ", ".join(f"{r['entity_type']}={r['c']}" for r in stats))
+    else:
+        click.echo("No entities yet.")
+    store.close()
+
+
+@consolidate.command()
+def monthly():
+    added = run_monthly()
+    if added:
+        click.echo(f"Monthly consolidation complete. {added} new arc(s) stored.")
+    else:
+        click.echo("Monthly consolidation skipped (insufficient reflections).")
+
+@cli.command()
+@click.option("--port", default=8766, help="Port to run the dashboard on")
+@click.option("--daemon-url", default="http://127.0.0.1:8765", help="Daemon base URL")
+def dashboard(port, daemon_url):
+    """Start the Jarvis web dashboard (FastAPI + UVicorn)."""
+    from jarvis.dashboard import run_dashboard
+    run_dashboard(port=port, daemon_url=daemon_url)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,7 @@ class Store:
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_db()
+        self.conn.execute("PRAGMA journal_mode=WAL")
 
     def _init_db(self):
         self.conn.executescript("""
@@ -66,6 +67,37 @@ class Store:
                 items_added INTEGER,
                 items_skipped INTEGER
             );
+            CREATE TABLE IF NOT EXISTS decision_log (
+                ts TEXT,
+                memory_id TEXT,
+                route TEXT,
+                confidence TEXT,
+                envelope TEXT,
+                applied INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS entities (
+                id TEXT PRIMARY KEY,
+                canonical_name TEXT NOT NULL,
+                entity_type TEXT DEFAULT 'person',
+                source_count INTEGER DEFAULT 0,
+                first_seen TEXT,
+                last_seen TEXT
+            );
+            CREATE TABLE IF NOT EXISTS memory_entities (
+                memory_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                confidence REAL DEFAULT 1.0,
+                PRIMARY KEY(memory_id, entity_id)
+            );
+            CREATE TABLE IF NOT EXISTS relationships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_entity TEXT NOT NULL,
+                target_entity TEXT NOT NULL,
+                relation_type TEXT DEFAULT 'related',
+                source_memory_id TEXT,
+                confidence REAL DEFAULT 0.5,
+                created_at TEXT
+            );
         """)
         self.conn.commit()
         self._migrate()
@@ -77,6 +109,12 @@ class Store:
             CREATE INDEX IF NOT EXISTS idx_memories_route ON memories(route);
             CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at);
             CREATE INDEX IF NOT EXISTS idx_memories_content_hash ON memories(content_hash);
+            CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
+            CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_id);
+            CREATE INDEX IF NOT EXISTS idx_memory_entities_entity ON memory_entities(entity_id);
+            CREATE INDEX IF NOT EXISTS idx_relationships_source ON relationships(source_entity);
+            CREATE INDEX IF NOT EXISTS idx_relationships_target ON relationships(target_entity);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_name ON entities(canonical_name);
         """)
         self.conn.commit()
 
@@ -130,13 +168,75 @@ class Store:
     def _tier_weight(self, tier: str) -> float:
         return TIER_WEIGHTS.get(tier, 0.3)
 
+    # --- Knowledge Graph methods ---
+
+    def get_or_create_entity(self, canonical_name: str, entity_type: str = "person") -> str | None:
+        """Return entity id for canonical_name, creating it if absent."""
+        if not canonical_name:
+            return None
+        now = datetime.utcnow().isoformat()
+        row = self.conn.execute(
+            "SELECT id, source_count, first_seen FROM entities WHERE canonical_name = ?",
+            (canonical_name,)
+        ).fetchone()
+        if row:
+            eid = row["id"]
+            self.conn.execute(
+                "UPDATE entities SET source_count = source_count + 1, last_seen = ? WHERE id = ?",
+                (now, eid)
+            )
+            self.conn.commit()
+            return eid
+        eid = hashlib.sha256(canonical_name.encode()).hexdigest()[:24]
+        self.conn.execute(
+            "INSERT INTO entities (id, canonical_name, entity_type, source_count, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
+            (eid, canonical_name, entity_type, 1, now, now)
+        )
+        self.conn.commit()
+        return eid
+
+    def link_memory_entity(self, memory_id: str, entity_id: str, confidence: float = 1.0):
+        """Associate a memory with an entity"""
+        if not memory_id or not entity_id:
+            return
+        self.conn.execute(
+            "INSERT OR REPLACE INTO memory_entities (memory_id, entity_id, confidence) VALUES (?, ?, ?)",
+            (memory_id, entity_id, confidence)
+        )
+        self.conn.commit()
+
+    def add_relationship(self, source_entity: str, target_entity: str, relation_type: str, source_memory_id: str, confidence: float):
+        """Create a relationship edge between two entities"""
+        if not source_entity or not target_entity:
+            return
+        now = datetime.utcnow().isoformat()
+        # Upsert: if same pair + relation exists, keep best confidence
+        existing = self.conn.execute(
+            "SELECT id, confidence FROM relationships WHERE source_entity = ? AND target_entity = ? AND relation_type = ?",
+            (source_entity, target_entity, relation_type)
+        ).fetchone()
+        if existing:
+            best_conf = max(existing["confidence"], confidence)
+            if confidence >= existing["confidence"]:
+                self.conn.execute(
+                    "UPDATE relationships SET confidence = ?, source_memory_id = ?, created_at = ? WHERE id = ?",
+                    (best_conf, source_memory_id, now, existing["id"])
+                )
+            self.conn.commit()
+            return
+        self.conn.execute(
+            "INSERT INTO relationships (source_entity, target_entity, relation_type, source_memory_id, confidence, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (source_entity, target_entity, relation_type, source_memory_id, confidence, now)
+        )
+        self.conn.commit()
+
     def add(self, fid: str, source: str, source_id: str, timestamp: str, content: str, tags: list, metadata: dict, embedding: list[float], tier: str = "raw", expires_at: str | None = None, consolidated_from: str | None = None, superseded: bool = False, route: str = "unclassified"):
         content_hash = self._content_hash(content)
         if self.exists_by_content(content_hash):
             self.merge_device_tags(content_hash, tags)
-            return False
+            return True
         if self.exists(fid):
-            return False
+            return True
         weight = self._tier_weight(tier)
         now = datetime.utcnow().isoformat()
         self.conn.execute(
@@ -156,7 +256,10 @@ class Store:
         metadatas = results.get("metadatas", [[]])[0]
         rows = []
         for doc_id, doc, meta in zip(ids, docs, metadatas):
-            row = self.conn.execute("SELECT * FROM memories WHERE id = ? AND superseded = 0", (doc_id,)).fetchone()
+            if source_filter:
+                row = self.conn.execute("SELECT * FROM memories WHERE id = ? AND superseded = 0 AND source = ?", (doc_id, source_filter)).fetchone()
+            else:
+                row = self.conn.execute("SELECT * FROM memories WHERE id = ? AND superseded = 0", (doc_id,)).fetchone()
             if row:
                 rows.append(dict(row))
         if re_rank and rows:

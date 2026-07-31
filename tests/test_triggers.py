@@ -1,0 +1,277 @@
+"""
+Tests for jarvis/triggers.py
+
+Covers:
+  - TimeTrigger cron matching (HH:MM and 5-field cron)
+  - EventTrigger fire-once semantics
+  - PollTrigger interval logic
+  - TriggerEngine dispatch (never propagates exceptions)
+  - Action dispatch (notify, brief, escalate)
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone, timedelta
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+from jarvis.triggers import (
+    Trigger,
+    TriggerContext,
+    TriggerError,
+    TriggerCooldown,
+    TimeTrigger,
+    EventTrigger,
+    PollTrigger,
+    TriggerEngine,
+    _dispatch_action,
+    _instantiate,
+    load_triggers,
+    CLASS_MAP,
+    HARDCODED_TRIGGERS,
+)
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _make_ctx(dt=None, **kwargs):
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    defaults = dict(
+        now=dt,
+        last_ingest_ts=None,
+        activity_log=[],
+        pending_queue=[],
+        retry_queue=[],
+        trigger_events={},
+        memory_count=0,
+        last_memory_ts=None,
+        extra={},
+    )
+    defaults.update(kwargs)
+    return TriggerContext(**defaults)
+
+
+# ── TimeTrigger ───────────────────────────────────────────────────────────────
+
+def test_time_trigger_daily_matches():
+    t = TimeTrigger(name="morning", actions=[], cron_expr="08:00")
+    ctx = _make_ctx(dt=datetime(2025, 6, 15, 8, 0, 0, tzinfo=timezone.utc))
+    assert t.should_fire(ctx) is True
+
+
+def test_time_trigger_daily_no_match():
+    t = TimeTrigger(name="morning", actions=[], cron_expr="08:00")
+    ctx = _make_ctx(dt=datetime(2025, 6, 15, 9, 0, 0, tzinfo=timezone.utc))
+    assert t.should_fire(ctx) is False
+
+
+def test_time_trigger_cron_field():
+    t = TimeTrigger(name="every-5-min", actions=[], cron_expr="*/5 * * * *")
+    ctx = _make_ctx(dt=datetime(2025, 6, 15, 10, 5, 0, tzinfo=timezone.utc))
+    assert t.should_fire(ctx) is True
+
+
+def test_time_trigger_cron_no_match():
+    t = TimeTrigger(name="every-5-min", actions=[], cron_expr="*/5 * * * *")
+    ctx = _make_ctx(dt=datetime(2025, 6, 15, 10, 3, 0, tzinfo=timezone.utc))
+    assert t.should_fire(ctx) is False
+
+
+def test_time_trigger_dedup_same_minute():
+    t = TimeTrigger(name="morning", actions=[], cron_expr="08:00")
+    dt = datetime(2025, 6, 15, 8, 0, 30, tzinfo=timezone.utc)
+    ctx = _make_ctx(dt=dt)
+    assert t.should_fire(ctx) is True
+    ctx2 = _make_ctx(dt=dt.replace(second=59))
+    assert t.should_fire(ctx2) is False
+
+
+def test_time_trigger_invalid_expr_raises():
+    with pytest.raises(TriggerError):
+        TimeTrigger(name="bad", actions=[], cron_expr="invalid")
+
+
+# ── EventTrigger ──────────────────────────────────────────────────────────────
+
+def test_event_trigger_fires_when_event_present():
+    t = EventTrigger(name="on-urgent", actions=[], event_name="urgent_email")
+    ctx = _make_ctx(trigger_events={"urgent_email": {"fired_at": None}})
+    assert t.should_fire(ctx) is True
+
+
+def test_event_trigger_does_not_fire_when_no_event():
+    t = EventTrigger(name="on-urgent", actions=[], event_name="urgent_email")
+    ctx = _make_ctx(trigger_events={})
+    assert t.should_fire(ctx) is False
+
+
+def test_event_trigger_one_shot_after_fire():
+    t = EventTrigger(name="on-urgent", actions=[], event_name="urgent_email")
+    ctx = _make_ctx(trigger_events={"urgent_email": {"fired_at": "2025-01-01T00:00:00+00:00"}})
+    assert t.should_fire(ctx) is False
+
+
+def test_event_trigger_resets_after_window():
+    t = EventTrigger(name="on-urgent", actions=[], event_name="urgent_email", reset_after=3600)
+    fired = datetime(2025, 6, 15, 7, 0, 0, tzinfo=timezone.utc)
+    ctx = _make_ctx(
+        dt=datetime(2025, 6, 15, 8, 0, 0, tzinfo=timezone.utc),
+        trigger_events={"urgent_email": {"fired_at": fired.isoformat()}},
+    )
+    assert t.should_fire(ctx) is True
+
+
+# ── PollTrigger ───────────────────────────────────────────────────────────────
+
+def test_poll_trigger_first_fire():
+    t = PollTrigger(name="calendar-check", actions=[], interval_seconds=1800)
+    ctx = _make_ctx(trigger_events={})
+    assert t.should_fire(ctx) is True
+
+
+def test_poll_trigger_within_interval():
+    t = PollTrigger(name="calendar-check", actions=[], interval_seconds=1800)
+    now = datetime.now(timezone.utc)
+    ctx = _make_ctx(
+        dt=now,
+        trigger_events={"calendar-check": {"last_poll_ts": (now - timedelta(seconds=600)).isoformat()}},
+    )
+    assert t.should_fire(ctx) is False
+
+
+def test_poll_trigger_after_interval():
+    t = PollTrigger(name="calendar-check", actions=[], interval_seconds=1800)
+    now = datetime.now(timezone.utc)
+    ctx = _make_ctx(
+        dt=now,
+        trigger_events={"calendar-check": {"last_poll_ts": (now - timedelta(seconds=2000)).isoformat()}},
+    )
+    assert t.should_fire(ctx) is True
+
+
+def test_poll_trigger_max_count():
+    t = PollTrigger(name="limited", actions=[], interval_seconds=1, count=2)
+    t._fire_count = 2
+    ctx = _make_ctx()
+    assert t.should_fire(ctx) is False
+
+
+# ── Trigger base / evaluate ───────────────────────────────────────────────────
+
+def test_trigger_disabled_returns_empty():
+    t = TimeTrigger(name="disabled", actions=[], cron_expr="08:00", enabled=False)
+    ctx = _make_ctx()
+    assert t.evaluate(ctx) == []
+
+
+def test_trigger_unknown_action_type_raises():
+    with pytest.raises(TriggerError):
+        _dispatch_action({"type": "nonexistent"}, _make_ctx())
+
+
+# ── _instantiate / CLASS_MAP ──────────────────────────────────────────────────
+
+def test_class_map_has_all_types():
+    assert CLASS_MAP["time"] is TimeTrigger
+    assert CLASS_MAP["event"] is EventTrigger
+    assert CLASS_MAP["poll"] is PollTrigger
+
+
+def test_instantiate_time_trigger():
+    raw = {"type": "time", "name": "test", "cron_expr": "08:00", "actions": []}
+    t = _instantiate(raw)
+    assert isinstance(t, TimeTrigger)
+    assert t.name == "test"
+
+
+def test_instantiate_unknown_type_raises():
+    with pytest.raises(TriggerError):
+        _instantiate({"type": "unknown", "name": "x", "actions": []})
+
+
+# ── TriggerEngine ─────────────────────────────────────────────────────────────
+
+def test_engine_evaluate_never_raises():
+    """Engine should catch exceptions from individual triggers."""
+    bad_trigger = MagicMock()
+    bad_trigger.TYPE = "time"
+    bad_trigger.evaluate.side_effect = RuntimeError("boom")
+
+    good_trigger = TimeTrigger(name="ok", actions=[], cron_expr="08:00")
+    engine = TriggerEngine([bad_trigger, good_trigger])
+
+    store = MagicMock()
+    store.conn.execute.return_value.fetchone.return_value = (0, None)
+    state = MagicMock()
+
+    engine.evaluate(store=store, state=state)
+
+
+def test_engine_raise_event():
+    engine = TriggerEngine([])
+    engine.raise_event("test_event", {"payload": "value"})
+    assert "test_event" in engine._events
+    assert engine._events["test_event"]["fired_at"] is not None
+
+
+def test_engine_updates_poll_ts():
+    t = PollTrigger(name="poll-test", actions=[{"type": "notify", "title": "Test", "body": "Poll fired"}], interval_seconds=1)
+    engine = TriggerEngine([t])
+    store = MagicMock()
+    store.conn.execute.return_value.fetchone.return_value = (0, None)
+    state = MagicMock()
+
+    with patch("jarvis.triggers._dispatch_action", return_value="ok"):
+        engine.evaluate(store=store, state=state)
+
+    assert "poll-test" in engine._events
+    assert "last_poll_ts" in engine._events["poll-test"]
+
+
+# ── Action dispatch ───────────────────────────────────────────────────────────
+
+@patch("jarvis.triggers.send_notification")
+def test_action_notify(mock_notify):
+    result = _dispatch_action({"type": "notify", "title": "Test", "body": "Hello"}, _make_ctx())
+    assert result == "notify:Test"
+    mock_notify.assert_called_once_with("Test", "Hello")
+
+
+@patch("jarvis.triggers.write_briefing")
+def test_action_brief(mock_brief):
+    mock_brief.return_value = "/tmp/briefing.md"
+    result = _dispatch_action({"type": "brief", "title": "Brief", "content": "Content"}, _make_ctx())
+    assert result == "brief:/tmp/briefing.md"
+    mock_brief.assert_called_once()
+
+
+@patch("jarvis.triggers.send_notification")
+def test_action_escalate(mock_notify):
+    result = _dispatch_action({"type": "escalate", "reason": "Check this"}, _make_ctx())
+    assert "escalate:" in result
+    mock_notify.assert_called_once()
+
+
+# ── load_triggers ─────────────────────────────────────────────────────────────
+
+def test_load_triggers_returns_defaults():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        triggers = load_triggers(config_path=Path(tmp) / "nonexistent.toml")
+    assert len(triggers) > 0
+    names = {t.name for t in triggers}
+    assert "morning-brief" in names
+    assert "end-of-day-wrap" in names
+    assert "upcoming-events-poll" in names
+
+
+# ── Template rendering ────────────────────────────────────────────────────────
+
+def test_render_template_substitution():
+    from jarvis.triggers import _render_template
+    ctx = _make_ctx(memory_count=42, last_ingest_ts="2025-01-01T00:00:00+00:00", pending_queue=[{"x": 1}, {"y": 2}])
+    result = _render_template("Count: {memory_count}, Pending: {pending_count}", ctx)
+    assert "42" in result
+    assert "2" in result

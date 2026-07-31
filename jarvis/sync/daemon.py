@@ -22,6 +22,12 @@ from jarvis.classifier import classify, validate_envelope, apply_envelope
 from jarvis.routes import ROUTE_TAG_MAP
 from jarvis.device_id import get_device_id
 
+try:
+    from jarvis.triggers import TriggerEngine, load_triggers
+except ImportError:
+    TriggerEngine = None  # type: ignore[assignment,misc]
+    load_triggers = None  # type: ignore[assignment]
+
 SYSTEM = platform.system()
 if SYSTEM == "Windows":
     DEFAULT_INBOX = Path("C:/data/jarvis/inbox")
@@ -39,6 +45,7 @@ CONFIG_FILE = STATE_DIR / "config.toml"
 RETRY_BACKOFFS = [60, 300, 1800, 7200]
 MAX_RETRIES = 5
 WATCHDOG_POLL_INTERVAL = 5
+TRIGGER_POLL_INTERVAL = 60
 
 running = True
 
@@ -385,6 +392,68 @@ class DaemonHTTPHandler(BaseHTTPRequestHandler):
             })
         elif path == "/conflicts":
             self._json(self.state.conflicts)
+        elif path == "/entities":
+            q = ""
+            if parsed.query:
+                q = dict(x.split("=") for x in parsed.query.split("&") if "=" in x).get("q", "")
+            if q:
+                try:
+                    from jarvis.graph import resolve_entity
+                    row = self.store.conn.execute(
+                        "SELECT id, canonical_name, entity_type, source_count, first_seen, last_seen FROM entities WHERE canonical_name LIKE ?",
+                        (f"%{q}%",)
+                    ).fetchall()
+                    results = [dict(r) for r in row]
+                    # If exact-ish fuzzy match, resolve to exact id
+                    ent_id = resolve_entity(self.store, q)
+                    if ent_id and not any(r["id"] == ent_id for r in results):
+                        erow = self.store.conn.execute("SELECT id, canonical_name, entity_type, source_count, first_seen, last_seen FROM entities WHERE id = ?", (ent_id,)).fetchone()
+                        if erow:
+                            results.insert(0, dict(erow))
+                    self._json(results)
+                except ImportError:
+                    self._json([], 200)
+            else:
+                self._json([], 200)
+        elif path.startswith("/entity/"):
+            eid = path.split("/")[-1]
+            row = self.store.conn.execute(
+                "SELECT id, canonical_name, entity_type, source_count, first_seen, last_seen FROM entities WHERE id = ?",
+                (eid,)
+            ).fetchone()
+            if not row:
+                self._json({"error": "not found"}, 404)
+            else:
+                ent = dict(row)
+                # include related entities
+                try:
+                    from jarvis.graph import get_related
+                    ent["related"] = get_related(self.store, eid)
+                except ImportError:
+                    ent["related"] = []
+                self._json(ent)
+        elif path == "/relationships":
+            entity_id = ""
+            if parsed.query:
+                entity_id = dict(x.split("=") for x in parsed.query.split("&") if "=" in x).get("entity", "")
+            if not entity_id:
+                self._json({"error": "missing entity param"}, 400)
+            else:
+                rows = self.store.conn.execute(
+                    """
+                    SELECT r.id, r.source_entity, r.target_entity, r.relation_type,
+                           r.confidence, r.created_at, r.source_memory_id,
+                           s.canonical_name AS source_name,
+                           t.canonical_name AS target_name
+                    FROM relationships r
+                    JOIN entities s ON r.source_entity = s.id
+                    JOIN entities t ON r.target_entity = t.id
+                    WHERE r.source_entity = ? OR r.target_entity = ?
+                    ORDER BY r.confidence DESC
+                    """,
+                    (entity_id, entity_id)
+                ).fetchall()
+                self._json([dict(r) for r in rows])
         else:
             self._json({"error": "not found"}, 404)
 
@@ -424,6 +493,7 @@ class Daemon:
         self.state = DaemonState()
         self.store = Store()
         self.handler = IngestHandler(self.state, self.store, self.inbox_dir, self.cfg)
+        self.trigger_engine = self._build_trigger_engine()
         self.observer = None
         self.httpd = None
         self._write_pid()
@@ -446,6 +516,20 @@ class Daemon:
                 self.handler._enqueue(p)
         self.handler.process_pending()
         self.state.save()
+
+    def _build_trigger_engine(self) -> 'TriggerEngine | None':
+        if TriggerEngine is None or load_triggers is None:
+            self.logger.warning('TriggerEngine not available; skipping trigger thread')
+            return None
+        try:
+            triggers = load_triggers()
+            engine = TriggerEngine(triggers)
+            self.logger.info('TriggerEngine loaded with %d trigger(s)', len(triggers))
+            return engine
+        except Exception as exc:
+            self.logger.error('Failed to build TriggerEngine: %s', exc, exc_info=True)
+            return None
+
 
     def _start_watchdog(self):
         self.observer = watchdog.observers.Observer()
@@ -471,6 +555,20 @@ class Daemon:
             self.handler.process_retry_queue()
             self.state.save()
 
+    def _trigger_loop(self) -> None:
+        '''Background thread: evaluate triggers every TRIGGER_POLL_INTERVAL s.'''
+        if self.trigger_engine is None:
+            return
+        # Wait a little after startup so the initial catch-up settles
+        time.sleep(30)
+        while running:
+            try:
+                self.trigger_engine.evaluate(self.store, self.state)
+            except Exception as exc:
+                self.logger.error('Trigger loop error: %s', exc, exc_info=True)
+            time.sleep(TRIGGER_POLL_INTERVAL)
+
+
     def start(self):
         logger.info("Daemon started (PID %d)", os.getpid())
         self._catch_up()
@@ -478,6 +576,10 @@ class Daemon:
         self._start_http()
         t = threading.Thread(target=self._retry_loop, daemon=True)
         t.start()
+        if self.trigger_engine is not None:
+            tt = threading.Thread(target=self._trigger_loop, daemon=True)
+            tt.start()
+            self.logger.info('Trigger thread started (interval=%ds)', TRIGGER_POLL_INTERVAL)
         try:
             while running:
                 time.sleep(1)

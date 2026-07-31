@@ -48,6 +48,10 @@ kilocode/
 node_modules/
 .env
 .env.*
+.claude/
+.coverage
+htmlcov/
+.hypothesis/
 service/*.plist
 Library/LaunchAgents/*.plist
 
