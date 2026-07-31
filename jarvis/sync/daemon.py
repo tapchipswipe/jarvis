@@ -244,10 +244,10 @@ class IngestHandler(FileSystemEventHandler):
         if isinstance(sidecar, dict):
             meta["sidecar"] = sidecar
         chunks = chunk_document(text, metadata=meta)
-        emb = get_embedding(text[:4000])
         added = 0
         for i, chunk in enumerate(chunks):
             cid = f"{fid}-{i}"
+            emb = get_embedding(chunk["text"])
             self.store.add(cid, "device", source_id, ts_iso, chunk["text"], base_tags, meta, emb, route=route or "unclassified")
             added += 1
         if sidecar and route and route != "unclassified":
@@ -266,13 +266,13 @@ class IngestHandler(FileSystemEventHandler):
             if validate_envelope(envelope):
                 apply_envelope(self.store, fid, envelope, log=True)
         elif not sidecar:
-            self._classify_and_apply(fid, text, source_id, base_tags, meta, emb, chunks)
+            self._classify_and_apply(fid, text, source_id, base_tags, meta, chunks)
         self.state.last_ingest_ts = ts_iso
         self.state.devices[device_id] = {"last_seen": ts_iso, "last_push": ts_iso}
         self.state.log_activity(f"{device_id}: ingested {added} chunk(s) from {path.name}")
         logger.info("Ingested %s -> %d chunks [device=%s]", path, added, device_id)
 
-    def _classify_and_apply(self, fid, text, source_id, tags, meta, emb, chunks):
+    def _classify_and_apply(self, fid, text, source_id, tags, meta, chunks):
         try:
             envelope = classify(text, source_id=source_id, model=self.cfg.get("classifier_model"))
             if not validate_envelope(envelope):
@@ -339,7 +339,7 @@ class IngestHandler(FileSystemEventHandler):
             if path.exists():
                 try:
                     text = path.read_text(errors="ignore")
-                    self._classify_and_apply(item.get("hash", ""), text, str(path), [], {}, get_embedding(text[:4000]), chunk_document(text))
+                    self._classify_and_apply(item.get("hash", ""), text, str(path), [], {}, chunk_document(text))
                 except Exception as e:
                     logger.exception("Retry failed for %s: %s", item.get("path"), e)
                     item["attempts"] = item.get("attempts", 0) + 1

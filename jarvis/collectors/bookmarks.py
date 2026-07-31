@@ -31,10 +31,10 @@ def sync_bookmarks(store):
                 fid = fingerprint(source, source_id, text, ts)
                 if store.exists(fid):
                     continue
-                emb = get_embedding(text[:4000])
                 chunks = chunk_document(text, metadata={"url": bm.get("url", "")})
                 for i, chunk in enumerate(chunks):
                     cid = f"{fid}-{i}"
+                    emb = get_embedding(chunk["text"])
                     store.add(cid, source, source_id, ts, chunk["text"], ["bookmark"], {"url": bm.get("url", "")}, emb)
                     count += 1
         except Exception:

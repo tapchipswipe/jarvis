@@ -2,6 +2,7 @@ import json
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
+from pathlib import Path
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -142,7 +143,6 @@ class Brain:
         fid = fingerprint(source, "manual", text, datetime.utcnow().isoformat())
         metadata = {"tags": tags or []}
         chunks = chunk_document(text, metadata=metadata)
-        emb = get_embedding(text)
         extraction = extract_metadata(text) if not tags else {"tags": tags, "entities": []}
         auto_tags = extraction.get("tags", [])
         all_tags = list(dict.fromkeys((tags or []) + auto_tags))[:10]
@@ -151,6 +151,7 @@ class Brain:
             cid = f"{fid}-{i}"
             ct = datetime.utcnow().isoformat()
             chunk_meta = {**metadata, "entities": extraction.get("entities", [])}
+            emb = get_embedding(chunk["text"])
             self.store.add(cid, source, "manual", ct, chunk["text"], all_tags, chunk_meta, emb)
             added += 1
         if classify and added > 0:
@@ -177,11 +178,11 @@ class Brain:
         tags = ["correction", f"correction-of:{memory_id}"]
         meta = {"corrects": memory_id}
         chunks = chunk_document(correction_text, metadata=meta)
-        emb = get_embedding(correction_text)
         added = 0
         for i, chunk in enumerate(chunks):
             cid = f"{fid}-{i}"
             ct = datetime.utcnow().isoformat()
+            emb = get_embedding(chunk["text"])
             self.store.add(cid, "correction", memory_id, ct, chunk["text"], tags, meta, emb)
             added += 1
         return added
@@ -193,15 +194,15 @@ class Brain:
         tags = ["upgrade", status]
         meta = {"status": status}
         chunks = chunk_document(feature_request, metadata=meta)
-        emb = get_embedding(feature_request)
         added = 0
         for i, chunk in enumerate(chunks):
             cid = f"{fid}-{i}"
             ct = datetime.utcnow().isoformat()
+            emb = get_embedding(chunk["text"])
             self.store.add(cid, "upgrade", feature_request, ct, chunk["text"], tags, meta, emb)
             added += 1
         try:
-            upgrades_path = Path("C:/data/jarvis/UPGRADES.md")
+            upgrades_path = Path.home() / ".config" / "jarvis" / "UPGRADES.md"
             if upgrades_path.exists():
                 with open(upgrades_path, "a") as f:
                     ts = datetime.utcnow().strftime("%Y-%m-%d")

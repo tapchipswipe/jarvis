@@ -1,6 +1,7 @@
 import json
 import urllib.request
 import urllib.error
+from functools import lru_cache
 
 PROMPT_EXTRACT = """You are a knowledge extraction engine. Read the text below and output ONLY valid JSON with two arrays:
 {"tags": ["topic1", "topic2", ...], "entities": ["Person", "Place", "Concept", ...]}
@@ -32,6 +33,7 @@ def _ollama_generate(model: str, prompt: str) -> str:
         return ""
 
 
+@lru_cache(maxsize=None)
 def extract_metadata(text: str, model: str = "qwen2.5:7b-instruct-q4_K_M") -> dict:
     try:
         raw = _ollama_generate(model, PROMPT_EXTRACT.format(text=text[:2000]))

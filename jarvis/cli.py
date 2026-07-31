@@ -67,15 +67,21 @@ def remember(text, source, tag, classify):
 @click.option("-n", default=20, help="Number of results")
 def memories(source, tag, tier, n):
     store = Store()
-    cur = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 ORDER BY timestamp DESC LIMIT ?", (n * 3,))
-    rows = [dict(r) for r in cur.fetchall()]
+    query = "SELECT * FROM memories WHERE superseded = 0"
+    params = []
     if source:
-        rows = [r for r in rows if r["source"] == source]
+        query += " AND source = ?"
+        params.append(source)
     if tier:
-        rows = [r for r in rows if r["tier"] == tier]
+        query += " AND tier = ?"
+        params.append(tier)
     if tag:
-        rows = [r for r in rows if tag in json.loads(r["tags"])]
-    rows = sorted(rows, key=lambda r: r["timestamp"], reverse=True)[:n]
+        query += " AND EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)"
+        params.append(tag)
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(n)
+    cur = store.conn.execute(query, params)
+    rows = [dict(r) for r in cur.fetchall()]
     store.close()
     if not rows:
         click.echo("No memories found.")
@@ -94,9 +100,8 @@ def memories(source, tag, tier, n):
 def timeline(days, n):
     store = Store()
     cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
-    cur = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?", (cutoff, n * 3))
+    cur = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?", (cutoff, n))
     rows = [dict(r) for r in cur.fetchall()]
-    rows = sorted(rows, key=lambda r: r["timestamp"], reverse=True)[:n]
     store.close()
     if not rows:
         click.echo("No memories in timeline.")
@@ -401,7 +406,7 @@ def chat(model, verbose, is_new, resume, max_steps):
 
             answer, tool_log = run_turn(
                 user_input, session_id, session_db,
-                store_db=store, max_steps=max_steps, verbose=verbose
+                store_db=store, max_steps=max_steps, verbose=verbose, model=model
             )
             click.echo(f"jarvis: {answer}")
             if verbose and tool_log:
@@ -569,6 +574,139 @@ def dashboard(port, daemon_url):
     """Start the Jarvis web dashboard (FastAPI + UVicorn)."""
     from jarvis.dashboard import run_dashboard
     run_dashboard(port=port, daemon_url=daemon_url)
+
+
+@cli.command()
+@click.argument("idea")
+@click.option("--source", default="cli", help="Where the idea came from")
+def think(idea, source):
+    """Submit an idea to the Mayor. It will be parsed into a task and queued for review.
+
+    \b
+    Examples:
+      jarvis think "the dashboard graph should use D3.js"
+      jarvis think "add a /export command to dump memories as JSON"
+      jarvis think "scan for hardcoded API keys in the codebase"
+    """
+    import urllib.request, urllib.error, json
+    mayor_url = os.environ.get("MAYOR_URL", "http://127.0.0.1:8767")
+    payload = json.dumps({"idea": idea, "source": source}).encode()
+    req = urllib.request.Request(
+        f"{mayor_url}/idea",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+            click.echo(f"✅ Idea submitted!")
+            click.echo(f"   Task ID: {result.get('task_id', '?')}")
+            click.echo(f"   Agent:   {result.get('agent', '?')}")
+            click.echo(f"   Title:   {result.get('title', '?')}")
+            click.echo(f"   Status:  {result.get('status', '?')}")
+            click.echo(f"   Review at: jarvis task list")
+    except urllib.error.URLError:
+        click.echo("❌ Mayor not running. Start it with: jarvis mayor")
+    except Exception as e:
+        click.echo(f"❌ Error: {e}")
+
+
+@cli.group(name="task")
+def task_group():
+    """Manage the Mayor's task queue."""
+    pass
+
+
+@task_group.command()
+@click.option("--status", default=None, help="Filter by status (pending_review/approved/in_progress/completed/blocked)")
+@click.option("--agent", default=None, help="Filter by agent (code/design/qa/security/research)")
+def list(status, agent):
+    """List tasks in the queue."""
+    from jarvis.task_queue import TaskQueue
+    tq = TaskQueue()
+    try:
+        tasks = tq.list_tasks(status=status, agent=agent)
+        if not tasks:
+            click.echo("No tasks found.")
+            return
+        click.echo(f"{'ID':<14} {'Status':<16} {'Agent':<10} {'Pri':<4} {'Title'}")
+        click.echo("-" * 80)
+        for t in tasks:
+            click.echo(f"{t['id']:<14} {t['status']:<16} {t.get('agent','?'):<10} {t.get('priority',3):<4} {t.get('title','?')[:50]}")
+    finally:
+        tq.close()
+
+
+@task_group.command()
+@click.argument("task_id")
+def approve(task_id):
+    """Approve a task for execution."""
+    from jarvis.task_queue import TaskQueue
+    tq = TaskQueue()
+    try:
+        if tq.approve_task(task_id):
+            click.echo(f"✅ Task {task_id} approved.")
+        else:
+            click.echo(f"❌ Could not approve {task_id} (not found or not pending).")
+    finally:
+        tq.close()
+
+
+@task_group.command(name="approve-all")
+def approve_all():
+    """Approve all pending tasks."""
+    from jarvis.task_queue import TaskQueue
+    tq = TaskQueue()
+    try:
+        count = tq.approve_all()
+        click.echo(f"✅ Approved {count} task(s).")
+    finally:
+        tq.close()
+
+
+@task_group.command()
+@click.argument("task_id")
+def reject(task_id):
+    """Reject a pending task."""
+    from jarvis.task_queue import TaskQueue
+    tq = TaskQueue()
+    try:
+        if tq.reject_task(task_id):
+            click.echo(f"❌ Task {task_id} rejected.")
+        else:
+            click.echo(f"❌ Could not reject {task_id}.")
+    finally:
+        tq.close()
+
+
+@task_group.command()
+def stats():
+    """Show task queue statistics."""
+    from jarvis.task_queue import TaskQueue
+    tq = TaskQueue()
+    try:
+        s = tq.stats()
+        if not s:
+            click.echo("Task queue is empty.")
+            return
+        for status, count in s.items():
+            click.echo(f"  {status}: {count}")
+    finally:
+        tq.close()
+
+
+@cli.command()
+@click.option("--port", default=8767, help="Port for the Mayor HTTP API")
+@click.option("--root", default=None, help="Project root directory")
+def mayor(port, root):
+    """Start the Mayor orchestrator daemon (runs 24/7 on Lightspeed).
+
+    The Mayor receives ideas, parses them into tasks, and dispatches
+    approved tasks to coding agents. It switches between coding mode
+    (8am-11pm) and memory mode (11pm-8am) automatically.
+    """
+    from jarvis.mayor import run_mayor
+    run_mayor(port=port, project_root=root)
 
 
 if __name__ == "__main__":

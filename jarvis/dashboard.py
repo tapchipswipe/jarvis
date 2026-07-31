@@ -105,6 +105,8 @@ _LAYOUT = """
       <a href="/dashboard/graph" hx-get="/dashboard/graph" hx-push-url="true" hx-trigger="click">Knowledge Graph</a>
       <a href="/dashboard/alerts" hx-get="/dashboard/alerts" hx-push-url="true" hx-trigger="click">Alerts</a>
       <a href="/dashboard/consolidation" hx-get="/dashboard/consolidation" hx-push-url="true" hx-trigger="click">Consolidation</a>
+      <a href="/dashboard/thoughts" hx-get="/dashboard/thoughts" hx-push-url="true" hx-trigger="click">💭 Thoughts</a>
+      <a href="/dashboard/queue" hx-get="/dashboard/queue" hx-push-url="true" hx-trigger="click">📋 Queue</a>
     </div>
   </div>
   <div class="container" id="content">
@@ -353,6 +355,94 @@ def dashboard_consolidation(request: Request):
     </div>
     """
     return _page("Consolidation", content)
+
+
+# ── Mayor: Thoughts + Queue ──────────────────────────────────────────────────
+
+@app.get("/dashboard/thoughts", response_class=HTMLResponse)
+def dashboard_thoughts(request: Request):
+    """Submit ideas to the Mayor and see recent submissions."""
+    import urllib.request, json
+    tasks = []
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8767/tasks?limit=20")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            tasks = json.loads(resp.read().decode()).get("tasks", [])
+    except Exception:
+        pass
+
+    rows = ""
+    for t in tasks[:20]:
+        sc = {"pending_review": "#ffb74d", "approved": "#81c784", "in_progress": "#4fc3f7", "completed": "#666", "blocked": "#e57373"}.get(t.get("status"), "#666")
+        rows += f'<tr><td><span style="color:{sc}">●</span> {t.get("status","?")}</td><td>{t.get("agent","?")}</td><td>{t.get("title","?")[:60]}</td><td><span class="muted">{t.get("created_at","?")[:19]}</span></td></tr>'
+
+    content = f'''
+    <div class="card">
+      <h3>Submit an Idea</h3>
+      <p class="muted">Type your idea below (use Fn-Fn for macOS dictation). The Mayor will parse it into a task.</p>
+      <form id="idea-form" style="margin-bottom:16px;">
+        <textarea id="idea-text" placeholder="e.g. the dashboard graph should show entity connections as a force-directed network"
+          style="width:100%;min-height:80px;background:#0f1117;color:#e0e0e0;border:1px solid #333;border-radius:4px;padding:12px;"></textarea>
+        <button type="submit" style="margin-top:8px;padding:8px 24px;background:#4fc3f7;color:#0f1117;border:none;border-radius:4px;cursor:pointer;font-weight:bold;">Submit Idea</button>
+        <span id="idea-result" style="margin-left:16px;"></span>
+      </form>
+    </div>
+    <div class="card">
+      <h3>Recent Tasks</h3>
+      <table><tr><th>Status</th><th>Agent</th><th>Title</th><th>Created</th></tr>{rows}</table>
+    </div>
+    <script>
+      document.getElementById('idea-form').addEventListener('submit', async (e) => {{
+        e.preventDefault();
+        const text = document.getElementById('idea-text').value;
+        const r = document.getElementById('idea-result');
+        r.innerHTML = '<span class="muted">Submitting...</span>';
+        try {{
+          const resp = await fetch('http://127.0.0.1:8767/idea', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{idea:text,source:'dashboard'}})}});
+          const d = await resp.json();
+          if(d.task_id){{r.innerHTML='<span style="color:#81c784">✅ Queued as '+d.agent+' task</span>';document.getElementById('idea-text').value='';setTimeout(()=>location.reload(),1500);}}
+          else{{r.innerHTML='<span style="color:#e57373">❌ '+(d.error||'Failed')+'</span>';}}
+        }} catch(err){{r.innerHTML='<span style="color:#e57373">❌ Mayor not running</span>';}}
+      }});
+    </script>
+    '''
+    return _page("Thoughts", content)
+
+@app.get("/dashboard/queue", response_class=HTMLResponse)
+def dashboard_queue(request: Request):
+    """Task queue with approve/reject buttons."""
+    import urllib.request, json
+    tasks = []
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8767/tasks?limit=50")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            tasks = json.loads(resp.read().decode()).get("tasks", [])
+    except Exception:
+        return _page("Task Queue", '<p class="muted">⚠️ Mayor is not running. Start it with: <code>jarvis mayor</code></p>')
+
+    rows = ""
+    for t in tasks:
+        st = t.get("status", "?")
+        sc = {"pending_review": "#ffb74d", "approved": "#81c784", "in_progress": "#4fc3f7", "completed": "#666", "blocked": "#e57373"}.get(st, "#666")
+        actions = ""
+        if st == "pending_review":
+            actions = f'<button hx-post="http://127.0.0.1:8767/tasks/approve?id={t["id"]}" hx-swap="none" onclick="this.closest(\'tr\').remove()" style="padding:4px 8px;background:#4fc3f7;color:#0f1117;border:none;border-radius:3px;cursor:pointer;">✓</button>'
+        elif st == "completed" and t.get("commit_hash"):
+            actions = f'<span class="muted">{t["commit_hash"][:8]}</span>'
+        rows += f'<tr><td><span style="color:{sc}">●</span> {st}</td><td>{t.get("agent","?")}</td><td>{t.get("title","?")[:50]}</td><td>{t.get("priority",3)}</td><td><span class="muted">{t.get("created_at","?")[:19]}</span></td><td>{actions}</td></tr>'
+
+    pending = len([t for t in tasks if t.get("status") == "pending_review"])
+    btn = f'<button hx-post="http://127.0.0.1:8767/tasks/approve?all=true" hx-swap="none" onclick="setTimeout(()=>location.reload(),500)" style="padding:6px 16px;background:#81c784;color:#0f1117;border:none;border-radius:4px;cursor:pointer;font-weight:bold;">Approve All ({pending})</button>' if pending > 0 else ""
+
+    content = f'''
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3>Task Queue</h3>{btn}
+      </div>
+      <table><tr><th>Status</th><th>Agent</th><th>Title</th><th>Pri</th><th>Created</th><th>Actions</th></tr>{rows}</table>
+    </div>
+    '''
+    return _page("Task Queue", content)
 
 
 # ── CLI entry point ────────────────────────────────────────────────────────────

@@ -135,11 +135,11 @@ def _parse_tool_call(response):
         return None
     return name, args
 
-def _inject_rag_context(session_db, user_message) -> str:
+def _inject_rag_context(session_db, user_message, model: str | None = None) -> str:
     store = None
     try:
         store = Store()
-        emb = get_embedding(user_message)
+        emb = get_embedding(user_message, model=model or "nomic-embed-text")
         rows = store.search(emb, n_results=5)
         if not rows:
             return ""
@@ -164,6 +164,7 @@ def run_turn(
     session_db=None,
     store_db=None,
     verbose=False,
+    model: str | None = None,
 ) -> tuple:
     """
     Run one agent turn and return (answer, tool_call_log).
@@ -211,7 +212,7 @@ def run_turn(
             ollama_messages.append(msg)
 
         # 5. RAG injection + system prompt (ONCE per turn)
-        rag = _inject_rag_context(session_db, user_message)
+        rag = _inject_rag_context(session_db, user_message, model=model)
         system_messages = []
         if raw_history:
             block = SYSTEM_PROMPT
@@ -234,7 +235,7 @@ def run_turn(
         # 6. Main agent loop - stream=True, fallback built into _ollama_chat
         for step in range(max_steps):
             resp = _ollama_chat(
-                DEFAULT_CHAT_MODEL, ollama_messages,
+                model or DEFAULT_CHAT_MODEL, ollama_messages,
                 tools=TOOLS_SCHEMA, stream=True,
             )
 

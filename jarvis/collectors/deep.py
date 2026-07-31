@@ -49,10 +49,10 @@ def sync_deep(store, max_files=50000):
                 fid = fingerprint(source, source_id, text, ts)
                 if store.exists(fid):
                     continue
-                emb = get_embedding(text[:4000])
                 chunks = chunk_document(text, metadata={"path": str(path)})
                 for i, chunk in enumerate(chunks):
                     cid = f"{fid}-{i}"
+                    emb = get_embedding(chunk["text"])
                     store.add(cid, source, source_id, ts, chunk["text"], ["deep"], {"path": str(path)}, emb)
                     count += 1
                 processed += 1

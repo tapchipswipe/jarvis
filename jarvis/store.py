@@ -153,7 +153,7 @@ class Store:
         return cur.fetchone() is not None
 
     def exists_by_content(self, content_hash: str) -> bool:
-        cur = self.conn.execute("SELECT 1 FROM memories WHERE content_hash = ? LIMIT 1", (content_hash,))
+        cur = self.conn.execute("SELECT 1 FROM memories WHERE content_hash = ? AND superseded = 0 LIMIT 1", (content_hash,))
         return cur.fetchone() is not None
 
     def merge_device_tags(self, content_hash: str, new_tags: list[str]):

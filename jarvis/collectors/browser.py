@@ -38,10 +38,10 @@ def _read_chrome(store, db_path: Path, days_back: int):
             from jarvis.extract import extract_metadata
             extraction = extract_metadata(text)
             base_tags = ["browser", "chrome"] + extraction.get("tags", [])[:5]
-            emb = get_embedding(text[:4000])
             chunks = chunk_document(text, metadata={"url": url, "domain": url.split("/")[2] if "://" in url else url, "entities": extraction.get("entities", [])})
             for i, chunk in enumerate(chunks):
                 cid = f"{fid}-{i}"
+                emb = get_embedding(chunk["text"])
                 store.add(cid, source, source_id, ts, chunk["text"], base_tags, {"url": url, "entities": extraction.get("entities", [])}, emb)
                 count += 1
     except Exception as e:
@@ -76,10 +76,10 @@ def _read_safari(store, db_path: Path, days_back: int):
             from jarvis.extract import extract_metadata
             extraction = extract_metadata(text)
             base_tags = ["browser", "safari"] + extraction.get("tags", [])[:5]
-            emb = get_embedding(text[:4000])
             chunks = chunk_document(text, metadata={"url": url, "domain": url.split("/")[2] if "://" in url else url, "entities": extraction.get("entities", [])})
             for i, chunk in enumerate(chunks):
                 cid = f"{fid}-{i}"
+                emb = get_embedding(chunk["text"])
                 store.add(cid, source, source_id, ts, chunk["text"], base_tags, {"url": url, "entities": extraction.get("entities", [])}, emb)
                 count += 1
     except Exception as e:
@@ -120,10 +120,10 @@ def _read_firefox(store, profiles_dir: Path, days_back: int):
                 from jarvis.extract import extract_metadata
                 extraction = extract_metadata(text)
                 base_tags = ["browser", "firefox"] + extraction.get("tags", [])[:5]
-                emb = get_embedding(text[:4000])
                 chunks = chunk_document(text, metadata={"url": url, "domain": url.split("/")[2] if "://" in url else url, "entities": extraction.get("entities", [])})
                 for i, chunk in enumerate(chunks):
                     cid = f"{fid}-{i}"
+                    emb = get_embedding(chunk["text"])
                     store.add(cid, source, source_id, ts, chunk["text"], base_tags, {"url": url, "entities": extraction.get("entities", [])}, emb)
                     count += 1
         except Exception as e:

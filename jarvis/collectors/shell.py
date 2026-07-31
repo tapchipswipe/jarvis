@@ -68,9 +68,9 @@ def sync_shell(store):
                 extraction = extract_metadata(cmd)
                 base_tags = ["shell", shell_type] + extraction.get("tags", [])[:5]
                 chunks = chunk_document(cmd, metadata={"shell": cmd[:100], "shell_type": shell_type, "entities": extraction.get("entities", [])})
-                emb = get_embedding(cmd[:4000])
                 for i, chunk in enumerate(chunks):
                     cid = f"{fid}-{i}"
+                    emb = get_embedding(chunk["text"])
                     store.add(cid, source, source_id, ts, chunk["text"], base_tags, {"command": cmd[:200], "shell_type": shell_type, "entities": extraction.get("entities", [])}, emb)
                     count += 1
         except Exception as e:
