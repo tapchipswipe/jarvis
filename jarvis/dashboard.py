@@ -21,7 +21,7 @@ import urllib.error
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from jarvis.store import Store
@@ -365,9 +365,12 @@ def dashboard_thoughts(request: Request):
     import urllib.request, json
     tasks = []
     try:
-        req = urllib.request.Request("http://127.0.0.1:8767/tasks?limit=20")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            tasks = json.loads(resp.read().decode()).get("tasks", [])
+        from jarvis.task_queue import TaskQueue
+        tq = TaskQueue()
+        try:
+            tasks = tq.list_tasks(limit=20)
+        finally:
+            tq.close()
     except Exception:
         pass
 
@@ -398,7 +401,7 @@ def dashboard_thoughts(request: Request):
         const r = document.getElementById('idea-result');
         r.innerHTML = '<span class="muted">Submitting...</span>';
         try {{
-          const resp = await fetch('http://127.0.0.1:8767/idea', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{idea:text,source:'dashboard'}})}});
+          const resp = await fetch('/api/idea', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{idea:text,source:'dashboard'}})}});
           const d = await resp.json();
           if(d.task_id){{r.innerHTML='<span style="color:#81c784">✅ Queued as '+d.agent+' task</span>';document.getElementById('idea-text').value='';setTimeout(()=>location.reload(),1500);}}
           else{{r.innerHTML='<span style="color:#e57373">❌ '+(d.error||'Failed')+'</span>';}}
@@ -414,7 +417,7 @@ def dashboard_queue(request: Request):
     import urllib.request, json
     tasks = []
     try:
-        req = urllib.request.Request("http://127.0.0.1:8767/tasks?limit=50")
+        req = urllib.request.Request("/api/tasks?limit=50")
         with urllib.request.urlopen(req, timeout=5) as resp:
             tasks = json.loads(resp.read().decode()).get("tasks", [])
     except Exception:
@@ -426,13 +429,13 @@ def dashboard_queue(request: Request):
         sc = {"pending_review": "#ffb74d", "approved": "#81c784", "in_progress": "#4fc3f7", "completed": "#666", "blocked": "#e57373"}.get(st, "#666")
         actions = ""
         if st == "pending_review":
-            actions = f'<button hx-post="http://127.0.0.1:8767/tasks/approve?id={t["id"]}" hx-swap="none" onclick="this.closest(\'tr\').remove()" style="padding:4px 8px;background:#4fc3f7;color:#0f1117;border:none;border-radius:3px;cursor:pointer;">✓</button>'
+            actions = f'<button hx-post="/api/tasks/approve?id={t["id"]}" hx-swap="none" onclick="this.closest(\'tr\').remove()" style="padding:4px 8px;background:#4fc3f7;color:#0f1117;border:none;border-radius:3px;cursor:pointer;">✓</button>'
         elif st == "completed" and t.get("commit_hash"):
             actions = f'<span class="muted">{t["commit_hash"][:8]}</span>'
         rows += f'<tr><td><span style="color:{sc}">●</span> {st}</td><td>{t.get("agent","?")}</td><td>{t.get("title","?")[:50]}</td><td>{t.get("priority",3)}</td><td><span class="muted">{t.get("created_at","?")[:19]}</span></td><td>{actions}</td></tr>'
 
     pending = len([t for t in tasks if t.get("status") == "pending_review"])
-    btn = f'<button hx-post="http://127.0.0.1:8767/tasks/approve?all=true" hx-swap="none" onclick="setTimeout(()=>location.reload(),500)" style="padding:6px 16px;background:#81c784;color:#0f1117;border:none;border-radius:4px;cursor:pointer;font-weight:bold;">Approve All ({pending})</button>' if pending > 0 else ""
+    btn = f'<button hx-post="/api/tasks/approve?all=true" hx-swap="none" onclick="setTimeout(()=>location.reload(),500)" style="padding:6px 16px;background:#81c784;color:#0f1117;border:none;border-radius:4px;cursor:pointer;font-weight:bold;">Approve All ({pending})</button>' if pending > 0 else ""
 
     content = f'''
     <div class="card">
@@ -445,14 +448,117 @@ def dashboard_queue(request: Request):
     return _page("Task Queue", content)
 
 
+# ── Mayor API Routes ─────────────────────────────────────────────────────────
+
+_mayor_instance: "Mayor" | None = None
+
+
+def _start_mayor():
+    """Start the Mayor background loop in a thread (called at startup)."""
+    global _mayor_instance
+    if _mayor_instance is not None:
+        return
+    try:
+        from jarvis.mayor import Mayor
+        import threading
+        _mayor_instance = Mayor()
+        t = threading.Thread(target=_mayor_instance.run_loop, daemon=True)
+        t.start()
+    except Exception as e:
+        print(f"Mayor background loop not started: {e}")
+
+
+@app.post("/api/idea")
+async def api_submit_idea(request: Request):
+    """Submit an idea to the Mayor."""
+    from jarvis.task_queue import TaskQueue
+    from jarvis.mayor import parse_idea
+    try:
+        data = await request.json()
+        idea = data.get("idea", "")
+        source = data.get("source", "dashboard")
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    if not idea:
+        return JSONResponse({"error": "no idea provided"}, status_code=400)
+    try:
+        tq = TaskQueue()
+        try:
+            task_data = parse_idea(idea)
+            if not task_data:
+                task_data = {"agent": "code", "title": idea[:80], "description": idea, "priority": 3}
+            task_id = tq.add_task(title=task_data["title"], description=task_data.get("description", ""), agent=task_data.get("agent", "code"), priority=task_data.get("priority", 3), source=source, raw_idea=idea)
+            return JSONResponse({"task_id": task_id, "agent": task_data.get("agent"), "title": task_data["title"], "status": "pending_review"})
+        finally:
+            tq.close()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/tasks")
+async def api_tasks(status: str | None = None, limit: int = 50):
+    """List tasks in the queue."""
+    from jarvis.task_queue import TaskQueue
+    tq = TaskQueue()
+    try:
+        return JSONResponse({"tasks": tq.list_tasks(status=status, limit=limit)})
+    finally:
+        tq.close()
+
+
+@app.post("/api/tasks/approve")
+async def api_approve_task(request: Request):
+    """Approve a task (or all pending)."""
+    from jarvis.task_queue import TaskQueue
+    q = dict(request.query_params)
+    tq = TaskQueue()
+    try:
+        task_id = q.get("id")
+        if q.get("all", "").lower() == "true":
+            return JSONResponse({"approved": tq.approve_all()})
+        elif task_id:
+            return JSONResponse({"success": tq.approve_task(task_id), "task_id": task_id})
+        return JSONResponse({"error": "provide ?id= or ?all=true"}, status_code=400)
+    finally:
+        tq.close()
+
+
+@app.post("/api/tasks/reject")
+async def api_reject_task(request: Request):
+    """Reject a pending task."""
+    from jarvis.task_queue import TaskQueue
+    task_id = request.query_params.get("id")
+    if not task_id:
+        return JSONResponse({"error": "provide ?id="}, status_code=400)
+    tq = TaskQueue()
+    try:
+        return JSONResponse({"success": tq.reject_task(task_id), "task_id": task_id})
+    finally:
+        tq.close()
+
+
+@app.get("/api/status")
+async def api_status():
+    """Mayor status."""
+    from jarvis.task_queue import TaskQueue
+    tq = TaskQueue()
+    try:
+        return JSONResponse({"mode": "coding", "queue_stats": tq.stats(), "running": _mayor_instance is not None})
+    finally:
+        tq.close()
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
 def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL):
-    """Start the dashboard server."""
+    """Start the dashboard server with Mayor background loop."""
     import uvicorn
+
+    # Start the Mayor background loop (task dispatch, mode switching)
+    _start_mayor()
 
     print(f"Starting Jarvis Dashboard on http://0.0.0.0:{port}")
     print(f"Daemon URL: {daemon_url}")
+    print(f"Submit ideas: POST /api/idea")
+    print(f"Task queue:   GET  /api/tasks")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
 
 
