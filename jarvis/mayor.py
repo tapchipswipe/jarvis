@@ -472,8 +472,12 @@ class MayorHTTPHandler(BaseHTTPRequestHandler):
             if not idea:
                 self._json({"error": "no idea provided"}, 400)
                 return
-            result = _mayor_instance.submit_idea(idea, source=source)
-            self._json(result)
+            try:
+                result = _mayor_instance.submit_idea(idea, source=source)
+                self._json(result)
+            except Exception as e:
+                logger.error("Idea submission failed: %s", e, exc_info=True)
+                self._json({"error": f"idea processing failed: {e}"}, 500)
 
         elif path == "/tasks/approve":
             if not _mayor_instance:
