@@ -8,6 +8,7 @@ from pathlib import Path
 PID_FILE = Path("/tmp/jarvis-daemon.pid")
 LOG_FILE = Path("/data/jarvis/logs/daemon.log")
 DAEMON_MODULE = "jarvis.sync.daemon"
+VERSION_COMMAND_PATH = Path(__file__).resolve().parent / "cli.py"
 
 running = True
 
@@ -40,6 +41,10 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     write_pid()
     log("Starting Jarvis service (daemon mode)")
+    
+    # Run the version command to display Jarvis version
+    subprocess.run([sys.executable, str(VERSION_COMMAND_PATH)])
+
     project_root = Path(__file__).resolve().parent.parent
     env = os.environ.copy()
     env["PYTHONPATH"] = str(project_root)
