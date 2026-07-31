@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.jarvis.dashboard.plist — Launchd job for Jarvis Dashboard on macOS
+
+  Install:
+    sudo cp scripts/com.jarvis.dashboard.plist /Library/LaunchDaemons/
+    sudo launchctl load /Library/LaunchDaemons/com.jarvis.dashboard.plist
+
+  Uninstall:
+    sudo launchctl unload /Library/LaunchDaemons/com.jarvis.dashboard.plist
+    sudo rm /Library/LaunchDaemons/com.jarvis.dashboard.plist
+
+  This runs the Jarvis dashboard (FastAPI + Mayor background loop) on port 8766
+  so the Mac's local dashboard is always available at http://localhost:8766.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jarvis.dashboard</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/lucasdespot/jarvis/.venv/bin/python</string>
+        <string>-m</string>
+        <string>jarvis.cli</string>
+        <string>dashboard</string>
+        <string>--port</string>
+        <string>8766</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/lucasdespot/jarvis</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OLLAMA_HOST</key>
+        <string>100.102.0.99</string>
+        <key>OLLAMA_PORT</key>
+        <string>11434</string>
+        <key>JARVIS_ROOT</key>
+        <string>/Users/lucasdespot/jarvis</string>
+        <key>MAYOR_PORT</key>
+        <string>8767</string>
+        <key>LIGHTSPEED_HOST</key>
+        <string>100.102.0.99</string>
+        <key>LIGHTSPEED_USER</key>
+        <string>despo</string>
+        <key>LIGHTSPEED_INBOX</key>
+        <string>C:/data/jarvis/inbox</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/lucasdespot/jarvis</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/lucasdespot/jarvis/logs/dashboard-launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/lucasdespot/jarvis/logs/dashboard-launchd.log</string>
+
+    <key>UserName</key>
+    <string>lucasdespot</string>
+
+    <key>GroupName</key>
+    <string>staff</string>
+</dict>
+</plist>

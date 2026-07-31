@@ -51,7 +51,7 @@ DAY_START = 8   # 8am
 DAY_END = 23    # 11pm
 
 IDEA_PARSER_MODEL = "llama3.2:1b"
-CODING_MODEL = "llama3.2:1b"
+CODING_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 MEMORY_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 
 POLL_INTERVAL = 30  # seconds between task queue checks
@@ -99,7 +99,7 @@ def ensure_model_loaded(model: str) -> bool:
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=15)
+        urllib.request.urlopen(req, timeout=120)
         logger.info("Model loaded: %s", model)
         return True
     except Exception as e:
@@ -257,7 +257,86 @@ class Mayor:
         self.current_mode = get_mode()
         self.running = False
         self.last_mode_switch = None
+        self.start_time = time.time()
         self._lock = threading.Lock()
+
+    @property
+    def uptime_seconds(self) -> float:
+        """Return seconds since the Mayor started."""
+        return time.time() - self.start_time
+
+    def run_health_checks(self) -> dict[str, dict]:
+        """Run health checks on all critical dependencies.
+        
+        Returns a dict of component -> {healthy: bool, detail: str, ...}
+        """
+        checks = {}
+
+        # 1. Check Ollama connectivity
+        try:
+            req = urllib.request.Request(
+                f"{OLLAMA_URL}/api/tags",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                models = data.get("models", [])
+                checks["ollama"] = {
+                    "healthy": True,
+                    "detail": f"Ollama reachable at {OLLAMA_URL}, {len(models)} model(s) loaded",
+                    "models": [m.get("name") for m in models[:5]],
+                }
+        except Exception as e:
+            checks["ollama"] = {
+                "healthy": False,
+                "detail": f"Cannot reach Ollama at {OLLAMA_URL}: {e}",
+                "error": str(e),
+            }
+
+        # 2. Check task queue
+        try:
+            stats = self.task_queue.stats()
+            total = sum(stats.values()) if stats else 0
+            pending = stats.get("pending_review", 0)
+            checks["task_queue"] = {
+                "healthy": True,
+                "detail": f"Task queue accessible, {total} total task(s), {pending} pending review",
+                "stats": stats,
+            }
+        except Exception as e:
+            checks["task_queue"] = {
+                "healthy": False,
+                "detail": f"Task queue error: {e}",
+                "error": str(e),
+            }
+
+        # 3. Check the project root exists and is writable
+        try:
+            root = self.project_root
+            root_exists = root.exists()
+            test_file = root / ".health_check_tmp"
+            test_file.touch()
+            test_file.unlink()
+            checks["filesystem"] = {
+                "healthy": root_exists,
+                "detail": f"Project root {root} accessible and writable",
+            }
+        except Exception as e:
+            checks["filesystem"] = {
+                "healthy": False,
+                "detail": f"Filesystem issue: {e}",
+                "error": str(e),
+            }
+
+        # 4. Check running state
+        checks["mayor"] = {
+            "healthy": self.running,
+            "detail": f"Mayor loop running for {self.uptime_seconds:.0f}s, mode={self.current_mode}",
+            "mode": self.current_mode,
+            "uptime_seconds": self.uptime_seconds,
+        }
+
+        return checks
 
     def submit_idea(self, idea: str, source: str = "user") -> dict:
         """Submit a raw idea. Parses it into a task and queues it."""
@@ -428,7 +507,46 @@ class MayorHTTPHandler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
 
         if path == "/health":
-            self._json({"status": "ok", "time": datetime.now().isoformat()})
+            self._json({
+                "status": "ok",
+                "time": datetime.now().isoformat(),
+                "version": "1.0.0",
+                "uptime_seconds": _mayor_instance.uptime_seconds if _mayor_instance else 0,
+            })
+        elif path == "/health/check":
+            """Enhanced health check — tests all critical dependencies."""
+            if not _mayor_instance:
+                self._json({"status": "error", "error": "mayor not initialized"}, 500)
+                return
+            checks = _mayor_instance.run_health_checks()
+            overall = "ok" if all(c.get("healthy", False) for c in checks.values()) else "degraded"
+            self._json({
+                "status": overall,
+                "time": datetime.now().isoformat(),
+                "checks": checks,
+                "mode": _mayor_instance.current_mode,
+                "running": _mayor_instance.running,
+            })
+        elif path == "/health/alert":
+            """Return alert payload if system is degraded, for monitoring scripts."""
+            if not _mayor_instance:
+                self._json({"alert": "mayor not initialized", "severity": "critical"}, 500)
+                return
+            checks = _mayor_instance.run_health_checks()
+            unhealthy = {k: v for k, v in checks.items() if not v.get("healthy", False)}
+            if unhealthy:
+                self._json({
+                    "alert": "Jarvis system degraded",
+                    "severity": "warning",
+                    "unhealthy_components": unhealthy,
+                    "time": datetime.now().isoformat(),
+                })
+            else:
+                self._json({
+                    "alert": None,
+                    "severity": "ok",
+                    "time": datetime.now().isoformat(),
+                })
         elif path == "/status":
             if not _mayor_instance:
                 self._json({"error": "mayor not initialized"}, 500)
