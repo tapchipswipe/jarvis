@@ -109,12 +109,12 @@ def ensure_model_loaded(model: str) -> bool:
 # ── Idea parser ─────────────────────────────────────────────────────────────
 
 PARSE_PROMPT_TEMPLATE = """You are a task parser. Read the user's idea and output a JSON object with these fields:
-{
+{{
   "agent": "code" | "design" | "qa" | "security" | "research",
   "title": "Short task title (max 80 chars)",
   "description": "What needs to be done (1-3 sentences)",
   "priority": 1-5 (1=urgent, 5=low)
-}
+}}
 
 Agent selection guide:
 - code: implementing features, fixing bugs, writing Python code
