@@ -23,6 +23,9 @@ logs/*
 !logs/.gitkeep
 *.db
 *.sqlite
+*.db-wal
+*.db-shm
+*.db-journal
 
 # IDE
 .idea/
