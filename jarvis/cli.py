@@ -703,10 +703,10 @@ def task_group():
     pass
 
 
-@task_group.command()
+@task_group.command(name="list")
 @click.option("--status", default=None, help="Filter by status (pending_review/approved/in_progress/completed/blocked)")
 @click.option("--agent", default=None, help="Filter by agent (code/design/qa/security/research)")
-def list(status, agent):
+def list_tasks(status, agent):
     """List tasks in the queue."""
     from jarvis.task_queue import TaskQueue
     tq = TaskQueue()
