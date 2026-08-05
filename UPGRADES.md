@@ -22,3 +22,6 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2026-07-31 — Embedding cache (SQLite-backed + in-memory) so repeated embeddings are served without re-calling Ollama
 - `[done]` 2026-07-31 — Daemon trigger loop thread evaluating time/poll/event triggers on a fixed cadence
 - `[done]` 2026-07-31 — Knowledge graph HTTP endpoints: `/api/entities` and `/api/entities/{id}/relationships`
+- `[done]` 2026-08-05 — Incremental vector re-indexing (`jarvis reindex`) — embeds only memories missing from the vector store (no full re-sync)
+- `[done]` 2026-08-05 — Memory decay / tier promotion (`jarvis promote`) — raw memories auto-promote to session tier after 7 days
+- `[planned]` 2026-08-05 — Multi-user support with isolated per-user storage directories and access control (deferred — stretch item)
