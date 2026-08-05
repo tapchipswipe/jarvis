@@ -284,6 +284,65 @@ class Store:
         cur = self.conn.execute("SELECT * FROM memories WHERE route = 'unclassified' AND superseded = 0 ORDER BY timestamp DESC LIMIT ?", (limit,))
         return [dict(r) for r in cur.fetchall()]
 
+    def get_unembedded(self, limit: int = 200):
+        """Memories that are not yet in the vector store (embedded_at IS NULL).
+
+        Normal ingestion embeds at add time, so this is typically empty — it is
+        the safety net for rows written without an embedding (e.g. imported
+        data) and the input for incremental / re-indexing runs.
+        """
+        cur = self.conn.execute(
+            "SELECT * FROM memories WHERE superseded = 0 AND embedded_at IS NULL"
+            " ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def mark_embedded(self, fid: str):
+        """Record that a memory now has a vector embedding."""
+        self.conn.execute(
+            "UPDATE memories SET embedded_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), fid),
+        )
+        self.conn.commit()
+
+    def promote_raw_to_session(self, days: int = 7, limit: int = 500) -> int:
+        """Promote raw memories older than *days* days to the session tier.
+
+        Updates the SQLite tier/weight and syncs the same metadata into Chroma
+        so search re-ranking keeps using the promoted weight. Returns the number
+        of memories promoted.
+        """
+        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        rows = self.conn.execute(
+            "SELECT * FROM memories WHERE tier = 'raw' AND superseded = 0"
+            " AND timestamp < ? ORDER BY timestamp ASC LIMIT ?",
+            (cutoff, limit),
+        ).fetchall()
+        promoted = 0
+        for r in rows:
+            fid = r["id"]
+            weight = TIER_WEIGHTS["session"]
+            self.conn.execute(
+                "UPDATE memories SET tier = 'session', weight = ? WHERE id = ?",
+                (weight, fid),
+            )
+            chroma_meta = {
+                "source": r["source"],
+                "timestamp": r["timestamp"],
+                "tier": "session",
+                "weight": weight,
+                "route": r["route"],
+            }
+            try:
+                self.collection.update(ids=[fid], metadatas=[chroma_meta])
+            except Exception:
+                # Vector metadata is best-effort; SQLite remains authoritative.
+                pass
+            promoted += 1
+        self.conn.commit()
+        return promoted
+
     def mark_superseded(self, fid: str):
         self.conn.execute("UPDATE memories SET superseded = 1 WHERE id = ?", (fid,))
         self.conn.commit()

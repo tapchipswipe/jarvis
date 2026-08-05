@@ -653,6 +653,74 @@ def monthly():
     else:
         click.echo("Monthly consolidation skipped (insufficient reflections).")
 
+
+@cli.command()
+@click.option("--limit", default=200, help="Max memories to embed in this pass")
+def reindex(limit):
+    """Embed memories that are missing from the vector store (incremental).
+
+    Normal ingestion embeds at write time, so this is a safety net for rows
+    without an embedding (e.g. imported data) or a re-run after the embedding
+    model changes. It does not require a full re-sync.
+    """
+    from jarvis.store import Store
+    from jarvis.embed import get_embedding
+
+    store = Store()
+    try:
+        rows = store.get_unembedded(limit=limit)
+        if not rows:
+            click.echo("No memories need re-indexing (all embedded).")
+            return
+        done = 0
+        for m in rows:
+            emb = get_embedding(m["content"])
+            meta = {
+                "source": m["source"],
+                "timestamp": m["timestamp"],
+                "tier": m["tier"],
+                "weight": m["weight"],
+                "route": m["route"],
+            }
+            try:
+                store.collection.add(
+                    ids=[m["id"]], embeddings=[emb],
+                    documents=[m["content"]], metadatas=[meta],
+                )
+            except Exception:
+                pass
+            store.mark_embedded(m["id"])
+            done += 1
+        click.echo(f"Re-indexed {done} memory(-ies).")
+    finally:
+        store.close()
+
+
+@cli.command()
+@click.option("--days", default=7, help="Promote raw memories older than N days")
+@click.option("--limit", default=500, help="Max memories to promote per pass")
+@click.option("--dry-run", is_flag=True, help="Show what would be promoted without changing anything")
+def promote(days, limit, dry_run):
+    """Promote raw memories older than --days to the session tier."""
+    from jarvis.store import Store
+
+    store = Store()
+    try:
+        if dry_run:
+            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            rows = store.conn.execute(
+                "SELECT id, timestamp FROM memories WHERE tier = 'raw' AND superseded = 0"
+                " AND timestamp < ? ORDER BY timestamp ASC LIMIT ?",
+                (cutoff, limit),
+            ).fetchall()
+            click.echo(f"[dry-run] Would promote {len(rows)} memory(-ies) older than {days}d.")
+            return
+        promoted = store.promote_raw_to_session(days=days, limit=limit)
+        click.echo(f"Promoted {promoted} raw memory(-ies) to session tier.")
+    finally:
+        store.close()
+
+
 @cli.command()
 @click.option("--port", default=8766, help="Port to run the dashboard on")
 @click.option("--daemon-url", default="http://127.0.0.1:8765", help="Daemon base URL")

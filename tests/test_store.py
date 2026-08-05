@@ -9,12 +9,9 @@ Covers:
 """
 from __future__ import annotations
 
-from unittest.mock import patch
+from datetime import datetime, timezone
 
-import pytest
-
-from jarvis.store import Store, fingerprint, TIER_WEIGHTS
-
+from jarvis.store import TIER_WEIGHTS, fingerprint
 
 # ── Init / WAL ────────────────────────────────────────────────────────────────
 
@@ -216,3 +213,60 @@ def test_stats(store):
     assert len(stats) > 0
     total = sum(s["count"] for s in stats)
     assert total == 2
+# ── Incremental re-indexing (D1) ─────────────────────────────────────────────
+
+def test_get_unembedded_is_empty_by_default(store):
+    emb = [0.1] * 768
+    store.add(fingerprint("s", "1", "hello", "2025-06-01"), "s", "1", "2025-06-01T10:00:00", "hello", [], {}, emb)
+    assert store.get_unembedded() == []
+
+
+def test_get_unembedded_finds_null_rows(store):
+    # Simulate a row inserted without an embedding (embedded_at NULL)
+    store.conn.execute(
+        "INSERT INTO memories (id, source, source_id, timestamp, content, content_hash, tags, metadata, tier, weight, route, superseded, embedded_at)"
+        " VALUES ('missing-emb', 'import', 'x', '2025-06-01T10:00:00', 'imported note', 'h', '[]', '{}', 'raw', 0.3, 'unclassified', 0, NULL)"
+    )
+    store.conn.commit()
+    rows = store.get_unembedded()
+    assert len(rows) == 1
+    assert rows[0]["id"] == "missing-emb"
+
+
+def test_mark_embedded_sets_timestamp(store):
+    store.conn.execute(
+        "INSERT INTO memories (id, source, source_id, timestamp, content, content_hash, tags, metadata, tier, weight, route, superseded, embedded_at)"
+        " VALUES ('m1', 'import', 'x', '2025-06-01T10:00:00', 'note', 'h', '[]', '{}', 'raw', 0.3, 'unclassified', 0, NULL)"
+    )
+    store.conn.commit()
+    store.mark_embedded("m1")
+    row = store.conn.execute("SELECT embedded_at FROM memories WHERE id = 'm1'").fetchone()
+    assert row["embedded_at"] is not None
+
+
+# ── Tier promotion (D2) ──────────────────────────────────────────────────────
+
+def test_promote_raw_to_session(store):
+    emb = [0.1] * 768
+    old = "2025-01-01T10:00:00"   # well over 7 days ago
+    new = datetime.now(timezone.utc).isoformat()
+    store.add(fingerprint("s", "old", "old content", "2025-01-01"), "s", "old", old, "old content", [], {}, emb, tier="raw")
+    store.add(fingerprint("s", "new", "new content", new), "s", "new", new, "new content", [], {}, emb, tier="raw")
+    promoted = store.promote_raw_to_session(days=7)
+    assert promoted >= 1
+    old_row = store.conn.execute("SELECT tier, weight FROM memories WHERE source_id = 'old'").fetchone()
+    new_row = store.conn.execute("SELECT tier, weight FROM memories WHERE source_id = 'new'").fetchone()
+    assert old_row["tier"] == "session"
+    assert old_row["weight"] == 0.6
+    assert new_row["tier"] == "raw"  # too fresh to promote
+
+
+def test_promote_skips_superseded_and_non_raw(store):
+    emb = [0.1] * 768
+    old = "2025-01-01T10:00:00"
+    # superseded raw memory
+    fid = fingerprint("s", "gone", "gone content", "2025-01-01")
+    store.add(fid, "s", "gone", old, "gone content", [], {}, emb, tier="raw")
+    store.mark_superseded(fid)
+    promoted = store.promote_raw_to_session(days=7)
+    assert promoted == 0
