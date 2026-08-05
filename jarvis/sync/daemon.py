@@ -488,6 +488,7 @@ class Daemon:
         self.cfg = _load_config()
         self.log_dir = self.cfg.get("log_dir", str(DEFAULT_LOG_DIR))
         _setup_logging(self.log_dir)
+        self.logger = logger
         self.inbox_dir = Path(self.cfg.get("inbox_dir", str(DEFAULT_INBOX)))
         self.inbox_dir.mkdir(parents=True, exist_ok=True)
         self.state = DaemonState()

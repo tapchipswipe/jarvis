@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  com.jarvis.dashboard.plist — Launchd job for Jarvis Dashboard on macOS
+  com.jarvis.dashboard.plist — LaunchAgent for Jarvis Dashboard on macOS
 
-  Install:
-    sudo cp scripts/com.jarvis.dashboard.plist /Library/LaunchDaemons/
-    sudo launchctl load /Library/LaunchDaemons/com.jarvis.dashboard.plist
+  Installed as a USER agent (no admin needed) at ~/Library/LaunchAgents/.
 
-  Uninstall:
-    sudo launchctl unload /Library/LaunchDaemons/com.jarvis.dashboard.plist
-    sudo rm /Library/LaunchDaemons/com.jarvis.dashboard.plist
+  Load:
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jarvis.dashboard.plist
+  Unload:
+    launchctl bootout gui/$(id -u)/com.jarvis.dashboard
 
   This runs the Jarvis dashboard (FastAPI + Mayor background loop) on port 8766
   so the Mac's local dashboard is always available at http://localhost:8766.

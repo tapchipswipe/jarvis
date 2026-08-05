@@ -6,7 +6,11 @@ import subprocess
 from pathlib import Path
 
 PID_FILE = Path("/tmp/jarvis-daemon.pid")
-LOG_FILE = Path("/data/jarvis/logs/daemon.log")
+# Resolve log dir portably: default to the home-based jarvis dir (macOS/local),
+# overridable via JARVIS_ROOT or JARVIS_LOG_DIR (Lightspeed/Windows use /data).
+_JARVIS_HOME = Path(os.environ.get("JARVIS_ROOT", str(Path.home() / "jarvis")))
+LOG_DIR = Path(os.environ.get("JARVIS_LOG_DIR", str(_JARVIS_HOME / "logs")))
+LOG_FILE = LOG_DIR / "daemon.log"
 DAEMON_MODULE = "jarvis.sync.daemon"
 VERSION_COMMAND_PATH = Path(__file__).resolve().parent / "cli.py"
 

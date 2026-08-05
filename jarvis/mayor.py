@@ -385,7 +385,7 @@ class Mayor:
         try:
             # Run a sync in the background
             subprocess.Popen(
-                [".venv/bin/python", "-m", "jarvis.cli", "sync", "all"],
+                [".venv/bin/python", "-m", "jarvis.cli", "sync", "--source", "all"],
                 cwd=self.project_root,
                 stdout=open(self.project_root / "logs" / "night_sync.log", "a"),
                 stderr=subprocess.STDOUT,
