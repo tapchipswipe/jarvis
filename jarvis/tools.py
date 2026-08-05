@@ -5,10 +5,12 @@ Each tool is wrapped to never raise; errors are returned as dicts.
 import os
 import json
 import re
+import uuid
 import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from jarvis.store import Store
 from jarvis.embed import get_embedding

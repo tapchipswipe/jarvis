@@ -213,8 +213,19 @@ def run_agent_on_task(task: dict, project_root: Path) -> dict:
         }
 
 
-def run_tests_and_maybe_revert(project_root: Path, commit_hash: str | None) -> tuple[bool, str]:
-    """Run pytest after a commit. If tests fail, revert. Returns (success, output)."""
+def run_tests_and_maybe_revert(
+    project_root: Path,
+    commit_hash: str | None,
+    *,
+    dry_run: bool = False,
+) -> tuple[bool, str]:
+    """Run pytest after a commit. If tests fail, revert. Returns (success, output).
+
+    Reverts are protected: they can be disabled entirely via the
+    ``JARVIS_ALLOW_REVERT=0`` env var or by passing ``dry_run=True``, and they are
+    skipped when the working tree has uncommitted changes (so a dirty tree is
+    never clobbered).
+    """
     if not commit_hash:
         # No commit was made, nothing to test
         return True, "No commit to test"
@@ -230,9 +241,27 @@ def run_tests_and_maybe_revert(project_root: Path, commit_hash: str | None) -> t
         success = result.returncode == 0
         output = result.stdout + result.stderr
 
-        if not success and commit_hash:
+        if not success:
+            allow_revert = os.environ.get("JARVIS_ALLOW_REVERT", "1") != "0"
+            if dry_run or not allow_revert:
+                return False, f"Tests failed (revert disabled). Output: {output[-1000:]}"
+
+            # Never revert over a dirty tree — an in-flight agent or manual edit
+            # could be lost.
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if status.returncode == 0 and status.stdout.strip():
+                return (
+                    False,
+                    f"Tests failed; revert skipped (working tree dirty). Output: {output[-1000:]}",
+                )
+
             logger.warning("Tests failed after commit %s — reverting", commit_hash[:8])
-            # Revert the commit
             subprocess.run(
                 ["git", "revert", "HEAD", "--no-edit"],
                 cwd=project_root,
@@ -396,13 +425,15 @@ class Mayor:
 
     def auto_approve_old_tasks(self):
         """Auto-approve tasks that have been pending for too long."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         tasks = self.task_queue.list_tasks(status="pending_review")
         for task in tasks:
             created = task.get("created_at")
             if created:
                 try:
                     created_dt = datetime.fromisoformat(created)
+                    if created_dt.tzinfo is None:
+                        created_dt = created_dt.replace(tzinfo=timezone.utc)
                     if (now - created_dt).total_seconds() > AUTO_APPROVE_TIMEOUT:
                         self.task_queue.approve_task(task["id"])
                         logger.info("Auto-approved task %s (timeout)", task["id"])
