@@ -288,6 +288,11 @@ class Mayor:
         self.last_mode_switch = None
         self.start_time = time.time()
         self._lock = threading.Lock()
+        # Memory maintenance scheduling (idle loop)
+        self._last_reindex = 0.0
+        self._last_promote = 0.0
+        self.MAINT_REINDEX_EVERY = 300    # 5 minutes
+        self.MAINT_PROMOTE_EVERY = 21600  # 6 hours
 
     @property
     def uptime_seconds(self) -> float:
@@ -479,6 +484,49 @@ class Mayor:
             self.task_queue.fail_task(task["id"], error=result.get("result", "Unknown error"))
             logger.warning("Task %s failed (agent)", task["id"])
 
+    def _ollama_busy(self) -> bool:
+        """True if Ollama is currently generating (avoid VRAM contention)."""
+        try:
+            req = urllib.request.Request(f"{OLLAMA_URL}/api/ps")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                for m in data.get("models", []):
+                    if m.get("size_vram", 0) and not m.get("expires_at"):
+                        return True
+            return False
+        except Exception:
+            return False  # assume idle if we can't check
+
+    def _maybe_idle_maintenance(self):
+        """Run promote/reindex during idle instead of sleeping.
+
+        Skips when there's an approved task queued, or when Ollama is
+        generating right now (so maintenance never fights chat/agent for VRAM).
+        """
+        if self.task_queue.next_approved_task() is not None:
+            return  # busy: leave it to the normal dispatch path
+        now = time.time()
+        if now - self._last_reindex >= self.MAINT_REINDEX_EVERY:
+            if not self._ollama_busy():
+                try:
+                    from jarvis.maintenance import reindex_missing
+                    done = reindex_missing(limit=200)
+                    if done:
+                        logger.info("Idle maintenance: re-indexed %d memory(-ies)", done)
+                except Exception as exc:
+                    logger.warning("Idle reindex failed: %s", exc)
+                self._last_reindex = now
+        if now - self._last_promote >= self.MAINT_PROMOTE_EVERY:
+            if not self._ollama_busy():
+                try:
+                    from jarvis.maintenance import promote_old
+                    promoted = promote_old(days=7, limit=500)
+                    if promoted:
+                        logger.info("Idle maintenance: promoted %d raw memory(-ies)", promoted)
+                except Exception as exc:
+                    logger.warning("Idle promote failed: %s", exc)
+                self._last_promote = now
+
     def run_loop(self):
         """Main Mayor loop — runs forever."""
         logger.info("Mayor starting up. Project root: %s", self.project_root)
@@ -501,6 +549,9 @@ class Mayor:
 
                 # Auto-approve old tasks
                 self.auto_approve_old_tasks()
+
+                # Memory maintenance during idle (reindex/promote)
+                self._maybe_idle_maintenance()
 
                 # Dispatch next task (only in coding mode)
                 self.dispatch_next_task()

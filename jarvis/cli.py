@@ -705,37 +705,13 @@ def reindex(limit):
     without an embedding (e.g. imported data) or a re-run after the embedding
     model changes. It does not require a full re-sync.
     """
-    from jarvis.store import Store
-    from jarvis.embed import get_embedding
+    from jarvis.maintenance import reindex_missing
 
-    store = Store()
-    try:
-        rows = store.get_unembedded(limit=limit)
-        if not rows:
-            click.echo("No memories need re-indexing (all embedded).")
-            return
-        done = 0
-        for m in rows:
-            emb = get_embedding(m["content"])
-            meta = {
-                "source": m["source"],
-                "timestamp": m["timestamp"],
-                "tier": m["tier"],
-                "weight": m["weight"],
-                "route": m["route"],
-            }
-            try:
-                store.collection.add(
-                    ids=[m["id"]], embeddings=[emb],
-                    documents=[m["content"]], metadatas=[meta],
-                )
-            except Exception:
-                pass
-            store.mark_embedded(m["id"])
-            done += 1
+    done = reindex_missing(limit=limit)
+    if done:
         click.echo(f"Re-indexed {done} memory(-ies).")
-    finally:
-        store.close()
+    else:
+        click.echo("No memories need re-indexing (all embedded).")
 
 
 @cli.command()
@@ -745,6 +721,7 @@ def reindex(limit):
 def promote(days, limit, dry_run):
     """Promote raw memories older than --days to the session tier."""
     from jarvis.store import Store
+    from jarvis.maintenance import promote_old
 
     store = Store()
     try:
@@ -757,7 +734,7 @@ def promote(days, limit, dry_run):
             ).fetchall()
             click.echo(f"[dry-run] Would promote {len(rows)} memory(-ies) older than {days}d.")
             return
-        promoted = store.promote_raw_to_session(days=days, limit=limit)
+        promoted = promote_old(days=days, limit=limit)
         click.echo(f"Promoted {promoted} raw memory(-ies) to session tier.")
     finally:
         store.close()
