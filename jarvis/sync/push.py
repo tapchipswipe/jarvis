@@ -1,7 +1,12 @@
+import hashlib
+import json
 import os
 import subprocess
+import tempfile
 import time
+import uuid
 from pathlib import Path
+
 from jarvis.device_id import get_device_id
 
 DEVICE_ID = get_device_id()
@@ -10,6 +15,19 @@ LIGHTSPEED_HOST = os.getenv("LIGHTSPEED_HOST", "lightspeed")
 LIGHTSPEED_USER = os.getenv("LIGHTSPEED_USER", os.getenv("USER", "user"))
 LIGHTSPEED_INBOX = os.getenv("LIGHTSPEED_INBOX", "C:/data/jarvis/inbox")
 SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "PasswordAuthentication=no", "-o", "ConnectTimeout=5"]
+
+# After attempt 1, 2, 3, 4+ respectively (seconds between retries).
+PUSH_BACKOFFS = [60, 300, 1800, 7200]
+# Batch pushes smaller than this many files use per-file SCP.
+BATCH_MIN_FILES = 30
+
+
+def push_backoff(attempts: int) -> int:
+    """Seconds to wait before the next attempt after *attempts* failures."""
+    if attempts <= 0:
+        return 0
+    idx = min(attempts - 1, len(PUSH_BACKOFFS) - 1)
+    return PUSH_BACKOFFS[idx]
 
 
 def lightspeed_reachable() -> bool:
@@ -66,6 +84,61 @@ def ensure_remote_dir():
     if not lightspeed_reachable():
         return
     ssh_run(f"powershell -Command \"New-Item -ItemType Directory -Force -Path '{LIGHTSPEED_INBOX}/{DEVICE_ID}'\"")
+
+
+def stage_bundle(entries: list[dict], device_id: str | None = None) -> Path:
+    """Write entry .txt/.json pairs under a temp dir and tar.gz them.
+
+    *entries* is a list of dicts with 'content' and 'sidecar' (JSON str or
+    dict). The bundle extracts to ``<device_id>/...`` on the remote inbox.
+    Returns path to the .tar.gz bundle.
+    """
+    device_id = device_id or DEVICE_ID
+    basedir = Path(tempfile.mkdtemp(prefix="jarvis_push_"))
+    devdir = basedir / device_id
+    devdir.mkdir(parents=True, exist_ok=True)
+    for e in entries:
+        content = e["content"]
+        sidecar = e.get("sidecar")
+        if isinstance(sidecar, str):
+            try:
+                sidecar = json.loads(sidecar)
+            except (ValueError, TypeError):
+                sidecar = {}
+        cid = hashlib.sha256(content.encode()).hexdigest()[:16]
+        base = f"{cid}_{sidecar.get('tier', 'raw')}_{sidecar.get('source', 'device')}"
+        (devdir / f"{base}.txt").write_text(content, encoding="utf-8")
+        (devdir / f"{base}.json").write_text(
+            json.dumps(sidecar, ensure_ascii=False), encoding="utf-8"
+        )
+    bundle = basedir / f"jarvis-bundle-{int(time.time())}.tar.gz"
+    env = dict(os.environ)
+    env["COPYFILE_DISABLE"] = "1"  # never ship macOS AppleDouble (._) files
+    subprocess.run(
+        ["tar", "-czf", str(bundle), device_id],
+        cwd=str(basedir), check=True, env=env,
+    )
+    return bundle
+
+
+def push_bundle(bundle: Path, inbox: str | None = None) -> bool:
+    """SCP a staged bundle to the inbox and extract it remotely.
+
+    Falls back to False so callers can retry per-file.
+    """
+    inbox = inbox or LIGHTSPEED_INBOX
+    remote_bundle = f"{inbox}/bundle_{uuid.uuid4().hex[:8]}.tar.gz"
+    try:
+        scp_put(bundle, remote_bundle)
+        ssh_run(
+            "powershell -Command \"" + (
+                f"tar -xzf '{remote_bundle}' -C '{inbox}'; "
+                f"Remove-Item '{remote_bundle}' -Force"
+            ) + "\""
+        )
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
 
 
 def get_lightspeed_stats() -> dict:

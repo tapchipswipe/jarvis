@@ -74,6 +74,17 @@ class Store:
                 items_added INTEGER,
                 items_skipped INTEGER
             );
+            CREATE TABLE IF NOT EXISTS push_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                push_key TEXT UNIQUE,
+                content TEXT,
+                sidecar TEXT,
+                attempts INTEGER DEFAULT 0,
+                next_attempt_at DATETIME,
+                created_at DATETIME,
+                last_error TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_push_queue_due ON push_queue(next_attempt_at);
             CREATE TABLE IF NOT EXISTS decision_log (
                 ts TEXT,
                 memory_id TEXT,
@@ -310,6 +321,60 @@ class Store:
         self.conn.execute(
             "UPDATE memories SET embedded_at = ? WHERE id = ?",
             (datetime.utcnow().isoformat(), fid),
+        )
+        self.conn.commit()
+
+    # ── Durable push queue (device → Lightspeed) ────────────────────────────
+
+    def enqueue_push(self, push_key: str, content: str, sidecar: dict):
+        """Add a memory to the push queue (idempotent on push_key)."""
+        self.conn.execute(
+            "INSERT OR IGNORE INTO push_queue (push_key, content, sidecar, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (push_key, content, json.dumps(sidecar, ensure_ascii=False),
+             datetime.utcnow().isoformat()),
+        )
+        self.conn.commit()
+
+    def push_queue_due(self, limit: int = 1000, now: str | None = None):
+        """Items ready to push now (never attempted, or backoff elapsed)."""
+        now = now or datetime.utcnow().isoformat()
+        cur = self.conn.execute(
+            "SELECT * FROM push_queue WHERE next_attempt_at IS NULL OR next_attempt_at <= ?"
+            " ORDER BY created_at ASC LIMIT ?",
+            (now, limit),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def push_queue_fail(self, queue_id: int, error: str, attempts: int, next_attempt_at: str):
+        """Record a failed push with its next retry time (backoff)."""
+        self.conn.execute(
+            "UPDATE push_queue SET attempts = ?, next_attempt_at = ?, last_error = ? WHERE id = ?",
+            (attempts, next_attempt_at, error[:500], queue_id),
+        )
+        self.conn.commit()
+
+    def push_queue_success(self, queue_id: int):
+        """Remove a successfully pushed item from the queue."""
+        self.conn.execute("DELETE FROM push_queue WHERE id = ?", (queue_id,))
+        self.conn.commit()
+
+    def push_queue_stats(self) -> dict:
+        rows = self.conn.execute(
+            "SELECT attempts, COUNT(*) AS n FROM push_queue GROUP BY attempts"
+        ).fetchall()
+        return {
+            "total": sum(r["n"] for r in rows),
+            "by_attempts": {r["attempts"]: r["n"] for r in rows},
+        }
+
+    def log_sync(self, source: str, started_at: str, finished_at: str,
+                 items_added: int, items_skipped: int):
+        """Record a sync run in sync_log (push path writes here too)."""
+        self.conn.execute(
+            "INSERT INTO sync_log (source, started_at, finished_at, items_added, items_skipped)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (source, started_at, finished_at, items_added, items_skipped),
         )
         self.conn.commit()
 
