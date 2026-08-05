@@ -11,17 +11,27 @@ from jarvis.device_id import get_device_id
 
 
 def _get_inbox_root() -> Path:
-    """Return the inbox root path for the current platform."""
+    """Return the inbox root path for the current platform.
+
+    JARVIS_INBOX wins (per-profile / server override). Otherwise the platform
+    default is used (Windows server: C:/data; POSIX server: /data).
+    """
+    env = os.environ.get("JARVIS_INBOX")
+    if env:
+        return Path(env)
     if platform.system() == "Windows":
         return Path("C:/data/jarvis/inbox")
     return Path("/data/jarvis/inbox")
 
 
 def _get_processed_path() -> Path:
-    """Return the processed.json path for the current platform."""
+    """Path of the processed.json ledger, next to the inbox root."""
+    env = os.environ.get("JARVIS_PROCESSED_PATH")
+    if env:
+        return Path(env)
     if platform.system() == "Windows":
         return Path("C:/data/jarvis/processed.json")
-    return Path("/data/jarvis/processed.json")
+    return _get_inbox_root().parent / "processed.json"
 
 
 LIGHTSPEED_INBOX = _get_inbox_root()

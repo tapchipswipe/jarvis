@@ -96,6 +96,10 @@ def _load_config():
             cfg["ollama_host"] = v
         elif k == "OLLAMA_PORT":
             cfg["ollama_port"] = int(v)
+        elif k == "JARVIS_INBOX":
+            cfg["inbox_dir"] = v
+        elif k == "JARVIS_LOG_DIR":
+            cfg["log_dir"] = v
     return cfg
 
 

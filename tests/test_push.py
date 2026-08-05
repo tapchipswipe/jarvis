@@ -155,3 +155,39 @@ def test_push_bundle_failure_falls_back():
             assert push_bundle(bundle, inbox="C:/inbox") is False
         finally:
             bundle.unlink(missing_ok=True)
+
+
+# ── inbox / daemon path isolation (Workstream E) ─────────────────────────────
+
+def test_inbox_root_honors_env_override(monkeypatch):
+    from jarvis.collectors import inbox
+    monkeypatch.setenv("JARVIS_INBOX", "/custom/profile/inbox")
+    assert str(inbox._get_inbox_root()) == "/custom/profile/inbox"
+
+
+def test_inbox_root_platform_default(monkeypatch):
+    from jarvis.collectors import inbox
+    monkeypatch.delenv("JARVIS_INBOX", raising=False)
+    monkeypatch.setattr(inbox.platform, "system", lambda: "Windows")
+    assert str(inbox._get_inbox_root()) == "C:/data/jarvis/inbox"
+
+
+def test_processed_path_defaults_next_to_inbox(monkeypatch):
+    from jarvis.collectors import inbox
+    monkeypatch.delenv("JARVIS_PROCESSED_PATH", raising=False)
+    monkeypatch.setenv("JARVIS_INBOX", "/x/inbox")
+    assert str(inbox._get_processed_path()) == "/x/processed.json"
+
+
+def test_daemon_config_honors_inbox_and_logdir_env(monkeypatch):
+    from jarvis.sync.daemon import _load_config
+    monkeypatch.delenv("SB_DAEMON_PORT", raising=False)
+    monkeypatch.delenv("SB_DAEMON_BIND", raising=False)
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.delenv("OLLAMA_PORT", raising=False)
+    monkeypatch.setenv("JARVIS_INBOX", "/profile/inbox")
+    monkeypatch.setenv("JARVIS_LOG_DIR", "/profile/logs")
+    cfg = _load_config()
+    assert cfg["inbox_dir"] == "/profile/inbox"
+    assert cfg["log_dir"] == "/profile/logs"
