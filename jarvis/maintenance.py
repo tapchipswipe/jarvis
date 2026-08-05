@@ -6,8 +6,8 @@ shelling out.
 """
 from __future__ import annotations
 
-from jarvis.store import Store
 from jarvis.embed import get_embedding
+from jarvis.store import Store
 
 
 def reindex_missing(store: Store | None = None, limit: int = 200) -> int:
