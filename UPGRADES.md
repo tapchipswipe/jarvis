@@ -27,3 +27,7 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2026-08-05 — Multi-user support with isolated per-user storage directories and access control
 - `[done]` 2026-08-05 — Daily memory maintenance scheduled via cron (promote + reindex) on macOS and Lightspeed
 - `[done]` 2026-08-05 — Device sync hardening: photos skip gracefully without exiftool; deep scan no longer walks huge Library dirs / spams Errno 11
+- `[done]` 2026-08-05 — Durable push queue (push_memories): retry/backoff, batch tar upload, sync_log writes, never drop when offline (Round 4)
+- `[done]` 2026-08-05 — LLM-synthesized morning/end-of-day digests from real memories + task counts (Round 4)
+- `[done]` 2026-08-05 — Mayor idle maintenance (reindex ~5m, promote ~6h) with Ollama VRAM guard (Round 4)
+- `[done]` 2026-08-05 — Knowledge graph surfaced in search, chat RAG, and dashboard memories (Round 4)
