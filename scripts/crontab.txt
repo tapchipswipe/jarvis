@@ -6,6 +6,9 @@
 # Daily consolidation at 04:00 (idle-aware)
 0 4 * * * /bin/bash /data/jarvis/scripts/consolidate-daily.sh
 
+# Daily memory maintenance (promote raw->session, re-index missing vectors)
+15 4 * * * /bin/bash /data/jarvis/scripts/promote-daily.sh
+
 # Weekly reflection at 06:00 on Sundays (idle-aware)
 0 6 * * 0 /bin/bash /data/jarvis/scripts/consolidate-weekly.sh
 

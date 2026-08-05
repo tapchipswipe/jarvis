@@ -44,6 +44,14 @@ for f in scripts/start-jarvis.bat scripts/ollama-autostart.xml scripts/setup-win
     [ -f "$f" ] && scp $SSH_OPTS "$f" "${LIGHTSPEED_USER}@${LIGHTSPEED_HOST}:${LIGHTSPEED_TARGET}/$f" 2>/dev/null || true
 done
 
+# Bash maintenance scripts (cron: consolidation, promotion, backup, model update)
+for f in scripts/promote-daily.sh scripts/consolidate-daily.sh scripts/consolidate-weekly.sh scripts/consolidate-monthly.sh scripts/run-consolidation.sh scripts/run-if-idle.sh scripts/run-backup.sh scripts/run-model-update.sh scripts/crontab.txt; do
+    if [ -f "$f" ]; then
+        scp $SSH_OPTS "$f" "${LIGHTSPEED_USER}@${LIGHTSPEED_HOST}:${LIGHTSPEED_TARGET}/$f" 2>/dev/null || true
+    fi
+done
+ssh $SSH_OPTS "${LIGHTSPEED_USER}@${LIGHTSPEED_HOST}" "chmod +x ${LIGHTSPEED_TARGET}/scripts/*.sh" 2>/dev/null || true
+
 # Config files
 echo "  Syncing config..."
 scp $SSH_OPTS pyproject.toml "${LIGHTSPEED_USER}@${LIGHTSPEED_HOST}:${LIGHTSPEED_TARGET}/" 2>/dev/null || true
