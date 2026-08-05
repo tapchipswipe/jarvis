@@ -167,6 +167,7 @@ def search(query, source, n, verbose):
     store = Store()
     brain = Brain(store)
     response, memories = brain.query(query, n_results=n, source_filter=source, verbose=verbose)
+    links = store.lookup_entities([m["id"] for m in memories]) if memories else {}
     store.close()
     click.echo("--- Response ---")
     click.echo(response)
@@ -176,6 +177,9 @@ def search(query, source, n, verbose):
         click.echo(f"- [{m['source']}] [{m['tier']}] {m['timestamp']} {tags}")
         click.echo(f"  {m['content'][:120]}...")
         click.echo(f"  id={m['id']}")
+        ents = links.get(m["id"])
+        if ents:
+            click.echo(f"  entities: {', '.join(e['name'] for e in ents)}")
 
 
 @cli.command()

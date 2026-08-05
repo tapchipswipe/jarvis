@@ -270,3 +270,17 @@ def test_promote_skips_superseded_and_non_raw(store):
     store.mark_superseded(fid)
     promoted = store.promote_raw_to_session(days=7)
     assert promoted == 0
+
+
+def test_lookup_entities_returns_mapping(store):
+    eid = store.get_or_create_entity("Alice Smith", entity_type="person")
+    store.add("memX", "manual", "1", "2026-01-01T10:00:00", "met alice", [], {}, [0.1] * 8)
+    store.link_memory_entity("memX", eid)
+    links = store.lookup_entities(["memX", "unknown-id"])
+    assert "memX" in links
+    names = [e["name"] for e in links["memX"]]
+    assert "Alice Smith" in names
+    assert links.get("unknown-id") is None
+
+def test_lookup_entities_empty(store):
+    assert store.lookup_entities([]) == {}

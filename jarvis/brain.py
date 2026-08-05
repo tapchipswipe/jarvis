@@ -54,10 +54,20 @@ class Brain:
             ctx = f"[{m['source']}] {m['timestamp']}\n{m['content']}"
             context_parts.append(ctx)
         context = "\n\n---\n\n".join(context_parts)
+
+        # Surface the knowledge graph: link any entities found on these memories.
+        links = self.store.lookup_entities([m["id"] for m in memories]) if memories else {}
+        linked = ""
+        if links:
+            lines_txt = []
+            for mid, ents in links.items():
+                lines_txt.append(f"- {', '.join(e['name'] for e in ents)}")
+            linked = "\n\nRELATED ENTITIES:\n" + "\n".join(lines_txt)
+
         system_prompt = (
             "You are a private Jarvis agent. You have access to the user's collected memories below. "
             "Answer using the context provided. If the context is incomplete, say so. Keep answers concise and actionable.\n\n"
-            f"RELEVANT MEMORIES:\n{context}"
+            f"RELEVANT MEMORIES:\n{context}{linked}"
         )
         response = _ollama_chat(model=self.model, messages=[
             {"role": "system", "content": system_prompt},

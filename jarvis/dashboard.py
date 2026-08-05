@@ -183,6 +183,9 @@ def dashboard_memories(request: Request, source: str | None = None, tier: str | 
             memories = store.get_recent_raw(hours=48, limit=n)
     except Exception:
         memories = []
+    links = {}
+    try:
+        links = store.lookup_entities([m["id"] for m in memories]) if memories else {}
     finally:
         store.close()
 
@@ -194,6 +197,8 @@ def dashboard_memories(request: Request, source: str | None = None, tier: str | 
         content_preview = (m.get("content") or "")[:200]
         if len(m.get("content", "")) > 200:
             content_preview += "…"
+        ents = links.get(m["id"]) or []
+        ent_html = ", ".join(f'<span class="muted">{e["name"]}</span>' for e in ents) if ents else "<span class=\"muted\">—</span>"
         rows += f"""
         <tr>
           <td>{tier_badge}</td>
@@ -201,6 +206,7 @@ def dashboard_memories(request: Request, source: str | None = None, tier: str | 
           <td>{src}</td>
           <td><span class="muted">{m.get("route", "unclassified")}</span></td>
           <td>{content_preview}</td>
+          <td>{ent_html}</td>
         </tr>
         """
 
@@ -213,7 +219,7 @@ def dashboard_memories(request: Request, source: str | None = None, tier: str | 
         <button type="submit" style="padding:4px 12px;">Filter</button>
       </form>
       <table>
-        <tr><th>Tier</th><th>Timestamp</th><th>Source</th><th>Route</th><th>Content</th></tr>
+        <tr><th>Tier</th><th>Timestamp</th><th>Source</th><th>Route</th><th>Content</th><th>Entities</th></tr>
         {rows}
       </table>
     </div>

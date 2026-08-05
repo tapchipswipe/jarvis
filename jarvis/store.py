@@ -223,6 +223,28 @@ class Store:
         )
         self.conn.commit()
 
+    def lookup_entities(self, memory_ids, cap: int = 20):
+        """Return {memory_id: [{name, entity_type}, ...]} for the given memories.
+
+        Used to surface the knowledge graph alongside search/chat results.
+        """
+        ids = list(dict.fromkeys(memory_ids))[:cap]
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        rows = self.conn.execute(
+            f"SELECT me.memory_id, e.canonical_name, e.entity_type"
+            f" FROM memory_entities me JOIN entities e ON me.entity_id = e.id"
+            f" WHERE me.memory_id IN ({marks})",
+            ids,
+        ).fetchall()
+        out: dict[str, list[dict]] = {}
+        for r in rows:
+            out.setdefault(r["memory_id"], []).append(
+                {"name": r["canonical_name"], "entity_type": r["entity_type"]}
+            )
+        return out
+
     def add_relationship(self, source_entity: str, target_entity: str, relation_type: str, source_memory_id: str, confidence: float):
         """Create a relationship edge between two entities"""
         if not source_entity or not target_entity:

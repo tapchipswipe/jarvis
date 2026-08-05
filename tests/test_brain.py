@@ -135,3 +135,20 @@ def test_build_digest_static_fallback(store, monkeypatch):
     with patch("jarvis.task_queue.TaskQueue"):
         text = b.build_digest(kind="end_of_day", hours=24)
     assert "push queue" in text
+
+def test_query_injects_related_entities(store):
+    fid = "mem-q1"
+    store.add(fid, "manual", "1", "2026-01-01T10:00:00", "worked with alice on the plan", [], {}, [0.1] * 8)
+    eid = store.get_or_create_entity("Alice Smith", entity_type="person")
+    store.link_memory_entity(fid, eid)
+    store.collection.query.return_value = {
+        "documents": [["worked with alice"]], "ids": [[fid]],
+        "metadatas": [[{"source": "manual"}]],
+    }
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.brain._ollama_chat") as m_chat:
+        m_chat.return_value = {"message": {"content": "answer"}}
+        _, _mem = Brain(store).query("who did i work with?")
+    sys_prompt = m_chat.call_args[1]["messages"][0]["content"]
+    assert "RELATED ENTITIES" in sys_prompt
+    assert "Alice Smith" in sys_prompt

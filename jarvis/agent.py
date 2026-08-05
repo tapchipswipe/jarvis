@@ -206,6 +206,13 @@ def _inject_rag_context(session_db, user_message, model: str | None = None) -> s
                 f"[" + r.get("source", "") + "] " + "\n" +
                 r.get("timestamp", "") + "\n" + r.get("content", "")
             )
+        # Surface linked entities so the agent can reason over the graph.
+        links = store.lookup_entities([r.get("id") for r in rows])
+        if links:
+            ent_lines = []
+            for ents in links.values():
+                ent_lines.extend(e["name"] for e in ents)
+            parts.append("RELATED ENTITIES: " + ", ".join(ent_lines))
         return "\n".join(parts)
     except Exception:
         return ""
