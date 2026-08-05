@@ -4,13 +4,13 @@ from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
 
+# Scaled-back deep-scan roots. The mac Library dirs contain tens of thousands of
+# app-sandbox files and repeatedly hit Errno 11 (EAGAIN) during a live walk, so
+# they are excluded here — Documents/Downloads/Desktop cover user-authored text.
 DEEP_DIRS = [
     Path.home() / "Documents",
     Path.home() / "Downloads",
     Path.home() / "Desktop",
-    Path.home() / "Library" / "Group Containers",
-    Path.home() / "Library" / "Containers",
-    Path.home() / "Library" / "Application Support",
 ]
 DEEP_EXTENSIONS = {".md", ".txt", ".json", ".csv", ".xml", ".html", ".log", ".yaml", ".yml", ".toml", ".rst", ".org"}
 DEEP_EXCLUDE_DIRS = {".git", "node_modules", "__pycache__", "venv", ".venv", "Cache", "Caches", "tmp", "VirtualBox VMs"}
@@ -27,6 +27,7 @@ def _should_exclude(path: Path) -> bool:
 def sync_deep(store, max_files=50000):
     count = 0
     processed = 0
+    errs = 0
     for base_dir in DEEP_DIRS:
         if not base_dir.exists():
             continue
@@ -56,6 +57,14 @@ def sync_deep(store, max_files=50000):
                     store.add(cid, source, source_id, ts, chunk["text"], ["deep"], {"path": str(path)}, emb)
                     count += 1
                 processed += 1
+            except OSError as e:
+                # EAGAIN / EMFILE during a live filesystem walk are common;
+                # report each unique errno at most once instead of per-file.
+                errs += 1
+                if errs <= 5:
+                    print(f"deep error: {e}")
             except Exception as e:
-                print(f"deep error: {e}")
+                errs += 1
+                if errs <= 5:
+                    print(f"deep error: {e}")
     return count

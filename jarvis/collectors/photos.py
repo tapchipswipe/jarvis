@@ -20,6 +20,13 @@ def _has_tesseract() -> bool:
         return False
 
 
+def _has_exiftool() -> bool:
+    try:
+        return subprocess.run(["which", "exiftool"], capture_output=True, text=True).returncode == 0
+    except Exception:
+        return False
+
+
 def _ocr_image(path: Path) -> str | None:
     try:
         result = subprocess.run(["tesseract", str(path), "stdout"], capture_output=True, text=True, timeout=30)
@@ -32,6 +39,11 @@ def _ocr_image(path: Path) -> str | None:
 
 def sync_photos(store):
     count = 0
+    if not _has_exiftool():
+        # exiftool is required to read photo metadata; skip quietly rather than
+        # erroring on every image.
+        print("photos: skipping (exiftool not installed)")
+        return count
     for photo_dir in PHOTO_DIRS:
         if not photo_dir.exists():
             continue
