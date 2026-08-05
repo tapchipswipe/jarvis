@@ -62,6 +62,10 @@ class TriggerContext:
     # Store fields
     memory_count: int = 0
     last_memory_ts: Optional[str] = None
+    store: Any = None  # the Store instance (set by TriggerEngine.evaluate)
+    # Mayor task-queue counts (populated by evaluate when available)
+    task_pending: int = 0
+    task_in_progress: int = 0
     # Misc
     extra: dict = field(default_factory=dict)
 
@@ -319,6 +323,52 @@ def _action_escalate(
     return f"escalate:{reason[:60]}"
 
 
+@_register_action("digest")
+def _action_digest(
+    spec: dict,
+    ctx: TriggerContext,
+    **kwargs: Any,
+) -> str:
+    """LLM-synthesized digest for morning/end-of-day, then notify + brief + store.
+
+    spec: kind (morning_brief | end_of_day), title. LLM failure falls back to
+    the static summary returned by Brain.build_digest.
+    """
+    kind = spec.get("kind", "morning_brief")
+    title = spec.get("title", kwargs.get("trigger_name", "Digest"))
+    store = ctx.store
+    owns_store = store is None
+    if owns_store:
+        from jarvis.store import Store
+        store = Store()
+    try:
+        from jarvis.brain import Brain
+        text = Brain(store).build_digest(kind=kind)
+
+        path = write_briefing(title, text)
+
+        # Durable session-tier memory so the digest is searchable later.
+        try:
+            from jarvis.store import fingerprint
+            from jarvis.embed import get_embedding
+            now_iso = datetime.utcnow().isoformat()
+            fid = fingerprint("brief", title, text, now_iso)
+            if not store.exists(fid):
+                emb = get_embedding(text[:4000])
+                store.add(
+                    fid, "brief", title, now_iso, text,
+                    ["brief", kind], {"title": title}, emb, tier="session",
+                )
+        except Exception:            # noqa: BLE001 - memory write is best-effort
+            pass
+
+        send_notification(title, text[:200])
+        return f"digest:{kind}:{path}"
+    finally:
+        if owns_store:
+            store.close()
+
+
 def _dispatch_action(
     spec: dict,
     ctx: TriggerContext,
@@ -342,6 +392,8 @@ def _render_template(text: str, ctx: TriggerContext) -> str:
         "last_ingest":   ctx.last_ingest_ts or "never",
         "last_memory":   ctx.last_memory_ts or "never",
         "pending_count": len(ctx.pending_queue),
+        "task_pending":  ctx.task_pending,
+        "task_in_progress": ctx.task_in_progress,
         "activity_lines": "; ".join(
             a["msg"] for a in ctx.activity_log[-5:] if isinstance(a, dict)
         ),
@@ -397,6 +449,19 @@ class TriggerEngine:
         except Exception as exc:           # noqa: BLE001
             self.logger.debug("Could not read store stats: %s", exc)
 
+        # Mayor task-queue counts (best-effort; missing -> 0)
+        task_pending = task_in_progress = 0
+        try:
+            from jarvis.task_queue import TaskQueue
+            tq = TaskQueue()
+            try:
+                task_pending = len(tq.list_tasks(status="pending_review"))
+                task_in_progress = len(tq.list_tasks(status="in_progress"))
+            finally:
+                tq.close()
+        except Exception:
+            pass
+
         ctx = TriggerContext(
             now=now,
             last_ingest_ts=getattr(state, "last_ingest_ts", None),
@@ -406,6 +471,9 @@ class TriggerEngine:
             trigger_events=dict(self._events),  # snapshot
             memory_count=memory_count,
             last_memory_ts=last_memory_ts,
+            store=store,
+            task_pending=task_pending,
+            task_in_progress=task_in_progress,
         )
 
         self.logger.debug(
@@ -462,9 +530,9 @@ HARDCODED_TRIGGERS: list[dict[str, Any]] = [
         "cooldown": 3600,
         "actions": [
             {
-                "type": "notify",
+                "type": "digest",
+                "kind": "morning_brief",
                 "title": "☀️ Morning Brief",
-                "body": "Good morning! Check your calendar and inbox for the day ahead.",
             }
         ],
     },
@@ -475,9 +543,9 @@ HARDCODED_TRIGGERS: list[dict[str, Any]] = [
         "cooldown": 3600,
         "actions": [
             {
-                "type": "brief",
+                "type": "digest",
+                "kind": "end_of_day",
                 "title": "📋 End-of-Day Wrap",
-                "content": "End of day. {pending_count} items still pending. Activity: {activity_lines}",
             }
         ],
     },

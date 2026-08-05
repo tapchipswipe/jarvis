@@ -256,6 +256,25 @@ def test_action_escalate(mock_notify):
     mock_notify.assert_called_once()
 
 
+@patch("jarvis.triggers.send_notification")
+@patch("jarvis.triggers.write_briefing")
+@patch("jarvis.brain.Brain.build_digest", return_value="Here is the digest.")
+def test_action_digest(mock_digest, mock_brief, mock_notify):
+    from jarvis.triggers import _ACTION_HANDLERS
+    mock_brief.return_value = "/tmp/briefing.md"
+    assert "digest" in _ACTION_HANDLERS
+    # A mock store avoids opening the real DB / touching real data.
+    ctx = _make_ctx(store=MagicMock())
+    result = _dispatch_action(
+        {"type": "digest", "kind": "morning_brief", "title": "Morning"},
+        ctx,
+    )
+    assert result.startswith("digest:morning_brief:")
+    mock_digest.assert_called_once()
+    mock_brief.assert_called_once()
+    mock_notify.assert_called_once()
+
+
 # ── load_triggers ─────────────────────────────────────────────────────────────
 
 def test_load_triggers_returns_defaults():

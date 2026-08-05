@@ -93,3 +93,45 @@ def test_save_session_requires_three_turns(store):
     b = _brain(store)
     short = [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
     assert b.save_session(short) is False
+
+
+# ── build_digest ────────────────────────────────────────────────────────────
+
+def test_build_digest_empty_window(store):
+    from datetime import datetime, timezone
+    b = _brain(store)
+    # No memories in the window (store is empty) and no tasks -> static message
+    with patch("jarvis.task_queue.TaskQueue"):
+        text = b.build_digest(kind="morning_brief", hours=1)
+    assert "No new activity" in text
+
+
+def test_build_digest_uses_llm(store, monkeypatch):
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b = _brain(store)
+        b.remember("Planned the Round 4 architecture and wrote the plan.", source="manual")
+
+    monkeypatch.setattr(
+        "jarvis.brain._ollama_chat",
+        lambda model, messages: {"message": {"content": "Here is your morning digest."}},
+    )
+    with patch("jarvis.task_queue.TaskQueue"):
+        text = b.build_digest(kind="morning_brief", hours=24)
+    assert "morning digest" in text
+
+
+def test_build_digest_static_fallback(store, monkeypatch):
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b = _brain(store)
+        b.remember("Shipped the push queue with retry and backoff.", source="manual")
+
+    # LLM returns empty -> static fallback lists the memory
+    monkeypatch.setattr(
+        "jarvis.brain._ollama_chat",
+        lambda model, messages: {"message": {"content": ""}},
+    )
+    with patch("jarvis.task_queue.TaskQueue"):
+        text = b.build_digest(kind="end_of_day", hours=24)
+    assert "push queue" in text

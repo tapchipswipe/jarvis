@@ -80,6 +80,74 @@ class Brain:
             return "medium"
         return "low"
 
+    def build_digest(self, kind: str = "morning_brief", hours: int | None = None,
+                     max_memories: int = 12) -> str:
+        """Synthesize a morning / end-of-day digest from recent memories and
+        the Mayor task queue. Falls back to a static bullet list on LLM failure.
+        """
+        if kind == "morning_brief":
+            hours = hours if hours is not None else 12
+            system_prompt = (
+                "You are Jarvis. Write a concise, friendly morning digest from the "
+                "overnight memories and task state below. Use 3-5 short bullets. "
+                "Do not invent facts. If nothing is listed, say so in one line."
+            )
+        else:
+            hours = hours if hours is not None else 24
+            system_prompt = (
+                "You are Jarvis. Write a concise end-of-day wrap-up from the "
+                "memories and task state below: what happened today and what is "
+                "still open. Use 3-5 short bullets. Do not invent facts."
+            )
+
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        rows = self.store.conn.execute(
+            "SELECT source, content, timestamp FROM memories"
+            " WHERE superseded = 0 AND timestamp >= ?"
+            " ORDER BY timestamp DESC LIMIT ?",
+            (cutoff, max_memories),
+        ).fetchall()
+        mems = [dict(r) for r in rows]
+
+        pending = in_progress = 0
+        task_titles: list[str] = []
+        try:
+            from jarvis.task_queue import TaskQueue
+            tq = TaskQueue()
+            try:
+                pending = len(tq.list_tasks(status="pending_review"))
+                in_progress = len(tq.list_tasks(status="in_progress"))
+                task_titles = [t.get("title", "") for t in tq.list_tasks(limit=8)]
+            finally:
+                tq.close()
+        except Exception:
+            pass
+
+        if not mems and pending == 0 and in_progress == 0:
+            return f"No new activity in the last {hours}h and no pending tasks."
+
+        user_text = "RECENT MEMORIES:\n" + "\n".join(
+            f"- [{m['source']}] {m['content'][:200]}" for m in mems[:max_memories]
+        )
+        user_text += (
+            f"\n\nTASKS - pending: {pending}, in progress: {in_progress}\n"
+            + "\n".join(f"- {t}" for t in task_titles[:5])
+        )
+
+        try:
+            resp = _ollama_chat(self.model, messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ])
+            text = (resp.get("message") or {}).get("content", "").strip()
+            if text:
+                return text
+        except Exception:            # noqa: BLE001 - fall back to static
+            pass
+
+        lines = [f"- [{m['source']}] {m['content'][:120]}" for m in mems[:8]]
+        return "\n".join(lines) or "No new memories in this window."
+
     def chat(self, session: list[dict], user_message: str):
         if not self._is_substantive(user_message):
             return "Noted.", [], 0
