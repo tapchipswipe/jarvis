@@ -264,6 +264,30 @@ class TestPhotosCollector:
         count = sync_photos(mock_store)
         assert count == 0
 
+    @patch("jarvis.collectors.photos.subprocess.run")
+    def test_has_exiftool_true(self, mock_run):
+        from jarvis.collectors.photos import _has_exiftool
+        mock_run.return_value.returncode = 0
+        assert _has_exiftool() is True
+
+    @patch("jarvis.collectors.photos.subprocess.run")
+    def test_has_exiftool_false(self, mock_run):
+        from jarvis.collectors.photos import _has_exiftool
+        mock_run.return_value.returncode = 1
+        assert _has_exiftool() is False
+
+    @patch("jarvis.collectors.photos.subprocess.run")
+    @patch("jarvis.collectors.photos.PHOTO_DIRS", [Path("/nonexistent")])
+    def test_sync_photos_skips_when_no_exiftool(self, mock_run, mock_store):
+        # exiftool missing -> skip quietly (return 0), and never attempt per-photo
+        # metadata reads (which relied on exiftool).
+        from jarvis.collectors.photos import sync_photos
+        mock_run.return_value.returncode = 1  # `which exiftool` fails
+        count = sync_photos(mock_store)
+        assert count == 0
+        # Only the `which exiftool` probe should run, no per-photo exiftool calls.
+        assert mock_run.call_count <= 1
+
 
 # ---------------------------------------------------------------------------
 # email collector
