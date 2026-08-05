@@ -2,7 +2,6 @@ import json
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
-from pathlib import Path
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -202,7 +201,8 @@ class Brain:
             self.store.add(cid, "upgrade", feature_request, ct, chunk["text"], tags, meta, emb)
             added += 1
         try:
-            upgrades_path = Path.home() / ".config" / "jarvis" / "UPGRADES.md"
+            from jarvis.paths import config_file
+            upgrades_path = config_file("UPGRADES.md")
             if upgrades_path.exists():
                 with open(upgrades_path, "a") as f:
                     ts = datetime.utcnow().strftime("%Y-%m-%d")

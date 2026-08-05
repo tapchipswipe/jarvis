@@ -43,9 +43,53 @@ def _get_scheduled_scans() -> list[str]:
 
 
 @click.group()
-def cli():
-    """Jarvis — local ambient memory agent."""
-    pass
+@click.option(
+    "--data-dir",
+    default=None,
+    help="Isolate storage under a custom data directory (multi-user profiles). "
+         "Env: JARVIS_DATA_DIR",
+)
+@click.option(
+    "--config-dir",
+    default=None,
+    help="Isolate config under a custom config directory. Env: JARVIS_CONFIG_DIR",
+)
+@click.option(
+    "--user",
+    "user_name",
+    default=None,
+    help="Profile name; data/config live under ~/jarvis/users/<user>. Env: JARVIS_USER",
+)
+@click.pass_context
+def cli(ctx, data_dir, config_dir, user_name):
+    """Jarvis — local ambient memory agent.
+
+    Multi-user: pass --user/-u (or set JARVIS_USER) to run an isolated profile,
+    or --data-dir/--config-dir for fully custom storage locations.
+    """
+    if data_dir:
+        os.environ["JARVIS_DATA_DIR"] = data_dir
+    if config_dir:
+        os.environ["JARVIS_CONFIG_DIR"] = config_dir
+    if user_name:
+        os.environ["JARVIS_USER"] = user_name
+    ctx.obj = {"user": user_name or os.environ.get("JARVIS_USER")}
+
+
+@cli.command()
+@click.pass_context
+def profiles(ctx):
+    """Show the active profile and the resolved storage/config paths."""
+    from jarvis.paths import config_dir, data_dir, user_name
+
+    click.echo(f"Active user/profile : {user_name()}")
+    click.echo(f"Data root (store)   : {data_dir()}")
+    click.echo(f"Config root         : {config_dir()}")
+    click.echo("")
+    click.echo("Override via env or the global options:")
+    click.echo("  jarvis --user <name> <cmd>       # ~/jarvis/users/<name>/...")
+    click.echo("  jarvis --data-dir <dir> <cmd>    # fully custom data root")
+    click.echo("  JARVIS_DATA_DIR=<dir> jarvis status")
 
 
 @cli.command()
@@ -403,10 +447,8 @@ def export(fmt, output, source, tier):
 
 def _export_default_dir() -> Path:
     """Directory for timestamped exports (override with JARVIS_DATA_DIR)."""
-    data_dir = os.environ.get("JARVIS_DATA_DIR")
-    if data_dir:
-        return Path(data_dir) / "exports"
-    return Path.home() / "jarvis" / "data" / "exports"
+    from jarvis.paths import data_dir
+    return data_dir("data", "exports")
 
 
 def _export_filename(fmt: str) -> str:

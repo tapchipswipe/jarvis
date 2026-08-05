@@ -7,7 +7,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-DEFAULT_DB_PATH = Path.home() / "jarvis" / "data" / "sessions.db"
+from jarvis.paths import data_dir
+
+DEFAULT_DB_PATH = data_dir("data", "sessions.db")
 
 
 class SessionDB:

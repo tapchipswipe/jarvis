@@ -34,11 +34,27 @@ from typing import Optional
 logger = logging.getLogger("jarvis.notify")
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-STATE_DIR = Path.home() / ".config" / "jarvis"
-NOTIFICATIONS_LOG = STATE_DIR / "notifications.log"
-BRIEFINGS_DIR = STATE_DIR / "briefings"
+# Resolved lazily so JARVIS_CONFIG_DIR / JARVIS_USER set at runtime are honoured.
+# Tests may override STATE_DIR directly (kept as a module attribute for that).
+
+STATE_DIR = None  # type: ignore[assignment]  # None -> resolve from env
 
 SYSTEM = platform.system()
+
+
+def _state_dir() -> Path:
+    if STATE_DIR is not None:
+        return Path(STATE_DIR)  # type: ignore[arg-type]
+    from jarvis.paths import config_dir
+    return config_dir()
+
+
+def _notifications_log() -> Path:
+    return _state_dir() / "notifications.log"
+
+
+def _briefings_dir() -> Path:
+    return _state_dir() / "briefings"
 
 
 # ── Subprocess helper ────────────────────────────────────────────────────────
@@ -83,12 +99,13 @@ def _send_osascript(title: str, body: str) -> bool:
 # ── Durable log ──────────────────────────────────────────────────────────────
 
 def _log_notification(title: str, body: str) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    state_dir = _state_dir()
+    state_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     channel = "oscript" if SYSTEM == "Darwin" else "log"
     line = f"[{ts}] [{channel}] {title} | {body}\n"
     try:
-        with NOTIFICATIONS_LOG.open("a", encoding="utf-8") as fh:
+        with _notifications_log().open("a", encoding="utf-8") as fh:
             fh.write(line)
         logger.debug("Notification logged: [%s] %s", channel, title)
     except Exception as exc:         # noqa: BLE001
@@ -118,9 +135,10 @@ def write_briefing(title: str, content: str) -> Path:
 
     Returns the path of the file written.
     """
-    BRIEFINGS_DIR.mkdir(parents=True, exist_ok=True)
+    briefings_dir = _briefings_dir()
+    briefings_dir.mkdir(parents=True, exist_ok=True)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = BRIEFINGS_DIR / f"{today}.md"
+    path = briefings_dir / f"{today}.md"
 
     ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
     entry = (

@@ -21,6 +21,7 @@ from jarvis.ingest import chunk_document
 from jarvis.classifier import classify, validate_envelope, apply_envelope
 from jarvis.routes import ROUTE_TAG_MAP
 from jarvis.device_id import get_device_id
+from jarvis.paths import config_dir, config_file
 
 try:
     from jarvis.triggers import TriggerEngine, load_triggers
@@ -38,9 +39,9 @@ else:
     DEFAULT_LOG_DIR = Path("/data/jarvis/logs")
     DEFAULT_PID_FILE = Path("/tmp/jarvis-daemon.pid")
 
-STATE_DIR = Path.home() / ".config" / "jarvis"
-STATE_FILE = STATE_DIR / "daemon-state.json"
-CONFIG_FILE = STATE_DIR / "config.toml"
+STATE_DIR = config_dir()
+STATE_FILE = config_file("daemon-state.json")
+CONFIG_FILE = config_file("config.toml")
 
 RETRY_BACKOFFS = [60, 300, 1800, 7200]
 MAX_RETRIES = 5

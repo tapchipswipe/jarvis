@@ -16,14 +16,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_DB_PATH = Path.home() / ".config" / "jarvis" / "task_queue.db"
+from jarvis.paths import config_file
 
 
 class TaskQueue:
     """SQLite-backed task queue for the Mayor."""
 
     def __init__(self, db_path: Path | str | None = None):
-        self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+        self.db_path = Path(db_path) if db_path else config_file("task_queue.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row

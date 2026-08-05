@@ -15,10 +15,10 @@ from jarvis import notify
 
 
 def _patch_paths(tmp_path, monkeypatch):
+    # The notify functions derive notifications.log and briefings/ from
+    # STATE_DIR, so overriding just that one switch is enough for isolation.
     config_dir = tmp_path / "config"
     monkeypatch.setattr(notify, "STATE_DIR", config_dir)
-    monkeypatch.setattr(notify, "NOTIFICATIONS_LOG", config_dir / "notifications.log")
-    monkeypatch.setattr(notify, "BRIEFINGS_DIR", config_dir / "briefings")
 
 
 def test_send_notification_writes_log(tmp_path, monkeypatch):

@@ -190,8 +190,9 @@ def _logs_view():
     if platform.system() == "Windows":
         log_path = Path("C:/data/jarvis/logs/daemon.log")
     elif not log_path.exists():
-        # macOS/local deployment keeps logs under ~/jarvis/logs
-        log_path = Path.home() / "jarvis" / "logs" / "daemon.log"
+        # macOS/local deployment keeps logs under the data root
+        from jarvis.paths import logs_dir
+        log_path = logs_dir("daemon.log")
     if not log_path.exists():
         console.print(f"[yellow]Log not found at {log_path}[/yellow]")
         return

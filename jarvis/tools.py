@@ -175,7 +175,8 @@ def create_reminder(session_store, args):
         return {"error": "title is required", "status": "error"}
     due = args.get("due")
     notes = args.get("notes", "")
-    reminder_dir = Path.home() / "jarvis" / "data"
+    from jarvis.paths import data_dir
+    reminder_dir = data_dir("data")
     reminder_dir.mkdir(parents=True, exist_ok=True)
     reminder_path = reminder_dir / "reminders.json"
     reminder_id = f"rem-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"

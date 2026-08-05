@@ -113,7 +113,7 @@ def test_export_default_timestamped_file_in_data_dir(store, tmp_path, monkeypatc
     result = _run_export(store, "--format", "json")
 
     assert result.exit_code == 0, result.output
-    exports = list((tmp_path / "exports").glob("jarvis-export-*.json"))
+    exports = list((tmp_path / "data" / "exports").glob("jarvis-export-*.json"))
     assert len(exports) == 1
     data = json.loads(exports[0].read_text(encoding="utf-8"))
     assert data["count"] == 2

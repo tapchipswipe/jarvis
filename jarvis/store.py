@@ -6,8 +6,10 @@ from chromadb.config import Settings
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DEFAULT_CHROMA_DIR = Path.home() / "jarvis" / "data" / "chroma"
-DEFAULT_DB_PATH = Path.home() / "jarvis" / "data" / "meta.db"
+from jarvis.paths import data_dir, ensure_private_dir
+
+DEFAULT_CHROMA_DIR = data_dir("data", "chroma")
+DEFAULT_DB_PATH = data_dir("data", "meta.db")
 
 TIER_WEIGHTS = {
     "raw": 0.3,
@@ -30,9 +32,14 @@ def fingerprint(source: str, source_id: str, content: str, date: str) -> str:
 
 
 class Store:
-    def __init__(self, chroma_dir: Path = DEFAULT_CHROMA_DIR, db_path: Path = DEFAULT_DB_PATH):
-        chroma_dir.mkdir(parents=True, exist_ok=True)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, chroma_dir: Path | None = None, db_path: Path | None = None):
+        # Resolve at construction time so JARVIS_DATA_DIR / JARVIS_USER set
+        # in the current process (CLI --data-dir/--user, LaunchAgent env) are
+        # honoured even if the module was imported earlier.
+        chroma_dir = chroma_dir or data_dir("data", "chroma")
+        db_path = db_path or data_dir("data", "meta.db")
+        ensure_private_dir(chroma_dir)
+        ensure_private_dir(db_path.parent)
         self.chroma = chromadb.PersistentClient(path=str(chroma_dir), settings=Settings(anonymized_telemetry=False))
         self.collection = self.chroma.get_or_create_collection("memories")
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)

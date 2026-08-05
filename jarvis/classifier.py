@@ -2,10 +2,6 @@ import json
 import os
 import urllib.request
 import urllib.error
-from pathlib import Path
-
-
-DECISION_LOG = Path.home() / "jarvis" / "logs" / "decisions.jsonl"
 
 
 def _ollama_generate(prompt: str, model: str = None, host: str = None, port: int = None) -> str:

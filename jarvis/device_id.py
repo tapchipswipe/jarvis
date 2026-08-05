@@ -3,7 +3,9 @@ import json
 import os
 from pathlib import Path
 
-DEVICE_ID_FILE = Path.home() / ".config" / "jarvis" / "device-id"
+from jarvis.paths import config_file
+
+DEVICE_ID_FILE = config_file("device-id")
 
 
 def get_device_id() -> str:

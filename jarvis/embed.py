@@ -59,7 +59,8 @@ def _cache_path() -> Path:
     env = os.environ.get("JARVIS_EMBED_CACHE")
     if env:
         return Path(env)
-    return Path.home() / "jarvis" / "data" / "embed_cache.db"
+    from jarvis.paths import data_dir
+    return data_dir("data", "embed_cache.db")
 
 
 def _cache_key(text: str, model: str) -> str:

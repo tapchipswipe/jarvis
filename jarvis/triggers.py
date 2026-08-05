@@ -504,7 +504,8 @@ def load_triggers(config_path: Optional[Path] = None) -> list[Trigger]:
     Returns a list of instantiated Trigger objects.
     """
     if config_path is None:
-        config_path = Path.home() / ".config" / "jarvis" / "triggers.toml"
+        from jarvis.paths import config_file
+        config_path = config_file("triggers.toml")
 
     raw: list[dict[str, Any]] = []
 
