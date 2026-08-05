@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, bot]
   pull_request:
-    branches: [main, master]
+    branches: [main, bot]
 
 jobs:
   test:
@@ -33,9 +33,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install chromadb>=0.4.22 click>=8.1.0 watchdog>=3.0.0 requests>=2.31.0 rich>=13.0.0
-          pip install pytest pytest-cov
-          pip install -e .
+          pip install -e ".[dev]"
+
+      - name: Import smoke test (dashboard/mayor/agents)
+        run: |
+          python -c "import jarvis.dashboard, jarvis.mayor, jarvis.agents; from jarvis.dashboard import app; print('imports OK')"
 
       - name: Run tests
         run: |
