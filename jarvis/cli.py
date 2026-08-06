@@ -872,6 +872,36 @@ def stats():
         tq.close()
 
 
+
+@cli.command()
+@click.option("--port", default=8766, help="Port to run the Jarvis server on")
+@click.option("--daemon-url", default="http://127.0.0.1:8765", help="Daemon base URL")
+@click.option("--check", "do_check", is_flag=True, help="Validate server setup without starting it")
+def server(port, daemon_url, do_check):
+    """Start the Jarvis server (FastAPI + Mayor) — the thin-client back end.
+
+    Runs the same app as the dashboard but is the canonical store + API for
+    the thin-client Mac (mode=client). Set JARVIS_TOKEN to require a token
+    (loopback is always allowed).
+    """
+    from jarvis import dashboard
+    if do_check:
+        ok = dashboard.app is not None
+        store = dashboard._get_store()
+        try:
+            n = store.conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE superseded = 0"
+            ).fetchone()[0]
+            click.echo(f"OK app=loaded memories={n} port={port}")
+        finally:
+            store.close()
+        if not ok:
+            raise click.ClickException("server app failed to load")
+        return
+    run_dashboard = dashboard.run_dashboard
+    run_dashboard(port=port, daemon_url=daemon_url)
+
+
 @cli.command()
 @click.option("--port", default=8767, help="Port for the Mayor HTTP API")
 @click.option("--root", default=None, help="Project root directory")
