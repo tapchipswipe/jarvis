@@ -1,39 +1,47 @@
-You are the Jarvis agent living inside the `jarvis/` project.
+# Jarvis — Agent Memory / Start-Here
 
-## Context
-- Project: local second jarvis with ambient memory collection
-- Hardware: Dell G7 (Lightspeed), 16GB RAM, RTX 2070
-- Runtime: local LLM via Ollama (default: qwen2.5:7b-instruct-q4_K_M)
-- Storage: ChromaDB (vectors) + SQLite (metadata + tiers)
-- Python package entry: `jarvis/cli.py`, `jarvis/brain.py`, `jarvis/store.py`
-- Distributed: multiple devices push files via SSH/Tailscale
+You are Cline working on the **Jarvis** project (repo root = this directory).
 
-## Your responsibilities
-1. Help navigate and extend the jarvis codebase
-2. When user asks to add a data source, implement it under `jarvis/collectors/`
-3. When user asks to fix bugs, trace through `store.py` → `embed.py` → `brain.py` → `consolidation.py`
-4. Keep changes minimal and focused
+## ⚡ RESUME / START HERE (a fresh session must read these first)
+If this is a new/continued session, reconstruct context from these, in order:
+1. **`docs/STATUS.md`** — the canonical snapshot: topology, what's deployed+where, branches,
+   services, known issues, and the concrete **next actions**.
+2. **`logs/round6-handoff.md`** — the newest session narrative (what was done last + decisions).
+3. **`docs/deployment-lightspeed.md`** — the Lightspeed server runbook (paths, restart, reverse).
+4. **`docs/topology.md`** — the agreed architecture (FULL-THIN: Lightspeed = brain, Mac = thin client).
+5. `docs/system-diagram.md` / `docs/architecture.md` — overall layout.
+6. `UPGRADES.md` — feature history / `[planned]` vs `[done]`.
 
-## Commands
-- `/chat` -> `python -m jarvis.cli chat [--verbose]`
-- `/search <query>` -> `python -m jarvis.cli search <query> [--verbose]`
-- `/sync [source]` -> `python -m jarvis.cli sync [source]` (source: all, files, browser, calendar, email, photos, bookmarks, rss, system, deep, git)
-- `/status` -> `python -m jarvis.cli status`
-- `/remember <text>` -> `python -m jarvis.cli remember <text>`
-- `/correct <memory_id> <text>` -> `python -m jarvis.cli correct <memory_id> <text>`
-- `/memories [--source/--tag/--tier/-n]` -> `python -m jarvis.cli memories`
-- `/timeline [--days/-n]` -> `python -m jarvis.cli timeline`
-- `/graph [-n]` -> `python -m jarvis.cli graph`
-- `/alerts [--hours/-n]` -> `python -m jarvis.cli alerts`
-- `/upgrade <feature>` -> `python -m jarvis.cli upgrade <feature>` — records a feature request
-- `/alerts` -> `python -m jarvis.cli alerts`
+To resume after a reboot (context was reset): read those files, check live state
+(`git status`, `launchctl list | grep jarvis`, `curl <server>/api/health`), then continue.
+
+## Current architecture (top level)
+- **Lightspeed (Dell G7, 16 GB, Tailscale 100.102.0.99) = single source of truth + single writer.**
+  Runs `jarvis server` on `:8766` (branch `bot`, currently `2d98a1d`) via scheduled task `JarvisServer`;
+  canonical store at `C:\Users\despo\jarvis\data\`; Ollama local (`OLLAMA_HOST=127.0.0.1`). See `docs/deployment-lightspeed.md`.
+- **Mac = thin client.** CLI/dashboard read/write the server over Tailscale; keep a disposable
+  outbox + rolling-tail cache (`jarvis/cache.py`, `jarvis/remote.py`). Local dev store still exists
+  until the cutover runs.
+- **Remote agent:** a headless Cline CLI is installed on Lightspeed (`cline` v3.0.51) and can be
+  driven from the Mac via `ssh despo@100.102.0.99 'cline --cwd <repo> --json "<task>"'` to offload
+  maintenance/Windows-native work off the Mac.
+
+## git
+- Default working branch: `bot`. `main` is fast-forward-mirrored to `bot` and both pushed to origin
+  (`tapchipswipe/jarvis`). Keep them in sync: `git checkout main && git merge --ff-only bot && git push origin main && git checkout bot && git push origin bot`.
+
+## Commands (CLI at `python -m jarvis.cli ...`; use the venv at `.venv/bin/python`)
+- Chat/search/remember/status/sessions/graph via `jarvis.cli`
+- Server: `jarvis server --check` (deploy validation), `jarvis server --port 8766` (run)
+- Maintenance: `jarvis reindex`, `jarvis promote`, `jarvis profiles`
+- Tests: `.venv/bin/python -m pytest -p no:cacheprovider` (keep @ 300+; target green)
+- Lint: `/opt/homebrew/bin/ruff check jarvis/ tests/`
 
 ## Rules
-- Never send user data outside the machine during reasoning
-- Prefer Python stdlib + existing deps over new libraries
-- Keep files under 300 lines unless unavoidable
-- Use tiered memory: raw (0.3) < session (0.6) < reflection (1.0) < arc (1.5)
-- Corrections create new memories with `correction-of:<id>` tag, never edit raw
-- Chat shows source count badge by default; full details only on --verbose or /sources
-- Trivial messages (hi, ok, thanks, etc.) are not stored as memories
-- Push to Lightspeed only when reachable via Tailscale/SSH
+- Respect the thin-client rule: the server is the canonical writer; the Mac cache is disposable.
+- Never send user data outside the machine during reasoning (Tailscale/SSH for inter-machine ops).
+- Prefer Python stdlib + existing deps; keep files focused.
+- Tiered memory: raw < session < reflection < arc. Corrections make new memories, never edit raw.
+- Push/migrate data only with hash-verified backfill + a kept rollback copy.
+- Keep `main`/`bot` in sync before finishing a session.
+
