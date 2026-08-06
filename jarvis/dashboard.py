@@ -475,14 +475,13 @@ def _start_mayor():
 
 
 @app.post("/api/idea")
-async def api_submit_idea(request: Request):
+def api_submit_idea(request: Request, payload: dict):
     """Submit an idea to the Mayor."""
     from jarvis.task_queue import TaskQueue
     from jarvis.mayor import parse_idea
     try:
-        data = await request.json()
-        idea = data.get("idea", "")
-        source = data.get("source", "dashboard")
+        idea = payload.get("idea", "")
+        source = payload.get("source", "dashboard")
     except Exception:
         return JSONResponse({"error": "invalid JSON"}, status_code=400)
     if not idea:
@@ -502,7 +501,7 @@ async def api_submit_idea(request: Request):
 
 
 @app.get("/api/tasks")
-async def api_tasks(status: str | None = None, limit: int = 50):
+def api_tasks(status: str | None = None, limit: int = 50):
     """List tasks in the queue."""
     from jarvis.task_queue import TaskQueue
     tq = TaskQueue()
@@ -513,7 +512,7 @@ async def api_tasks(status: str | None = None, limit: int = 50):
 
 
 @app.post("/api/tasks/approve")
-async def api_approve_task(request: Request):
+def api_approve_task(request: Request):
     """Approve a task (or all pending)."""
     from jarvis.task_queue import TaskQueue
     q = dict(request.query_params)
@@ -530,7 +529,7 @@ async def api_approve_task(request: Request):
 
 
 @app.post("/api/tasks/reject")
-async def api_reject_task(request: Request):
+def api_reject_task(request: Request):
     """Reject a pending task."""
     from jarvis.task_queue import TaskQueue
     task_id = request.query_params.get("id")
@@ -544,7 +543,7 @@ async def api_reject_task(request: Request):
 
 
 @app.get("/api/status")
-async def api_status():
+def api_status():
     """Mayor status."""
     from jarvis.task_queue import TaskQueue
     tq = TaskQueue()
@@ -560,7 +559,7 @@ _ENTITY_COLS = "id, canonical_name, entity_type, source_count, first_seen, last_
 
 
 @app.get("/api/entities")
-async def api_entities(q: str | None = None, type: str | None = None, limit: int = 50):
+def api_entities(q: str | None = None, type: str | None = None, limit: int = 50):
     """List/search knowledge graph entities.
 
     Supports:
@@ -606,7 +605,7 @@ async def api_entities(q: str | None = None, type: str | None = None, limit: int
 
 
 @app.get("/api/entities/{entity_id}/relationships")
-async def api_entity_relationships(entity_id: str):
+def api_entity_relationships(entity_id: str):
     """Return relationship edges for a single entity (reuses graph.get_related)."""
     store = _get_store()
     try:
@@ -782,6 +781,14 @@ def api_export(fmt: str = "json"):
 
 @app.get("/api/health")
 def api_health(request: Request):
+    """Pure liveness probe — no store/model access, so it never stalls under load."""
+    return {"ok": True, "mode": _os.environ.get("JARVIS_MODE", "local"),
+            "uptime": round(_time.time() - _SERVER_START, 1)}
+
+
+@app.get("/api/health/deep")
+def api_health_deep(request: Request):
+    """Store-aware health for the notifier/ops — may be slower under inference load."""
     store = None
     n = None
     try:
@@ -792,7 +799,8 @@ def api_health(request: Request):
     finally:
         if store:
             store.close()
-    return {"ok": True, "mode": _os.environ.get("JARVIS_MODE", "local"), "memories": n, "uptime": round(_time.time() - _SERVER_START, 1)}
+    return {"ok": True, "mode": _os.environ.get("JARVIS_MODE", "local"), "memories": n,
+            "uptime": round(_time.time() - _SERVER_START, 1)}
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
 def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL):

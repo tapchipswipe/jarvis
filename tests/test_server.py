@@ -40,6 +40,16 @@ def test_health(client):
     body = r.json()
     assert body["ok"] is True
     assert "mode" in body
+    assert "uptime" in body
+    # liveness must NOT touch the store (pure liveness -> never stalls under load)
+    assert "memories" not in body
+
+
+def test_health_deep(client):
+    r = client.get("/api/health/deep")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
     assert "memories" in body
 
 
