@@ -140,7 +140,7 @@ class Cache:
             d = dict(r)
             try:
                 d["tags"] = json.loads(d.get("tags") or "[]")
-            except Exception:
+            except Exception:  # noqa: BLE001 - tags are best-effort
                 d["tags"] = []
             d["stale"] = True  # from cache, not authoritative
             out.append(d)
@@ -179,7 +179,7 @@ def flush_outbox(cache: Cache, limit: int = 200) -> dict:
         chunk = mems[chunk_start:chunk_start + 200]
         try:
             remote.remember_batch(chunk)
-        except Exception:
+        except Exception:  # noqa: BLE001 - keep queued on any server error
             for d in due[chunk_start:chunk_start + 200]:
                 cache.mark_retry(d["id"])
             return {"pushed": 0, "failed": len(chunk), "offline": False}

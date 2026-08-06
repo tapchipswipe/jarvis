@@ -44,7 +44,7 @@ def remote_ok(timeout: int = 5) -> bool:
     try:
         _request("GET", "/api/health", timeout=timeout)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 - treat any failure as offline
         return False
 
 
