@@ -16,7 +16,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_PATH = Path(os.environ.get("JARVIS_CACHE", "~/.cache/jarvis/cache.db")).expanduser()
+def _default_path() -> Path:
+    """Default cache DB, resolved from env at call time (not import time) so tests
+    can override JARVIS_CACHE after the module is imported."""
+    return Path(os.environ.get("JARVIS_CACHE", "~/.cache/jarvis/cache.db")).expanduser()
 BACKOFF = [5, 15, 60, 300]
 
 
@@ -26,7 +29,7 @@ def _iso() -> str:
 
 class Cache:
     def __init__(self, path: Path | str | None = None, conn: sqlite3.Connection | None = None):
-        self.path = Path(path) if path else DEFAULT_PATH
+        self.path = Path(path) if path else _default_path()
         if conn is not None:
             self.conn = conn
         else:

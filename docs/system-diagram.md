@@ -1,6 +1,8 @@
 # Jarvis — System & Workflow Diagram
 
-> Rendered after Round 4 (2026-08-05). ASCII for terminals; Mermaid renders on GitHub/Obsidian.
+> Rendered after Round 5 (2026-08-06). ASCII for terminals; Mermaid renders on GitHub/Obsidian.
+> Architecture: thin-client. Lightspeed is the authoritative brain/server; the Mac is a
+> terminal + collectors with a disposable cache (write-outbox + rolling read-tail).
 
 ## 1) Architecture map
 

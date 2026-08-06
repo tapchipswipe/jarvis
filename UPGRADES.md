@@ -31,3 +31,9 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2026-08-05 — LLM-synthesized morning/end-of-day digests from real memories + task counts (Round 4)
 - `[done]` 2026-08-05 — Mayor idle maintenance (reindex ~5m, promote ~6h) with Ollama VRAM guard (Round 4)
 - `[done]` 2026-08-05 — Knowledge graph surfaced in search, chat RAG, and dashboard memories (Round 4)
+- `[done]` 2026-08-06 — Thin-client read/write API (`/api/remember`, `/api/search`, `/api/chat`, `/api/sessions`, `/api/export`, `/api/health`) served by the dashboard app; async → sync handlers so heavy Store/LLM work never blocks the event loop (Round 5)
+- `[done]` 2026-08-06 — Disposable client cache (`jarvis/cache.py`): durable idempotent write-outbox + rolling read-tail; `JARVIS_CACHE` resolved lazily so tests/modes can override it (Round 5)
+- `[done]` 2026-08-06 — Thin remote client (`jarvis/remote.py`) + `collectors.capture()`; CLI remember/search/export honor `JARVIS_MODE=client` (`JARVIS_REMOTE`) (Round 5)
+- `[planned]` 2026-08-06 — Full server relocation: run triggers/Mayor/digests in the Lightspeed `jarvis server` process; retire Mac-local store/push (thin-client cutover)
+- `[planned]` 2026-08-06 — Offline read fallback wired into CLI search (rolling tail + substring glance + "offline — cached subset" banner)
+

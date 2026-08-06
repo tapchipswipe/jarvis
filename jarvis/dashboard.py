@@ -627,13 +627,15 @@ async def api_entity_relationships(entity_id: str):
         store.close()
 
 # ── Thin-client read/write API (Round 5) ──────────────────────────────────────
+# Handlers are sync `def` so FastAPI/starlette run them in a worker thread; heavy
+# Store/LLM work must never block the single event loop (was async -> intermittent
+# connection resets on /api/health while the loop was busy).
 import os as _os
 import time as _time
 _SERVER_START = _time.time()
 
 
 def _client_token_ok(host: str, supplied: str) -> bool:
-    """Allow loopback freely; require a matching JARVIS_TOKEN for remote calls."""
     token = _os.environ.get("JARVIS_TOKEN")
     if not token:
         return True
@@ -644,15 +646,15 @@ def _client_token_ok(host: str, supplied: str) -> bool:
     return False
 
 
+def _host_ok(request: Request) -> bool:
+    return _client_token_ok(request.client.host if request.client else "", request.headers.get("X-Jarvis-Token", ""))
+
+
 @app.post("/api/remember")
-async def api_remember(request: Request):
-    if not _client_token_ok(request.client.host if request.client else "", request.headers.get("X-Jarvis-Token", "")):
+def api_remember(request: Request, payload: dict):
+    if not _host_ok(request):
         return JSONResponse({"error": "forbidden"}, status_code=403)
     from jarvis.brain import Brain
-    try:
-        payload = await request.json()
-    except Exception:
-        return JSONResponse({"error": "bad json"}, status_code=400)
     items = payload.get("memories") if isinstance(payload, dict) else payload
     if not isinstance(items, list):
         return JSONResponse({"error": "expected a list of memories"}, status_code=400)
@@ -670,14 +672,9 @@ async def api_remember(request: Request):
                 skipped += 1
                 continue
             try:
-                n = brain.remember(
-                    content,
-                    source=it.get("source", "device"),
-                    tags=list(it.get("tags") or []),
-                    classify=False,
-                )
-                added += n
-                if n == 0:
+                if brain.remember(content, source=it.get("source", "device"), tags=list(it.get("tags") or []), classify=False):
+                    added += 1
+                else:
                     skipped += 1
             except Exception:
                 skipped += 1
@@ -687,8 +684,8 @@ async def api_remember(request: Request):
 
 
 @app.get("/api/search")
-async def api_search(request: Request, q: str = "", n: int = 10, source: str | None = None):
-    if not _client_token_ok(request.client.host if request.client else "", request.headers.get("X-Jarvis-Token", "")):
+def api_search(request: Request, q: str = "", n: int = 10, source: str | None = None):
+    if not _host_ok(request):
         return JSONResponse({"error": "forbidden"}, status_code=403)
     from jarvis.embed import get_embedding
     if not q.strip():
@@ -706,15 +703,11 @@ async def api_search(request: Request, q: str = "", n: int = 10, source: str | N
 
 
 @app.post("/api/chat")
-async def api_chat(request: Request):
-    if not _client_token_ok(request.client.host if request.client else "", request.headers.get("X-Jarvis-Token", "")):
+def api_chat(request: Request, payload: dict):
+    if not _host_ok(request):
         return JSONResponse({"error": "forbidden"}, status_code=403)
     from jarvis.agent import run_turn
     from jarvis.sessions import SessionDB
-    try:
-        payload = await request.json()
-    except Exception:
-        return JSONResponse({"error": "bad json"}, status_code=400)
     message = payload.get("message") or ""
     if not message.strip():
         return JSONResponse({"error": "message is required"}, status_code=400)
@@ -738,7 +731,7 @@ async def api_chat(request: Request):
 
 
 @app.get("/api/sessions")
-async def api_sessions():
+def api_sessions():
     from jarvis.sessions import SessionDB
     sdb = SessionDB()
     try:
@@ -748,12 +741,9 @@ async def api_sessions():
 
 
 @app.post("/api/sessions")
-async def api_create_session(request: Request):
+def api_create_session(request: Request, payload: dict | None = None):
     from jarvis.sessions import SessionDB
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
+    payload = payload or {}
     sdb = SessionDB()
     try:
         sid = sdb.create_session(title=payload.get("title", "Chat"))
@@ -763,7 +753,7 @@ async def api_create_session(request: Request):
 
 
 @app.get("/api/sessions/{sid}/messages")
-async def api_session_messages(sid: str):
+def api_session_messages(sid: str):
     from jarvis.sessions import SessionDB
     sdb = SessionDB()
     try:
@@ -773,7 +763,7 @@ async def api_session_messages(sid: str):
 
 
 @app.get("/api/export")
-async def api_export(fmt: str = "json"):
+def api_export(fmt: str = "json"):
     store = _get_store()
     try:
         rows = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 ORDER BY timestamp DESC").fetchall()
@@ -791,7 +781,7 @@ async def api_export(fmt: str = "json"):
 
 
 @app.get("/api/health")
-async def api_health(request: Request):
+def api_health(request: Request):
     store = None
     n = None
     try:
@@ -802,14 +792,7 @@ async def api_health(request: Request):
     finally:
         if store:
             store.close()
-    return {
-        "ok": True,
-        "mode": _os.environ.get("JARVIS_MODE", "local"),
-        "memories": n,
-        "uptime": round(_time.time() - _SERVER_START, 1),
-    }
-
-
+    return {"ok": True, "mode": _os.environ.get("JARVIS_MODE", "local"), "memories": n, "uptime": round(_time.time() - _SERVER_START, 1)}
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
 def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL):
