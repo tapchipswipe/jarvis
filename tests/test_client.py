@@ -137,3 +137,21 @@ def test_remote_remember_batch_posts(monkeypatch):
 # ── backoff schedule ─────────────────────────────────────────────────────────
 def test_backoff_schedule():
     assert BACKOFF == [5, 15, 60, 300]
+
+
+# ── capture() helper (S4) ───────────────────────────────────────────────────
+def test_capture_client_queues(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_MODE", "client")
+    monkeypatch.setenv("JARVIS_REMOTE", "http://lightspeed")
+    monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "c.db"))
+    from jarvis.collectors import capture
+    assert capture("hello capture") is True
+    assert capture("   ") is False
+
+
+def test_capture_local_returns_none(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_MODE", raising=False)
+    monkeypatch.delenv("JARVIS_REMOTE", raising=False)
+    monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "c.db"))
+    from jarvis.collectors import capture
+    assert capture("hello local") is None

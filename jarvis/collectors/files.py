@@ -29,6 +29,12 @@ class FileIngestionHandler(FileSystemEventHandler):
     def _ingest(self, path: Path):
         try:
             text = path.read_text(errors="ignore")
+            from jarvis.collectors import capture as _capture
+            _queued = _capture(text, source="file", tags=["file"], metadata={"path": str(path)})
+            if _queued is not None:
+                if _queued:
+                    print(f"Captured {path} (queued for server).")
+                return
             from jarvis.extract import extract_metadata
             extraction = extract_metadata(text)
             base_tags = ["file"] + extraction.get("tags", [])[:5]
