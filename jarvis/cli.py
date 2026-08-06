@@ -916,10 +916,11 @@ def server(port, daemon_url, do_check):
     the thin-client Mac (mode=client). Set JARVIS_TOKEN to require a token
     (loopback is always allowed).
     """
-    from jarvis import dashboard
+    from jarvis import server
     if do_check:
-        ok = dashboard.app is not None
-        store = dashboard._get_store()
+        ok = server.app is not None
+        from jarvis import dashboard as _dash
+        store = _dash._get_store()
         try:
             n = store.conn.execute(
                 "SELECT COUNT(*) FROM memories WHERE superseded = 0"
@@ -930,8 +931,7 @@ def server(port, daemon_url, do_check):
         if not ok:
             raise click.ClickException("server app failed to load")
         return
-    run_dashboard = dashboard.run_dashboard
-    run_dashboard(port=port, daemon_url=daemon_url)
+    server.run(port=port, daemon_url=daemon_url)
 
 
 @cli.command()

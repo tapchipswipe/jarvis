@@ -37,3 +37,7 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[planned]` 2026-08-06 — Full server relocation: run triggers/Mayor/digests in the Lightspeed `jarvis server` process; retire Mac-local store/push (thin-client cutover)
 - `[planned]` 2026-08-06 — Offline read fallback wired into CLI search (rolling tail + substring glance + "offline — cached subset" banner)
 
+- `[done]` 2026-08-06 — Pure-liveness `/api/health` (no store access, never stalls under inference load) + store-aware `/api/health/deep`; **all** API handlers converted to sync `def` so blocking Store/LLM work runs in the threadpool and never blocks the uvicorn event loop (Round 5b — fixes intermittent 000s on every endpoint, root cause of earlier health blips)
+- `[done]` 2026-08-06 — Phase 0 topology decision documented (`docs/topology.md`): Lightspeed = single source of truth + single writer (FULL-THIN); probe shows ~8 GB free RAM steady-idle, ~259 GB disk free, Ollama running nomic-embed on CPU
+- `[done]` 2026-08-06 — Reusable Lightspeed probe script `scripts/lightspeed-probe.ps1` + `jarvis server --check` deploy validation passing locally
+- `[planned]` 2026-08-06 — Deploy `jarvis server` to Lightspeed (Task Scheduler / start-jarvis.bat), cut Mac over to `JARVIS_MODE=client`, relocate triggers/Mayor/digests server-side, hash-verified backfill, then retire Mac-local store/push

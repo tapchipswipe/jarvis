@@ -780,8 +780,10 @@ def api_export(fmt: str = "json"):
 
 
 @app.get("/api/health")
-def api_health(request: Request):
-    """Pure liveness probe — no store/model access, so it never stalls under load."""
+async def api_health(request: Request):
+    """Pure liveness — async + does NO blocking work, so it is served directly on
+    the event loop (never queued in the threadpool) and always responds fast,
+    even while other handlers are deep in Store/LLM calls."""
     return {"ok": True, "mode": _os.environ.get("JARVIS_MODE", "local"),
             "uptime": round(_time.time() - _SERVER_START, 1)}
 
