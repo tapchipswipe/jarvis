@@ -98,13 +98,24 @@ def profiles(ctx):
 @click.option("--tag", multiple=True, help="Tags to attach")
 @click.option("--classify", is_flag=True, help="Run classifier after storing")
 def remember(text, source, tag, classify):
+    from jarvis import remote
+    if remote.is_remote():
+        from jarvis.cache import Cache, flush_outbox
+        cache = Cache()
+        try:
+            queued = int(cache.enqueue(text, source=source, tags=list(tag)))
+            res = flush_outbox(cache)
+        finally:
+            cache.close()
+        note = " (classify runs on the server)" if classify else ""
+        status = "to server" if res.get("pushed", 0) else ("to outbox; offline" if res.get("offline") else "to outbox")
+        click.echo(f"Captured {queued} memory to Jarvis {status}{note}.")
+        return
     store = Store()
     brain = Brain(store)
     added = brain.remember(text, source=source, tags=list(tag), classify=classify)
     store.close()
     click.echo(f"Remembered {added} chunk(s).{' Classified.' if classify else ''}")
-
-
 @cli.command()
 @click.option("--source", default=None, help="Filter by source")
 @click.option("--tag", default=None, help="Filter by tag")
@@ -164,6 +175,29 @@ def timeline(days, n):
 @click.option("-n", default=10, help="Number of results")
 @click.option("--verbose", is_flag=True, help="Show detailed source context")
 def search(query, source, n, verbose):
+    from jarvis import remote
+    if remote.is_remote():
+        from jarvis.cache import Cache
+        cache = Cache()
+        try:
+            result = remote.search(query, n=n, source=source)
+            cache.store_tail(result.get("memories", []))
+            click.echo(f"--- {result.get('count', 0)} result(s) ---")
+            for m in result.get("memories", []):
+                click.echo(f"- [{m['source']}] [{m['tier']}] {m['timestamp']}")
+                click.echo(f"  {m['content'][:120]}...")
+                ents = (result.get("entities") or {}).get(m.get("id"))
+                if ents:
+                    click.echo(f"  entities: {', '.join(e['name'] for e in ents)}")
+        except Exception:
+            hits = cache.tail_search(query, limit=n)
+            click.echo("--- Offline (cached subset) ---")
+            for m in hits:
+                click.echo(f"- [stale] [{m['source']}] {m['timestamp']}")
+                click.echo(f"  {m['content'][:120]}...")
+        finally:
+            cache.close()
+        return
     store = Store()
     brain = Brain(store)
     response, memories = brain.query(query, n_results=n, source_filter=source, verbose=verbose)
@@ -180,8 +214,6 @@ def search(query, source, n, verbose):
         ents = links.get(m["id"])
         if ents:
             click.echo(f"  entities: {', '.join(e['name'] for e in ents)}")
-
-
 @cli.command()
 def status():
     store = Store()
@@ -916,5 +948,25 @@ def mayor(port, root):
     run_mayor(port=port, project_root=root)
 
 
+
+
+@cli.command()
+def flush():
+    """Push any queued captures in the outbox to the server (thin client)."""
+    from jarvis import remote
+    from jarvis.cache import Cache, flush_outbox
+    if not remote.is_remote():
+        click.echo("Not in client mode (set JARVIS_MODE=client + JARVIS_REMOTE).")
+        return
+    cache = Cache()
+    try:
+        pending = cache.pending_count()
+        res = flush_outbox(cache)
+        if res.get("offline"):
+            click.echo(f"Server unreachable - {pending} item(s) stay queued.")
+        else:
+            click.echo(f"Pushed {res.get('pushed', 0)} memory(-ies); {res.get('failed', 0)} failed, kept queued.")
+    finally:
+        cache.close()
 if __name__ == "__main__":
     cli()
