@@ -30,6 +30,7 @@ def client(tmp_path, monkeypatch):
 def _no_net(monkeypatch):
     monkeypatch.setattr("jarvis.brain.get_embedding", lambda *a, **k: [0.1] * 8)
     monkeypatch.setattr("jarvis.embed.get_embedding", lambda *a, **k: [0.1] * 8)
+    monkeypatch.setattr("jarvis.embed.get_embeddings", lambda texts, **k: [[0.1] * 8 for _ in texts])
     monkeypatch.setattr("jarvis.extract.extract_metadata", lambda *a, **k: {"tags": [], "entities": []})
 
 
@@ -68,6 +69,38 @@ def test_remember_rejects_bad_payload(client):
     assert r.status_code == 400
     r2 = client.post("/api/remember", content=b"not-json", headers={"Content-Type": "application/json"})
     assert r2.status_code in (400, 422)  # FastAPI rejects non-object body
+
+
+# ── backfill (field-preserving migration) ───────────────────────────────────
+def test_backfill_preserves_fields(client):
+    r = client.post("/api/backfill", json={"memories": [
+        {"id": "bf1", "content": "scene from the orchard", "source": "manual",
+         "source_id": "src-1", "timestamp": "2020-01-01T00:00:00",
+         "tags": ["apple"], "metadata": {"key": "val"}, "tier": "session",
+         "route": "idea_capture", "superseded": 0},
+        {"id": "bf2", "content": "another memory note", "source": "device",
+         "tier": "raw", "route": "unclassified"},
+        {"content": "   ", "id": "bf-blank"},  # blank -> skipped
+    ]})
+    assert r.status_code == 200
+    assert r.json()["added"] == 2
+    assert r.json()["skipped"] == 1
+    # verify fields were preserved verbatim, not re-timestamped / re-tiered
+    store = dashboard._get_store()
+    try:
+        row = store.conn.execute("SELECT * FROM memories WHERE id = 'bf1'").fetchone()
+        assert row is not None
+        assert row["timestamp"] == "2020-01-01T00:00:00"
+        assert row["tier"] == "session"
+        assert row["route"] == "idea_capture"
+        assert row["source_id"] == "src-1"
+    finally:
+        store.close()
+
+
+def test_backfill_rejects_bad_payload(client):
+    r = client.post("/api/backfill", json={"memories": "nope"})
+    assert r.status_code == 400
 
 
 # ── search ───────────────────────────────────────────────────────────────────

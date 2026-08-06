@@ -134,6 +134,29 @@ def test_remote_remember_batch_posts(monkeypatch):
     assert body["memories"][0]["content"] == "x"
 
 
+def test_remote_backfill_batch_posts(monkeypatch):
+    monkeypatch.setenv("JARVIS_MODE", "client")
+    monkeypatch.setenv("JARVIS_REMOTE", "http://lightspeed:8766")
+    from jarvis import remote
+    captured = {}
+    class FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def read(self):
+            return b'{"added": 2, "skipped": 0}'
+    def fake_open(req, timeout=60):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        return FakeResp()
+    with patch.object(remote.urllib.request, "urlopen", fake_open):
+        res = remote.backfill_batch([{"id": "a"}, {"id": "b"}])
+    assert res["added"] == 2
+    assert captured["url"].endswith("/api/backfill")
+    assert captured["method"] == "POST"
+
+
 # ── backoff schedule ─────────────────────────────────────────────────────────
 def test_backoff_schedule():
     assert BACKOFF == [5, 15, 60, 300]

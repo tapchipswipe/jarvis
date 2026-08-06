@@ -1,16 +1,16 @@
-import click
 import json
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
-from jarvis.store import Store
+
+import click
+
 from jarvis.brain import Brain
-from jarvis.embed import get_embedding
-from jarvis.ingest import chunk_document
 from jarvis.classifier import classify
-from jarvis.consolidation import run_daily, run_weekly, run_monthly
+from jarvis.consolidation import run_daily, run_monthly, run_weekly
 from jarvis.routes import classify_existing
 from jarvis.sessions import SessionDB
-from datetime import datetime, timedelta
+from jarvis.store import Store
 
 
 def _get_rich_console():
@@ -318,9 +318,10 @@ def sync(source):
 @click.option("--source", default="all", help="Target for scan: all, files, browser, calendar, email, photos, bookmarks, rss, system, deep, git, shell, notes, reminders, contacts, messages, devices")
 def scan(source):
     """Run a live ingestion scan across all data sources with progress."""
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
     from jarvis.collectors.sync_runner import run_sync
     from jarvis.sync.push import get_lightspeed_stats
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
     scheduled = _get_scheduled_scans()
     if scheduled:
@@ -514,6 +515,107 @@ def _render_markdown(rows: list[dict]) -> str:
 
 
 @cli.command()
+@click.option("--batch", default=200, type=int, help="Memories per request")
+@click.option("--limit", default=0, type=int, help="Cap on memories to push (0 = all)")
+@click.option("--dry-run", is_flag=True, help="Build manifest + verify server only; push nothing")
+def backfill(batch, limit, dry_run):
+    """One-time migration: push the local store to the Lightspeed server,
+    preserving original ids / timestamps / tiers / routes.
+
+    Reads the *local* Mac store (superseded = 0), computes a hash manifest,
+    and posts field-preserving batches to the server's /api/backfill. Verifies
+    the server's active memory count matches the source before and after.
+    Set JARVIS_REMOTE + JARVIS_MODE=client (or --data-dir) as usual.
+    """
+    import hashlib
+
+    from jarvis import remote
+
+    if not remote.server_url():
+        raise click.ClickException("Set JARVIS_REMOTE to the Lightspeed server URL.")
+
+    store = Store()
+    try:
+        rows = [dict(r) for r in store.conn.execute(
+            "SELECT * FROM memories WHERE superseded = 0 ORDER BY timestamp ASC").fetchall()]
+    finally:
+        store.close()
+    if limit and limit > 0:
+        rows = rows[:limit]
+
+    if not rows:
+        click.echo("No active memories to backfill.")
+        return
+
+    def _manifest_hash(r: dict) -> str:
+        blob = "\x1f".join([
+            str(r.get("id", "")), str(r.get("source", "")),
+            str(r.get("source_id", "")), str(r.get("timestamp", "")),
+            str(r.get("content", "")), str(r.get("tier", "raw")),
+            str(r.get("route", "unclassified")),
+            json.dumps(json.loads(r.get("tags") or "[]"), sort_keys=True),
+            json.dumps(json.loads(r.get("metadata") or "{}"), sort_keys=True),
+        ])
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    manifest_hashes = [_manifest_hash(r) for r in rows]
+    aggregate = hashlib.sha256("\n".join(manifest_hashes).encode()).hexdigest()
+    click.echo(f"Source: {len(rows)} active memory/ies, aggregate manifest {aggregate[:16]}…")
+
+    # Pre-flight: what does the server currently hold vs. what we send?
+    try:
+        server = remote.health()
+        click.echo(f"Server: ok={server.get('ok')} mode={server.get('mode')}")
+        deep = remote._request("GET", "/api/health/deep")
+        server_before = deep.get("memories", 0)
+    except Exception as exc:  # noqa: BLE001 - report and stop
+        raise click.ClickException(f"Cannot reach server: {exc}")
+
+    if dry_run:
+        click.echo(f"[dry-run] Would send {len(rows)} memories. Server currently {server_before} (will not push).")
+        return
+
+    pushed = 0
+    skipped = 0
+    for start in range(0, len(rows), batch):
+        chunk = rows[start:start + batch]
+        payload = [{
+            "id": c.get("id"), "source": c.get("source", "device"),
+            "source_id": c.get("source_id"), "timestamp": c.get("timestamp"),
+            "content": c.get("content"), "tags": json.loads(c.get("tags") or "[]"),
+            "metadata": json.loads(c.get("metadata") or "{}"),
+            "tier": c.get("tier", "raw"), "route": c.get("route", "unclassified"),
+            "expires_at": c.get("expires_at"),
+            "consolidated_from": c.get("consolidated_from"),
+            "superseded": bool(c.get("superseded", 0)),
+        } for c in chunk]
+        try:
+            res = remote.backfill_batch(payload)
+            pushed += int(res.get("added", 0))
+            rem_skip = int(res.get("skipped", 0))
+            skipped += rem_skip
+            click.echo(f"  batch {start + 1}–{start + len(chunk)}: +{res.get('added', 0)} added, {rem_skip} skipped")
+        except Exception as exc:  # noqa: BLE001 - abort on server error, keep it honest
+            raise click.ClickException(f"Backfill aborted at batch {start + 1}: {exc}")
+
+    # Verify: server active count should now match the source count (plus what it had).
+    try:
+        deep = remote._request("GET", "/api/health/deep")
+        server_after = deep.get("memories", 0)
+    except Exception as exc:  # noqa: BLE001 - verification is best-effort
+        server_after = -1
+        click.echo(f"Warning: could not re-check server count: {exc}")
+
+    expected = server_before + len(rows)
+    ok = server_after >= expected
+    click.echo("")
+    click.echo(f"Pushed {pushed} active memory/ies, {skipped} skipped.")
+    click.echo(f"Server active count: {server_before} → {server_after} (expected {expected}) → "
+               f"{'VERIFIED' if ok else 'MISMATCH — investigate'}")
+    click.echo(f"Aggregate manifest {aggregate[:16]}… is the authoritative hash of what was sent.")
+
+
+@cli.command()
 @click.option("--model", default=lambda: os.environ.get("JARVIS_CHAT_MODEL"), help="Chat model override (defaults to JARVIS_CHAT_MODEL env, then agent fallback list)")
 @click.option("--verbose", is_flag=True, help="Show tool calls and sources")
 @click.option("--new", "is_new", is_flag=True, help="Start a fresh session")
@@ -688,8 +790,8 @@ def graph_cmd(action, hours, n):
         return
     store = Store()
     try:
-        from jarvis.graph import infer_relationships
         from jarvis.extract_entities import extract_entities
+        from jarvis.graph import infer_relationships
     except ImportError as e:
         click.echo(f"Graph modules unavailable: {e}")
         store.close()
@@ -756,8 +858,8 @@ def reindex(limit):
 @click.option("--dry-run", is_flag=True, help="Show what would be promoted without changing anything")
 def promote(days, limit, dry_run):
     """Promote raw memories older than --days to the session tier."""
-    from jarvis.store import Store
     from jarvis.maintenance import promote_old
+    from jarvis.store import Store
 
     store = Store()
     try:
@@ -797,7 +899,9 @@ def think(idea, source):
       jarvis think "add a /export command to dump memories as JSON"
       jarvis think "scan for hardcoded API keys in the codebase"
     """
-    import urllib.request, urllib.error, json
+    import json
+    import urllib.error
+    import urllib.request
     mayor_url = os.environ.get("MAYOR_URL", "http://127.0.0.1:8767")
     payload = json.dumps({"idea": idea, "source": source}).encode()
     req = urllib.request.Request(
@@ -808,12 +912,12 @@ def think(idea, source):
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode())
-            click.echo(f"✅ Idea submitted!")
+            click.echo("✅ Idea submitted!")
             click.echo(f"   Task ID: {result.get('task_id', '?')}")
             click.echo(f"   Agent:   {result.get('agent', '?')}")
             click.echo(f"   Title:   {result.get('title', '?')}")
             click.echo(f"   Status:  {result.get('status', '?')}")
-            click.echo(f"   Review at: jarvis task list")
+            click.echo("   Review at: jarvis task list")
     except urllib.error.URLError:
         click.echo("❌ Mayor not running. Start it with: jarvis mayor")
     except Exception as e:
@@ -823,7 +927,6 @@ def think(idea, source):
 @cli.group(name="task")
 def task_group():
     """Manage the Mayor's task queue."""
-    pass
 
 
 @task_group.command(name="list")

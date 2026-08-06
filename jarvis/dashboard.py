@@ -682,6 +682,75 @@ def api_remember(request: Request, payload: dict):
     return {"added": added, "skipped": skipped}
 
 
+@app.post("/api/backfill")
+def api_backfill(request: Request, payload: dict):
+    """Bulk-import full memory records, preserving original field values.
+
+    Unlike /api/remember (which re-timestamps, re-chunks, and re-tiers via
+    Brain.remember), this is the faithful one-time migration path: it inserts
+    each record exactly as written on the source store — same id, source,
+    source_id, timestamp, tier, route, tags, metadata — and recomputes the
+    embedding locally (deterministic for the shared embed model), so the
+    canonical store is byte-equivalent in SQLite terms to what the client had.
+
+    Body: {"memories": [...], "verify": <bool>}
+    Each memory dict may carry: id, source, source_id, timestamp, content,
+    tags (list), metadata (dict), tier, route, expires_at, consolidated_from,
+    superseded (bool). Returns {added, skipped}.
+    """
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    items = payload.get("memories") if isinstance(payload, dict) else payload
+    if not isinstance(items, list):
+        return JSONResponse({"error": "expected a list of memories"}, status_code=400)
+
+    from jarvis.embed import get_embeddings
+    store = _get_store()
+    added = 0
+    skipped = 0
+    try:
+        # Drop anything unusable, then precompute embeddings in one batched call.
+        valid = []
+        for it in items:
+            if not isinstance(it, dict):
+                skipped += 1
+                continue
+            content = it.get("content") or ""
+            if not content.strip():
+                skipped += 1
+                continue
+            valid.append(it)
+        if valid:
+            try:
+                embs = get_embeddings([m["content"] for m in valid])
+            except Exception:  # noqa: BLE001 - fall back to injecting no embeddings on embed failure
+                embs = []
+            for m, emb in zip(valid, embs):
+                try:
+                    store.add(
+                        fid=m.get("id") or None,
+                        source=m.get("source", "device"),
+                        source_id=m.get("source_id") or "",
+                        # Chroma rejects None metadata values, so never pass None.
+                        timestamp=m.get("timestamp") or "",
+                        content=m["content"],
+                        tags=list(m.get("tags") or []),
+                        metadata=dict(m.get("metadata") or {}),
+                        embedding=emb,
+                        tier=m.get("tier", "raw") or "raw",
+                        expires_at=m.get("expires_at"),
+                        consolidated_from=m.get("consolidated_from"),
+                        superseded=bool(m.get("superseded", False)),
+                        route=m.get("route", "unclassified") or "unclassified",
+                    )
+                    added += 1
+                except Exception:  # noqa: BLE001 - any single bad record is skipped, never fatal
+                    skipped += 1
+    finally:
+        store.close()
+    return {"added": added, "skipped": skipped}
+
+
 @app.get("/api/search")
 def api_search(request: Request, q: str = "", n: int = 10, source: str | None = None):
     if not _host_ok(request):

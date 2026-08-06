@@ -56,6 +56,11 @@ def remember_batch(memories: list[dict]) -> dict:
     return _request("POST", "/api/remember", {"memories": memories})
 
 
+def backfill_batch(memories: list[dict]) -> dict:
+    """POST a field-preserving batch to /api/backfill (one-time migration)."""
+    return _request("POST", "/api/backfill", {"memories": memories}, timeout=600)
+
+
 def search(q: str, n: int = 10, source: str | None = None) -> dict:
     qs = urllib.parse.urlencode({"q": q, "n": n})
     if source:
