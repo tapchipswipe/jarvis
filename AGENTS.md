@@ -2,6 +2,11 @@
 
 You are Cline working on the **Jarvis** project (repo root = this directory).
 
+> **Trigger — resume:** if the user says **"resume the jarvis project"** (or `continue` / `resume` /
+> "pick up where we left off"), immediately do **all** of the RESUME steps in the next section —
+> read the listed files in order, verify live state, then continue with the STATUS next-actions.
+> Do not ask clarifying questions first.
+
 ## ⚡ RESUME / START HERE (a fresh session must read these first)
 If this is a new/continued session, reconstruct context from these, in order:
 1. **`docs/STATUS.md`** — the canonical snapshot: topology, what's deployed+where, branches,

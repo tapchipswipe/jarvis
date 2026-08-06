@@ -1,0 +1,14 @@
+# Jarvis — resume rules (Cline-native, auto-loaded)
+
+When the user asks to **resume the jarvis project** (any phrasing: "resume", "continue",
+"pick up where we left off"), do these immediately and in order, without asking questions:
+
+1. Confirm repo root is correct (`cd` is this directory).
+2. Read, in order: `docs/STATUS.md`, `logs/round6-handoff.md`, `docs/deployment-lightspeed.md`,
+   `docs/topology.md`, and skim `docs/system-diagram.md` + `UPGRADES.md`.
+3. Verify live state: `git status`; `launchctl list | grep jarvis` (Mac local services);
+   `curl -m 8 http://100.102.0.99:8766/api/health` (Lightspeed server).
+4. Then proceed with the **Next actions** priority list in `docs/STATUS.md`.
+5. Keep `main`/`bot` in sync (`git checkout main && git merge --ff-only bot && git push origin main && git checkout bot && git push origin bot`) and tests green (`.venv/bin/python -m pytest -p no:cacheprovider`) before finishing.
+
+Remote agent is available: `ssh despo@100.102.0.99 'cline --cwd C:\Users\despo\jarvis --json "<task>"'` to offload heavy/Windows-native work to the Lightspeed Cline (delegate ONE task at a time).
