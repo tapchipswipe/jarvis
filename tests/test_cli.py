@@ -213,6 +213,68 @@ def test_doctor_local_mode_no_box(monkeypatch):
     assert "local mode (no box to probe)" in result.output
 
 
+def test_memories_client_mode(monkeypatch):
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "memories", lambda **kw: {
+        "count": 1,
+        "memories": [{"id": "b1", "content": "a recent memory about the fence install",
+                      "source": "deep", "timestamp": "2026-01-01T00:00:00",
+                      "tier": "raw", "tags": ["deep"], "route": "unclassified"}],
+    })
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["memories"])
+    assert result.exit_code == 0
+    assert "[raw] [deep] 2026-01-01T00:00:00 deep" in result.output
+    assert "id=b1" in result.output
+
+
+def test_memories_client_mode_tag_filter(monkeypatch):
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "memories", lambda **kw: {
+        "count": 2,
+        "memories": [
+            {"id": "a", "content": "alpha", "source": "s", "timestamp": "2026-01-01T00:00:00",
+             "tier": "raw", "tags": ["deep"], "route": "x"},
+            {"id": "b", "content": "beta", "source": "s", "timestamp": "2026-01-02T00:00:00",
+             "tier": "raw", "tags": ["manual"], "route": "y"},
+        ],
+    })
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["memories", "--tag", "deep"])
+    assert result.exit_code == 0
+    assert "id=a" in result.output
+    assert "id=b" not in result.output
+
+
+def test_timeline_client_mode(monkeypatch):
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    captured = {}
+    def _memories(**kw):
+        captured.update(kw)
+        return {"count": 1, "memories": [
+            {"id": "t1", "content": "timeline entry body text", "source": "file",
+             "timestamp": "2026-01-01T00:00:00", "tier": "raw", "tags": ["file"], "route": "x"}]}
+    monkeypatch.setattr(remote, "memories", _memories)
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["timeline", "--days", "3"])
+    assert result.exit_code == 0
+    assert "timeline entry body text" in result.output
+    assert "since=" not in result.output  # human-readable, not the raw query
+    assert "since" in captured  # but the box call did pass a since filter
+
+
 def test_task_list_command_still_registered():
     """The CLI command remains ``task list`` after the rename."""
     from jarvis.cli import cli

@@ -858,6 +858,43 @@ def api_export(request: Request, fmt: str = "json"):
         store.close()
 
 
+@app.get("/api/memories")
+def api_memories(request: Request, source: str | None = None, tier: str | None = None,
+                 limit: int = 50, since: str | None = None):
+    """Recent memories list (token-guarded read). Tags/metadata are pre-decoded for JSON."""
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    limit = max(limit, 0)
+    store = _get_store()
+    try:
+        query = "SELECT * FROM memories WHERE superseded = 0"
+        params = []
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        if tier:
+            query += " AND tier = ?"
+            params.append(tier)
+        if since:
+            query += " AND timestamp >= ?"
+            params.append(since)
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        rows = [dict(r) for r in store.conn.execute(query, params).fetchall()]
+        for r in rows:
+            try:
+                r["tags"] = json.loads(r.get("tags") or "[]")
+            except Exception:  # noqa: BLE001 - best-effort
+                r["tags"] = []
+            try:
+                r["metadata"] = json.loads(r.get("metadata") or "{}")
+            except Exception:  # noqa: BLE001 - best-effort
+                r["metadata"] = {}
+        return {"count": len(rows), "memories": rows}
+    finally:
+        store.close()
+
+
 @app.get("/api/health")
 async def api_health(request: Request):
     """Pure liveness — async + does NO blocking work, so it is served directly on

@@ -62,6 +62,15 @@ def ingest_status():
     return _request("GET", "/api/ingest/status")
 
 
+def memories(limit: int = 50, source: str | None = None, tier: str | None = None,
+             since: str | None = None) -> dict:
+    """Recent memories list from the box (tags/metadata pre-decoded)."""
+    qs = urllib.parse.urlencode({k: v for k, v in (
+        ("limit", limit), ("source", source), ("tier", tier), ("since", since),
+    ) if v is not None})
+    return _request("GET", f"/api/memories?{qs}")
+
+
 def remember_batch(memories: list[dict]) -> dict:
     return _request("POST", "/api/remember", {"memories": memories})
 

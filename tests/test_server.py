@@ -64,6 +64,29 @@ def test_remember_adds_memories(client):
     assert r.json()["added"] >= 1
 
 
+# ── memories list ─────────────────────────────────────────────────────────────
+def test_api_memories_endpoint(client):
+    client.post("/api/remember", json={"memories": [
+        {"content": "recent alpha note body", "source": "manual"},
+        {"content": "another beta note body", "source": "manual", "tier": "session"},
+    ]})
+    r = client.get("/api/memories", params={"limit": 5})
+    assert r.status_code == 200
+    body = r.json()
+    assert "memories" in body
+    assert len(body["memories"]) >= 2
+    # tags are pre-decoded to a list (not a JSON string)
+    for m in body["memories"]:
+        assert isinstance(m.get("tags"), list)
+
+
+def test_api_memories_requires_token_when_configured(client, monkeypatch):
+    monkeypatch.setenv("JARVIS_TOKEN", "sekret")
+    assert client.get("/api/memories", params={"limit": 5}).status_code == 403
+    assert client.get("/api/memories", params={"limit": 5},
+                      headers={"X-Jarvis-Token": "sekret"}).status_code == 200
+
+
 def test_remember_rejects_bad_payload(client):
     r = client.post("/api/remember", json={"memories": "nope"})
     assert r.status_code == 400

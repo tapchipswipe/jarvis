@@ -123,28 +123,41 @@ def remember(text, source, tag, classify):
 @click.option("--tier", default=None, help="Filter by tier (raw, session, reflection, arc)")
 @click.option("-n", default=20, help="Number of results")
 def memories(source, tag, tier, n):
-    store = Store()
-    query = "SELECT * FROM memories WHERE superseded = 0"
-    params = []
-    if source:
-        query += " AND source = ?"
-        params.append(source)
-    if tier:
-        query += " AND tier = ?"
-        params.append(tier)
-    if tag:
-        query += " AND EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)"
-        params.append(tag)
-    query += " ORDER BY timestamp DESC LIMIT ?"
-    params.append(n)
-    cur = store.conn.execute(query, params)
-    rows = [dict(r) for r in cur.fetchall()]
-    store.close()
+    from jarvis import remote
+    if remote.is_remote():
+        try:
+            data = remote.memories(limit=n, source=source, tier=tier)
+        except Exception as e:  # noqa: BLE001 - surface box read failures
+            click.echo(f"Could not reach the box: {e}")
+            return
+        rows = data.get("memories", [])
+        if tag:
+            rows = [r for r in rows if tag in (r.get("tags") or [])]
+    else:
+        store = Store()
+        query = "SELECT * FROM memories WHERE superseded = 0"
+        params = []
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        if tier:
+            query += " AND tier = ?"
+            params.append(tier)
+        if tag:
+            query += " AND EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)"
+            params.append(tag)
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(n)
+        cur = store.conn.execute(query, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        store.close()
+        for r in rows:
+            r["tags"] = json.loads(r["tags"]) if r["tags"] else []
     if not rows:
         click.echo("No memories found.")
         return
     for r in rows:
-        tags = ", ".join(json.loads(r["tags"])) if r["tags"] else ""
+        tags = ", ".join(r["tags"] or [])
         click.echo(f"[{r['tier']}] [{r['source']}] {r['timestamp']} {tags}")
         click.echo(f"  {r['content'][:200]}")
         click.echo(f"  id={r['id']}")
@@ -155,16 +168,27 @@ def memories(source, tag, tier, n):
 @click.option("--days", default=7, help="Look back N days")
 @click.option("-n", default=50, help="Number of results")
 def timeline(days, n):
-    store = Store()
+    from jarvis import remote
     cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).isoformat()
-    cur = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?", (cutoff, n))
-    rows = [dict(r) for r in cur.fetchall()]
-    store.close()
+    if remote.is_remote():
+        try:
+            data = remote.memories(limit=n, since=cutoff)
+        except Exception as e:  # noqa: BLE001 - surface box read failures
+            click.echo(f"Could not reach the box: {e}")
+            return
+        rows = data.get("memories", [])
+    else:
+        store = Store()
+        cur = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?", (cutoff, n))
+        rows = [dict(r) for r in cur.fetchall()]
+        store.close()
+        for r in rows:
+            r["tags"] = json.loads(r["tags"]) if r["tags"] else []
     if not rows:
         click.echo("No memories in timeline.")
         return
     for r in rows:
-        tags = ", ".join(json.loads(r["tags"])) if r["tags"] else ""
+        tags = ", ".join(r["tags"] or [])
         click.echo(f"{r['timestamp']} [{r['source']}] {tags}")
         click.echo(f"  {r['content'][:200]}")
         click.echo("")
