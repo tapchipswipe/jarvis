@@ -19,6 +19,7 @@ import json
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -26,6 +27,9 @@ from fastapi.staticfiles import StaticFiles
 
 from jarvis import tls
 from jarvis.store import Store
+
+if TYPE_CHECKING:
+    from jarvis.mayor import Mayor
 
 # ── Configuration ────────────────────────────────────────────────────────────
 

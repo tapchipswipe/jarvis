@@ -15,7 +15,7 @@ _SNAPSHOT_TS = "1970-01-01T00:00:00"
 def sync_system(store):
     count = 0
     try:
-        result = subprocess.run(["system_profiler", "SPApplicationsDataType", "-json"], capture_output=True, text=True, timeout=60)
+        result = subprocess.run(["system_profiler", "SPApplicationsDataType", "-json"], capture_output=True, text=True, timeout=60, check=False)
         if result.returncode == 0:
             data = json.loads(result.stdout)
             apps = data.get("_items", [])
@@ -42,6 +42,7 @@ def sync_system(store):
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,
         )
         if log_result.returncode == 0 and log_result.stdout.strip():
             log_text = log_result.stdout[:40000]

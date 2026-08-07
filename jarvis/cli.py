@@ -8,7 +8,6 @@ from pathlib import Path
 import click
 
 from jarvis.brain import Brain
-from jarvis.classifier import classify
 from jarvis.consolidation import run_daily, run_monthly, run_weekly
 from jarvis.routes import classify_existing
 from jarvis.sessions import SessionDB

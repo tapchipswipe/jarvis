@@ -16,21 +16,21 @@ OCR_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 def _has_tesseract() -> bool:
     try:
-        return subprocess.run(["which", "tesseract"], capture_output=True, text=True).returncode == 0
+        return subprocess.run(["which", "tesseract"], capture_output=True, text=True, check=False).returncode == 0
     except Exception:
         return False
 
 
 def _has_exiftool() -> bool:
     try:
-        return subprocess.run(["which", "exiftool"], capture_output=True, text=True).returncode == 0
+        return subprocess.run(["which", "exiftool"], capture_output=True, text=True, check=False).returncode == 0
     except Exception:
         return False
 
 
 def _ocr_image(path: Path) -> str | None:
     try:
-        result = subprocess.run(["tesseract", str(path), "stdout"], capture_output=True, text=True, timeout=30)
+        result = subprocess.run(["tesseract", str(path), "stdout"], capture_output=True, text=True, timeout=30, check=False)
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception:
@@ -51,7 +51,7 @@ def sync_photos(store):
         for ext in ["*.jpg", "*.jpeg", "*.png", "*.heic", "*.raw", "*.dng"]:
             for photo_path in photo_dir.rglob(ext):
                 try:
-                    result = subprocess.run(["exiftool", "-json", "-datecreated", "-gpslatitude", "-gpslongitude", "-title", "-description", str(photo_path)], capture_output=True, text=True, timeout=10)
+                    result = subprocess.run(["exiftool", "-json", "-datecreated", "-gpslatitude", "-gpslongitude", "-title", "-description", str(photo_path)], capture_output=True, text=True, timeout=10, check=False)
                     if result.returncode != 0:
                         continue
                     exif = json.loads(result.stdout)[0] if result.stdout.strip() else {}

@@ -23,7 +23,7 @@ def sync_git(store):
                 continue
             git_dir_path = repo.parent
             try:
-                result = subprocess.run(["git", "-C", str(git_dir_path), "log", "--format=%H|%ai|%an|%s", "--all", "-n", "200"], capture_output=True, text=True, timeout=30)
+                result = subprocess.run(["git", "-C", str(git_dir_path), "log", "--format=%H|%ai|%an|%s", "--all", "-n", "200"], capture_output=True, text=True, timeout=30, check=False)
                 if result.returncode != 0:
                     continue
                 for line in result.stdout.splitlines():

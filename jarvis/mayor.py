@@ -236,6 +236,7 @@ def run_tests_and_maybe_revert(
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,
         )
         success = result.returncode == 0
         output = result.stdout + result.stderr
@@ -253,6 +254,7 @@ def run_tests_and_maybe_revert(
                 capture_output=True,
                 text=True,
                 timeout=30,
+                check=False,
             )
             if status.returncode == 0 and status.stdout.strip():
                 return (
@@ -266,6 +268,7 @@ def run_tests_and_maybe_revert(
                 cwd=project_root,
                 capture_output=True,
                 timeout=30,
+                check=False,
             )
             return False, f"Tests failed, reverted. Output: {output[-1000:]}"
 

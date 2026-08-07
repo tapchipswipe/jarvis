@@ -37,7 +37,7 @@ def lightspeed_reachable() -> bool:
         ["ssh"] + SSH_OPTS + [f"{LIGHTSPEED_USER}@{host}", "echo ok"],
     ]:
         try:
-            result = subprocess.run(probe, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            result = subprocess.run(probe, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
             if result.returncode == 0:
                 return True
         except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -159,7 +159,7 @@ def get_lightspeed_stats() -> dict:
         )
         result = subprocess.run(
             ["ssh"] + SSH_OPTS + [f"{LIGHTSPEED_USER}@{LIGHTSPEED_HOST}", remote_cmd],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, timeout=30, check=False
         )
         if result.returncode == 0:
             sources = {}

@@ -115,6 +115,7 @@ class BaseAgent:
                 cwd=self.project_root,
                 capture_output=True,
                 timeout=10,
+                check=False,
             )
             # Stage files
             if files:
@@ -124,6 +125,7 @@ class BaseAgent:
                         cwd=self.project_root,
                         capture_output=True,
                         timeout=10,
+                        check=False,
                     )
             else:
                 subprocess.run(
@@ -131,6 +133,7 @@ class BaseAgent:
                     cwd=self.project_root,
                     capture_output=True,
                     timeout=10,
+                    check=False,
                 )
             # Check if there's anything to commit
             status = subprocess.run(
@@ -139,6 +142,7 @@ class BaseAgent:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
             if not status.stdout.strip():
                 logger.info("No changes to commit")
@@ -150,6 +154,7 @@ class BaseAgent:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                check=False,
             )
             if commit.returncode != 0:
                 logger.error("Git commit failed: %s", commit.stderr)
@@ -161,6 +166,7 @@ class BaseAgent:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
             return hash_result.stdout.strip()
         except Exception as e:
@@ -176,6 +182,7 @@ class BaseAgent:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                check=False,
             )
             return result.returncode == 0
         except Exception as e:
@@ -193,6 +200,7 @@ class BaseAgent:
                 capture_output=True,
                 text=True,
                 timeout=120,
+                check=False,
             )
             success = result.returncode == 0
             output = result.stdout + result.stderr

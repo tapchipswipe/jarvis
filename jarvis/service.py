@@ -71,7 +71,7 @@ def main():
     log("Starting Jarvis service (daemon mode)")
     
     # Run the version command to display Jarvis version
-    subprocess.run([sys.executable, str(VERSION_COMMAND_PATH)])
+    subprocess.run([sys.executable, str(VERSION_COMMAND_PATH)], check=False)
 
     # Background trigger thread (time/poll/event triggers fire on schedule)
     trigger_loop = start_trigger_loop()
