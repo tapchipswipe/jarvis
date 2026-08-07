@@ -111,6 +111,35 @@ def test_search_surfaces_server_error_not_offline(monkeypatch):
     assert "Offline" not in result.output
 
 
+def test_search_json_output(monkeypatch):
+    """--json emits structured JSON (memories + count), not the human table."""
+    import json
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.store_tail.return_value = None
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr(remote, "search",
+                        lambda query, n=10, source=None: {
+                            "count": 1,
+                            "memories": [{"id": "b1", "content": "json search hit body",
+                                          "source": "deep", "tier": "raw",
+                                          "timestamp": "2026-01-01T00:00:00"}],
+                            "entities": {},
+                        })
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["search", "jsonquery", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["count"] == 1
+    assert data["memories"][0]["id"] == "b1"
+    assert "--" not in result.output.split("\n", 1)[0]  # not the human header
+
+
 def test_status_reports_live_box_in_client_mode(monkeypatch):
     from jarvis import remote
     from jarvis.cli import cli

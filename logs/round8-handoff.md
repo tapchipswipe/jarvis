@@ -131,10 +131,15 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 26 (1b4e497):** rewrote `README.md` for the FULL-THIN topology
   (box brain, Mac thin client), current thin-client + server commands, resume points,
   and tests/lint + security notes.
-- [x] **Round 27 (pending commit):** BUG FIX — `jarvis collect --root <dir>` passed
+- [x] **Round 27 (ca480d9):** BUG FIX — `jarvis collect --root <dir>` passed
   click string roots but `scan_once`/`_walk` called `Path` methods on them (would crash
   on a real scan). `scan_once` now coerces roots to `Path`; verified end-to-end with a
   real (isolated) CLI scan + new string-root test. Suite 379 passed, 1 skipped.
+- [x] **Round 28 (fa071d4):** hygiene — dropped redundant local `import threading` in the
+  ingester; fixed a docstring typo.
+- [x] **Round 29 (pending commit):** `jarvis search --json` — scriptable structured output
+  (memories+entities / offline-cached / local response). 1 new test.
+  Suite 380 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the

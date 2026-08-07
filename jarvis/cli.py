@@ -199,7 +199,8 @@ def timeline(days, n):
 @click.option("--source", default=None, help="Filter by source")
 @click.option("-n", default=10, help="Number of results")
 @click.option("--verbose", is_flag=True, help="Show detailed source context")
-def search(query, source, n, verbose):
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON (memories + response)")
+def search(query, source, n, verbose, as_json):
     from jarvis import remote
     if remote.is_remote():
         from jarvis.cache import Cache
@@ -207,6 +208,9 @@ def search(query, source, n, verbose):
         try:
             result = remote.search(query, n=n, source=source)
             cache.store_tail(result.get("memories", []))
+            if as_json:
+                click.echo(json.dumps(result, default=str))
+                return
             click.echo(f"--- {result.get('count', 0)} result(s) ---")
             for m in result.get("memories", []):
                 click.echo(f"- [{m['source']}] [{m['tier']}] {m['timestamp']}")
@@ -227,6 +231,9 @@ def search(query, source, n, verbose):
             click.echo(f"  {detail or e.reason}")
         except Exception:  # noqa: BLE001 - connectivity fallback; the server was unreachable
             hits = cache.tail_search(query, limit=n)
+            if as_json:
+                click.echo(json.dumps({"offline": True, "cached": hits}, default=str))
+                return
             click.echo("--- Offline (cached subset) ---")
             for m in hits:
                 click.echo(f"- [stale] [{m['source']}] {m['timestamp']}")
@@ -239,6 +246,9 @@ def search(query, source, n, verbose):
     response, memories = brain.query(query, n_results=n, source_filter=source, verbose=verbose)
     links = store.lookup_entities([m["id"] for m in memories]) if memories else {}
     store.close()
+    if as_json:
+        click.echo(json.dumps({"response": response, "memories": memories}, default=str))
+        return
     click.echo("--- Response ---")
     click.echo(response)
     click.echo("\n--- Sources ---")
