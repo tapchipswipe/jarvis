@@ -221,3 +221,57 @@ def test_run_failing_tests_clean_tree_reverts(tmp_path, monkeypatch):
         assert [c for tag, c in results if tag == "revert"] != []
     finally:
         patcher.stop()
+
+
+def test_idle_maintenance_runs_reindex_and_promote(mayor, monkeypatch):
+    m, q = mayor
+    monkeypatch.setattr(m, "_ollama_busy", lambda: False)
+    monkeypatch.setattr(m, "MAINT_REINDEX_EVERY", 1.0)
+    monkeypatch.setattr(m, "MAINT_PROMOTE_EVERY", 1.0)
+    m._last_reindex = 0.0
+    m._last_promote = 0.0
+    calls = []
+    monkeypatch.setattr("jarvis.maintenance.reindex_missing",
+                        lambda limit=200: calls.append(("reindex", limit)) or 5)
+    monkeypatch.setattr("jarvis.maintenance.promote_old",
+                        lambda days=7, limit=500: calls.append(("promote", days, limit)) or 3)
+
+    m._maybe_idle_maintenance()
+
+    assert ("reindex", 200) in calls
+    assert ("promote", 7, 500) in calls
+    assert m._last_reindex > 1.0   # advanced past the 0.0 seed
+    assert m._last_promote > 1.0
+    q.close()
+
+
+def test_idle_maintenance_skips_when_ollama_busy(mayor, monkeypatch):
+    m, q = mayor
+    monkeypatch.setattr(m, "_ollama_busy", lambda: True)  # VRAM contention guard
+    monkeypatch.setattr(m, "MAINT_REINDEX_EVERY", 1.0)
+    m._last_reindex = 0.0
+    called = []
+    monkeypatch.setattr("jarvis.maintenance.reindex_missing",
+                        lambda limit=200: called.append(1))
+
+    m._maybe_idle_maintenance()
+
+    assert called == []                 # maintenance did not run
+    assert m._last_reindex == 0.0       # timer not advanced
+    q.close()
+
+
+def test_idle_maintenance_skips_when_task_queued(mayor, monkeypatch):
+    m, q = mayor
+    monkeypatch.setattr(m, "_ollama_busy", lambda: False)
+    monkeypatch.setattr(m, "MAINT_REINDEX_EVERY", 1.0)
+    m._last_reindex = 0.0
+    called = []
+    monkeypatch.setattr("jarvis.maintenance.reindex_missing",
+                        lambda limit=200: called.append(1))
+    tid = q.add_task("queued work")
+    q.approve_task(tid)
+
+    m._maybe_idle_maintenance()
+    assert called == []                 # approved work present -> leave to dispatch
+    q.close()

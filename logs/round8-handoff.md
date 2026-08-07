@@ -137,9 +137,13 @@ This session runs while the user is away. All work is agent-driven, committed to
   real (isolated) CLI scan + new string-root test. Suite 379 passed, 1 skipped.
 - [x] **Round 28 (fa071d4):** hygiene — dropped redundant local `import threading` in the
   ingester; fixed a docstring typo.
-- [x] **Round 29 (pending commit):** `jarvis search --json` — scriptable structured output
+- [x] **Round 29 (459d444):** `jarvis search --json` — scriptable structured output
   (memories+entities / offline-cached / local response). 1 new test.
   Suite 380 passed, 1 skipped.
+- [x] **Round 30 (pending commit):** `test_mayor` — added idle-maintenance coverage
+  (`_maybe_idle_maintenance`: runs reindex(limit=200)+promote(7d,500) when idle and not
+  VRAM-busy; skips when Ollama is generating or an approved task is queued, timer held).
+  Mayor 15 → 18 tests. Suite 383 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the
