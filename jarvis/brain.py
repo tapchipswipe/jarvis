@@ -36,12 +36,23 @@ def tier_model(tier: str) -> str:
     return chat_model()
 
 
+def _is_recall_question(question: str) -> bool:
+    """True when the question asks about the user's own data/memories (needs a
+    real model to summarize — never the fast toy model)."""
+    q = (question or "").lower()
+    return any(k in q for k in (
+        "what did", "what have", "when did", "where did", "remember", "find ",
+        "search", "my memories", "my notes", "show me", "tell me about",
+        "what do you know about", "recap", "summarize", " notes on",
+        "what about", "list the", "look up", "lookup"))
+
+
 def _tier_for(question: str) -> str:
     """Route a question to a model tier by lightweight complexity heuristics.
 
-    Hard-looking (long or obviously-hard) -> big; casual/short -> fast;
-    otherwise medium. Hard wins, so a short deep question still uses the big
-    model."""
+    Hard-looking (long or obviously-hard) -> big; recall (about the user's own
+    data) -> medium at minimum (never fast); casual/short -> fast; otherwise
+    medium."""
     q = (question or "").strip().lower()
     words = q.split()
     hard = any(kw in q for kw in (
@@ -51,6 +62,8 @@ def _tier_for(question: str) -> str:
         "how do i", "explain the difference"))
     if len(words) >= 25 or hard:
         return "big"
+    if _is_recall_question(q):
+        return "medium"
     casual = any(kw in q for kw in (
         "hello", " hey", "hi ", "thanks", "good morning", "good evening",
         "good day", "how are you", "who are you", "what can you do",
@@ -62,9 +75,15 @@ def _tier_for(question: str) -> str:
 
 def select_model_for(question: str, force: str | None = None) -> str:
     """Pick a chat model for a question: auto-tier by complexity, or force a
-    specific tier (force in fast/medium/big) or an exact model id."""
+    specific tier (force in fast/medium/big) or an exact model id.
+
+    Guardrail: recall questions (about the user's own data) NEVER use the fast
+    toy model — even if fast is forced — because it can't summarize memories;
+    they escalate to at least medium."""
     if force and force not in CHAT_TIERS:
         return force  # explicit model id
+    if force == "fast" and _is_recall_question(question):
+        force = None  # escalate: recall needs a real model
     tier = force if force in CHAT_TIERS else _tier_for(question)
     return tier_model(tier)
 _OLLAMA_HOST = "127.0.0.1"

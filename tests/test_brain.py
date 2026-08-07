@@ -399,7 +399,8 @@ def test_tier_for_routes_by_complexity():
     assert _tier_for("hi there") == "fast"
     assert _tier_for("how are you") == "fast"
     assert _tier_for("thanks a lot") == "fast"
-    assert _tier_for("what did I do yesterday") == "fast"      # 5 words -> fast
+    # recall questions (about the user's data) never use the fast toy model
+    assert _tier_for("what did I do yesterday") == "medium"
     assert _tier_for("what did I work on yesterday morning") == "medium"
     assert _tier_for("explain how the sync protocol works") == "big"
     assert _tier_for("please analyze and compare the two architectures in detail why does a work better than b") == "big"
@@ -415,8 +416,11 @@ def test_select_model_for_uses_env_tiers(monkeypatch):
     assert select_model_for("explain the architecture") == "big-model"
     # force a tier
     assert select_model_for("hello", force="big") == "big-model"
-    # exact model id override
+    # recall escalates away from a forced fast tier
+    assert select_model_for("what did I do yesterday", force="fast") == "medium-model"
+    # exact model id override is always respected
     assert select_model_for("hello", force="qwen2.5:7b") == "qwen2.5:7b"
+    assert select_model_for("what did I do yesterday", force="qwen2.5:7b") == "qwen2.5:7b"
 
 
 def test_tier_model_falls_back_to_medium(monkeypatch):

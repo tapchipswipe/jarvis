@@ -862,17 +862,6 @@ def _ask_grounded(question, n_results=8, source=None, model=None, history=None):
         store.close()
 
 
-def _is_recall(question: str) -> bool:
-    """True when the question is about the user's own data/memories (so sources
-    are worth showing) vs. plain small-talk (which should just answer)."""
-    q = (question or "").lower()
-    return any(k in q for k in (
-        "what did", "what have", "when did", "where did", "remember", "find ",
-        "search", "my memories", "my notes", "show me", "tell me about",
-        "what do you know about", "what is", "who is", "recap", "summarize",
-        " notes on", "what about", "list the", "look up", "lookup"))
-
-
 def _render_grounded(answer, memories, entities, show_entities=True, session_id=None,
                      show_sources=True):
     """Shared human-readable output for ask/console.
@@ -1029,11 +1018,10 @@ def console(session_id, show_entities, save_qa):
         sdb.append_message(sid, "user", text)
         sdb.append_message(sid, "assistant", answer)
         last_qa = {"q": text, "a": answer}
-        # Show sources only when the toggle is on OR the question is a recall
-        # request about the user's own data — casual chat stays clean.
-        want_sources = show_sources or _is_recall(text)
+        # Sources show ONLY when the user toggles them on (/sources on) — never
+        # auto-dumped, even for recall questions (which get a grounded summary).
         _render_grounded(answer, memories, entities, show_entities=show_entities,
-                         show_sources=want_sources)
+                         show_sources=show_sources)
         if not save_qa and answer:
             _save_ask(text, answer)
 

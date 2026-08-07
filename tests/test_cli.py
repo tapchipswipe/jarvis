@@ -660,10 +660,10 @@ def test_console_sources_toggle_shows_sources(monkeypatch):
 
 
 def test_is_recall_detects_memory_questions():
-    from jarvis.cli import _is_recall
-    assert _is_recall("what did I do yesterday") is True
-    assert _is_recall("show me my memories about the deploy") is True
-    assert _is_recall("tell me about the sync protocol") is True
-    assert _is_recall("hello sir how are you") is False
-    assert _is_recall("thanks!") is False
+    from jarvis.brain import _is_recall_question
+    assert _is_recall_question("what did I do yesterday") is True
+    assert _is_recall_question("show me my memories about the deploy") is True
+    assert _is_recall_question("tell me about the sync protocol") is True
+    assert _is_recall_question("hello sir how are you") is False
+    assert _is_recall_question("thanks!") is False
 
