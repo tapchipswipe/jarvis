@@ -15,8 +15,8 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2025-01-15 — Enable SQLite WAL mode for concurrent read/write safety (critical foundation fix)
 - `[done]` 2025-01-15 — Fix consolidation.py NameError crash (jarvis_store undefined var on line 31)
 - `[done]` 2025-01-15 — Fix embed.py Ollama multi-text bug — iterate one text at a time instead of sending Python list
-- `[planned]` 2025-01-15 — Add incremental vector re-indexing so new memories get embedded without full re-sync
-- `[planned]` 2025-01-15 — Implement memory decay / tier promotion schedule so raw memories auto-promote to session tier after 7 days
+- `[done]` 2025-01-15 — Add incremental vector re-indexing so new memories get embedded without full re-sync (superseded by the 2026-08-05 `jarvis reindex` delivery below)
+- `[done]` 2025-01-15 — Implement memory decay / tier promotion schedule so raw memories auto-promote to session tier after 7 days (superseded by the 2026-08-05 `jarvis promote` delivery below)
 - `[requested]` 2025-01-15 — Multi-user support with isolated per-user storage directories and access control
 - `[done]` 2026-07-31 — CLI `/export` command to dump all memories as JSON or Markdown for portability
 - `[done]` 2026-07-31 — Embedding cache (SQLite-backed + in-memory) so repeated embeddings are served without re-calling Ollama
