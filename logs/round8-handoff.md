@@ -1,5 +1,31 @@
 # Round 8 — Night-Autonomous pass (2026-08-06→07, agent-only)
 
+## ☕ TL;DR — what happened overnight (read this first)
+- **The box is the only thing that needs your hands.** The running `jarvis server`
+  predates the inbox ingester + `/api/memories` + `/api/ingest/status`. On the box:
+  `cd C:\Users\despo\jarvis && git pull` (should be a no-op — it's at HEAD) then
+  **restart task `JarvisServer`** (or re-run `C:\data\jarvis\server-start.bat`).
+  That activates the ~2,730-file inbox backlog ingester (in-process, throttled,
+  idempotent) + the new API.
+- **Watch it drain:** `jarvis ingest-status` until `remaining` → 0, then
+  `jarvis doctor` and reconcile counts (`docs/STATUS.md` action #1/#2).
+- **Nothing else is broken or half-done.** 21 feature/build/test rounds landed on
+  `bot`==`main` and are pushed (HEAD = see `git log`), suite **374 passed**, import-smoke +
+  `jarvis server --check` green, thin-client read/write paths validated live.
+- **Highlights:** token-guarded API surfaces; `/api/ingest/status` + `doctor` +
+  `ingest-status`; thin-client `collect --root` + ambient-collection LaunchAgent
+  (opt-in); `status`/`export`/`memories`/`timeline` now report the LIVE box; 22
+  source files de-deprecated (`datetime.utcnow` → naive-UTC-identical); runtime
+  audit doc resolving exactly what runs on the server (digests are NOT running —
+  that's the known next gap).
+- **Deferred deliberately (safe-boundary):** I did NOT restart the live box,
+  enable `JARVIS_TOKEN`, register the collector LaunchAgent, or restore server-side
+  digests — those are single, deliberate ops steps for you (all documented).
+- Full per-round log: the **Progress log** section below + `UPGRADES.md` Round 8 +
+  `docs/STATUS.md`.
+
+---
+
 This session runs while the user is away. All work is agent-driven, committed to
 `bot`, kept in sync with `main`, and the pytest suite is kept green after every change.
 
