@@ -122,7 +122,8 @@ def remember(text, source, tag, classify):
 @click.option("--tag", default=None, help="Filter by tag")
 @click.option("--tier", default=None, help="Filter by tier (raw, session, reflection, arc)")
 @click.option("-n", default=20, help="Number of results")
-def memories(source, tag, tier, n):
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON instead of a table")
+def memories(source, tag, tier, n, as_json):
     from jarvis import remote
     if remote.is_remote():
         try:
@@ -153,6 +154,9 @@ def memories(source, tag, tier, n):
         store.close()
         for r in rows:
             r["tags"] = json.loads(r["tags"]) if r["tags"] else []
+    if as_json:
+        click.echo(json.dumps(rows, default=str))
+        return
     if not rows:
         click.echo("No memories found.")
         return
@@ -167,7 +171,8 @@ def memories(source, tag, tier, n):
 @cli.command()
 @click.option("--days", default=7, help="Look back N days")
 @click.option("-n", default=50, help="Number of results")
-def timeline(days, n):
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON instead of a table")
+def timeline(days, n, as_json):
     from jarvis import remote
     cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).isoformat()
     if remote.is_remote():
@@ -184,6 +189,9 @@ def timeline(days, n):
         store.close()
         for r in rows:
             r["tags"] = json.loads(r["tags"]) if r["tags"] else []
+    if as_json:
+        click.echo(json.dumps(rows, default=str))
+        return
     if not rows:
         click.echo("No memories in timeline.")
         return

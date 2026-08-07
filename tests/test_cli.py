@@ -347,6 +347,32 @@ def test_timeline_client_mode(monkeypatch):
     assert "since" in captured  # but the box call did pass a since filter
 
 
+def test_memories_json_output(monkeypatch):
+    """memories --json emits structured JSON, not the formatted table."""
+    import json as _json
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "memories", lambda **kw: {
+        "count": 2,
+        "memories": [
+            {"id": "a", "content": "alpha body", "source": "s", "timestamp": "2026-01-01T00:00:00",
+             "tier": "raw", "tags": ["deep"], "route": "x"},
+            {"id": "b", "content": "beta body", "source": "s", "timestamp": "2026-01-02T00:00:00",
+             "tier": "session", "tags": ["manual"], "route": "y"},
+        ],
+    })
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["memories", "--json"])
+    assert result.exit_code == 0
+    data = _json.loads(result.output)
+    assert isinstance(data, list) and len(data) == 2
+    assert data[0]["id"] == "a"
+
+
 def test_task_list_command_still_registered():
     """The CLI command remains ``task list`` after the rename."""
     from jarvis.cli import cli
