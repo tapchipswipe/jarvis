@@ -40,20 +40,40 @@ def _fingerprint(path: Path) -> str:
     return hashlib.sha256(f"{path}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()
 
 
+_WALK_MAX_ERRORS = 1024
+
+
 def _walk(roots, extensions, max_files):
+    # A single bad path (broken symlink, permission-bounced dir, a file that
+    # disappears mid-walk) must NOT abort the whole scan. Guard both the per-path
+    # checks and the rglob iteration itself, skipping offenders with a bounded
+    # error counter so a persistently-unreadable subtree can't spin forever.
     seen_any = set()
+    errors = 0
     for base in roots:
         if not base.exists():
             continue
-        for path in base.rglob("*"):
-            if len(seen_any) >= max_files:
-                return
-            if path.is_dir() or _should_exclude(path):
-                continue
-            if path.suffix.lower() not in extensions:
-                continue
-            seen_any.add(str(path))
-            yield path
+        try:
+            for path in base.rglob("*"):
+                if errors >= _WALK_MAX_ERRORS:
+                    return
+                try:
+                    if len(seen_any) >= max_files:
+                        return
+                    if path.is_dir() or _should_exclude(path):
+                        continue
+                    if path.suffix.lower() not in extensions:
+                        continue
+                    seen_any.add(str(path))
+                    yield path
+                except OSError:
+                    # per-file failure (e.g. broken symlink / unreadable path)
+                    errors += 1
+                    continue
+        except OSError:
+            # rglob itself bailed on an unreadable subdir; move to next root
+            errors += 1
+            continue
 
 
 def scan_once(roots=None, extensions=None, max_files: int = 2000, marker_prefix: str = "seen") -> dict:

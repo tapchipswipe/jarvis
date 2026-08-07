@@ -28,6 +28,73 @@ def mock_store():
 
 
 # ---------------------------------------------------------------------------
+# thin collector
+# ---------------------------------------------------------------------------
+
+def _write_file(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+class TestThinCollector:
+    def test_import(self):
+        from jarvis.collectors import thin
+        assert hasattr(thin, "scan_once")
+        assert hasattr(thin, "_walk")
+
+    def test_scan_walk_error_does_not_abort_others_enqueue(self, tmp_path, monkeypatch):
+        """A per-path walk error (broken symlink / permission bounce) skips just
+        that path; the rest of the scan still enqueues its files."""
+        from jarvis.collectors import thin
+
+        monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "cache.db"))
+        d = tmp_path / "docs"
+        _write_file(d / "a.md", "First note about ordering a fence post order.")
+        _write_file(d / "b.md", "Second note, longer than fifty characters for sure.")
+
+        real_exclude = thin._should_exclude
+
+        def flaky(path):
+            if path.name == "b.md":
+                raise OSError("simulated broken symlink / permission bounce")
+            return real_exclude(path)
+
+        monkeypatch.setattr(thin, "_should_exclude", flaky)
+
+        stats = thin.scan_once(roots=[d], max_files=100)
+        # a.md still enqueued; b.md's walk-time error is skipped, not fatal.
+        assert stats["enqueued"] == 1
+        assert stats["errors"] == 0  # walk-time skips are not per-file errors
+
+    def test_scan_commits_staged_enqueues_despite_walk_error(self, tmp_path, monkeypatch):
+        """Staged enqueues are committed even when a later path errors mid-walk."""
+        from jarvis.collectors import thin
+
+        monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "cache.db"))
+        d = tmp_path / "docs"
+        _write_file(d / "a.md", "Third note about tailscale vpn setup details.")
+        _write_file(d / "b.md", "Fourth note, longer than fifty characters for sure.")
+
+        real_exclude = thin._should_exclude
+
+        def flaky(path):
+            if path.name == "b.md":
+                raise OSError("simulated bad path")
+            return real_exclude(path)
+
+        monkeypatch.setattr(thin, "_should_exclude", flaky)
+
+        first = thin.scan_once(roots=[d], max_files=100)
+        assert first["enqueued"] == 1
+
+        # If the commit had been skipped/rolled back, a.md's fingerprint would
+        # not persist. Its presence on re-scan proves the staged enqueue committed
+        # despite b.md erroring during the same walk.
+        second = thin.scan_once(roots=[d], max_files=100)
+        assert second["skipped_seen"] == 1
+
+
+# ---------------------------------------------------------------------------
 # files collector
 # ---------------------------------------------------------------------------
 
@@ -95,6 +162,37 @@ class TestDeepCollector:
         from jarvis.collectors.deep import sync_deep
         count = sync_deep(mock_store, max_files=5)
         assert count == 0
+
+    def test_sync_deep_walk_error_does_not_abort(self, mock_store, tmp_path):
+        """A per-path walk error (broken symlink / permission bounce) must skip
+        just that path; other files still get embedded and added to the store."""
+        from jarvis.collectors import deep
+
+        d = tmp_path / "docs"
+        d.mkdir()
+        (d / "a.md").write_text(
+            "A sufficiently long user-authored note about the garden fence plans.",
+            encoding="utf-8",
+        )
+        (d / "b.md").write_text(
+            "Another long note, well over fifty characters, for the deep scan.",
+            encoding="utf-8",
+        )
+
+        real_exclude = deep._should_exclude
+
+        def flaky(path):
+            if path.name == "b.md":
+                raise OSError("simulated broken symlink during walk")
+            return real_exclude(path)
+
+        with patch("jarvis.collectors.deep.DEEP_DIRS", [d]), \
+             patch("jarvis.collectors.deep._should_exclude", flaky):
+            count = deep.sync_deep(mock_store, max_files=100)
+
+        # a.md was processed; b.md's walk error was skipped, not fatal.
+        assert count >= 1
+        assert mock_store.added, "expected at least one successfully added chunk"
 
 
 # ---------------------------------------------------------------------------

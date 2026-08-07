@@ -25,47 +25,56 @@ def _should_exclude(path: Path) -> bool:
     return False
 
 
-def sync_deep(store, max_files=50000):
+def sync_deep(store, max_files=50000, max_errors=1024):
     count = 0
     processed = 0
     errs = 0
     for base_dir in DEEP_DIRS:
         if not base_dir.exists():
             continue
-        for path in base_dir.rglob("*"):
-            if processed >= max_files:
-                break
-            if path.is_dir():
-                continue
-            if _should_exclude(path):
-                continue
-            if path.suffix.lower() not in DEEP_EXTENSIONS:
-                continue
-            try:
-                text = path.read_text(errors="ignore")
-                if len(text.strip()) < 50:
-                    continue
-                source = "deep"
-                source_id = str(path)
-                ts = datetime.utcfromtimestamp(path.stat().st_mtime).isoformat()
-                fid = fingerprint(source, source_id, text, ts)
-                if store.exists(fid):
-                    continue
-                chunks = chunk_document(text, metadata={"path": str(path)})
-                for i, chunk in enumerate(chunks):
-                    cid = f"{fid}-{i}"
-                    emb = get_embedding(chunk["text"])
-                    store.add(cid, source, source_id, ts, chunk["text"], ["deep"], {"path": str(path)}, emb)
-                    count += 1
-                processed += 1
-            except OSError as e:
-                # EAGAIN / EMFILE during a live filesystem walk are common;
-                # report each unique errno at most once instead of per-file.
-                errs += 1
-                if errs <= 5:
-                    print(f"deep error: {e}")
-            except Exception as e:
-                errs += 1
-                if errs <= 5:
-                    print(f"deep error: {e}")
+        try:
+            for path in base_dir.rglob("*"):
+                if errs >= max_errors:
+                    return count
+                if processed >= max_files:
+                    break
+                try:
+                    if path.is_dir():
+                        continue
+                    if _should_exclude(path):
+                        continue
+                    if path.suffix.lower() not in DEEP_EXTENSIONS:
+                        continue
+                    text = path.read_text(errors="ignore")
+                    if len(text.strip()) < 50:
+                        continue
+                    source = "deep"
+                    source_id = str(path)
+                    ts = datetime.utcfromtimestamp(path.stat().st_mtime).isoformat()
+                    fid = fingerprint(source, source_id, text, ts)
+                    if store.exists(fid):
+                        continue
+                    chunks = chunk_document(text, metadata={"path": str(path)})
+                    for i, chunk in enumerate(chunks):
+                        cid = f"{fid}-{i}"
+                        emb = get_embedding(chunk["text"])
+                        store.add(cid, source, source_id, ts, chunk["text"], ["deep"], {"path": str(path)}, emb)
+                        count += 1
+                    processed += 1
+                except OSError as e:
+                    # EAGAIN / EMFILE during a live filesystem walk are common;
+                    # report each unique errno at most once instead of per-file.
+                    errs += 1
+                    if errs <= 5:
+                        print(f"deep error: {e}")
+                except Exception as e:
+                    errs += 1
+                    if errs <= 5:
+                        print(f"deep error: {e}")
+        except OSError as e:
+            # rglob itself bailed (permission-bounced subtree, broken symlink);
+            # skip that subtree and keep scanning the remaining roots.
+            errs += 1
+            if errs <= 5:
+                print(f"deep error: {e}")
     return count
