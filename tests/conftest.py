@@ -3,9 +3,32 @@ Shared fixtures for jarvis test suite.
 """
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_env():
+    """Clear jarvis env vars from os.environ before each test and restore after.
+
+    The CI/shell environment is often contaminated with JARVIS_TOKEN, JARVIS_MODE,
+    JARVIS_REMOTE, JARVIS_TLS_* and other JARVIS_* knobs that would change behavior
+    (e.g. making the server tests expect a token and fail with 403). Saving and
+    restoring the previously-set values keeps the suite hermetic and non-disruptive
+    for any tooling that reads the ambient env after the run.
+    """
+    keys = [k for k in os.environ if k.startswith("JARVIS_")]
+    saved = {k: os.environ[k] for k in keys}
+    for k in keys:
+        del os.environ[k]
+    yield
+    for k in keys:
+        if k in saved:
+            os.environ[k] = saved[k]
+        else:
+            os.environ.pop(k, None)
 
 
 @pytest.fixture()
