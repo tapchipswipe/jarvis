@@ -42,7 +42,17 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2026-08-06 — Reusable Lightspeed probe script `scripts/lightspeed-probe.ps1` + `jarvis server --check` deploy validation passing locally
 - `[planned]` 2026-08-06 — Deploy `jarvis server` to Lightspeed (Task Scheduler / start-jarvis.bat), cut Mac over to `JARVIS_MODE=client`, relocate triggers/Mayor/digests server-side, hash-verified backfill, then retire Mac-local store/push
 
+## Round 8 (2026-08-06→07) — Night-autonomous pass (agent-only)
+
+- `[done]` 2026-08-06 — Inbox backlog ingester (`jarvis/inbox_ingest.py`) built, committed, **deployed to the box**, and running **in-process** in the `jarvis server` process (embed-only with `nomic-embed-text`, sidecar-driven route/tags, throttled batches, idempotent on content-hash + memory-id, cursor-persisted). Box reached `966d7b2` == `bot` == `origin/bot`; `/api/health/deep` already climbing as it drains `C:/data/jarvis/inbox` (Round 7 step 1 — marked done)
+- `[done]` 2026-08-06 — CLI regression test mode isolation: the Round 7 thin-client cutover persisted `JARVIS_MODE=client`, so the local path test started taking the remote branch; tests now pin `remote.is_remote()` per case and add explicit thin-client coverage
+- `[planned]`/`[in-progress]` 2026-08-06 — **Server token-enforcement consistency**: `/api/remember`, `/api/backfill`, `/api/search`, `/api/chat` are already guarded by `_host_ok`; extend the same guard to the currently-open mutating task/session routes (`/api/idea`, `/api/tasks/approve`, `/api/tasks/reject`, `/api/sessions`) — config-gated (enforced only when `JARVIS_TOKEN` is set; loopback always allowed)
+- `[planned]` 2026-08-06 — Restore thin-client ambient collection: a `JARVIS_MODE=client` collector job on the Mac that feeds the outbox → server (STATUS priority #4)
+- `[planned]` 2026-08-06 — Verify triggers/digests/idle-maintenance are all running inside the `jarvis server` process (Mayor is; standalone sync daemon retired)
+
+
 ## Round 7 (2026-08-06) — Thin-client cutover (backfill + retire Mac brain)
+
 
 - `[done]` 2026-08-06 — Field-preserving `/api/backfill` endpoint (server) that imports full memory records — original id, source, source_id, timestamp, tier, route, tags, metadata — with local embedding recompute (deterministic shared embed model), unlike `/api/remember` which re-timestamps/re-chunks/re-tiers (Round 7)
 - `[done]` 2026-08-06 — `jarvis backfill` CLI (client): reads the local Mac store, computes a hash manifest (per-row sha256 + aggregate), posts field-preserving batches, verifies server active count; `--dry-run` / `--limit` / `--batch`
