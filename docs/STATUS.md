@@ -57,6 +57,23 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
    **validated age-encrypted archive** (`~/jarvis/backups/store-<date>.tar.gz.age`, decrypt +
    tar-list OK). TrueNAS / 3rd copy still optional.
 
+## Round 9b hardening pass (2026-08-07) — all delivered, box NOT yet restarted onto it
+8. **HTTPS server (config-gated) + pinned client:** `jarvis server --gen-cert` → self-signed
+   pair + SHA256 fingerprint; serve with `--tls-cert/--tls-key` (or `JARVIS_TLS_CERT/KEY`).
+   Client `remote.py` pins the fingerprint (`JARVIS_TLS_FINGERPRINT`) over `https://` →
+   MitM-resistant without a CA. `.pem` secrets are gitignored. (Not enabled on the box yet —
+   plain HTTP + token remains until the next deploy.)
+9. **Ingester idle fast-path** (drained inbox stops re-scanning; `/api/ingest/status.idle`).
+10. **Crash-consistent backups:** `jarvis backup` + token-gated `POST /api/admin/backup`
+    (SQLite online-backup); `scripts/jarvis-backup.sh` uses it; `JARVIS_BACKUP_STRICT=1`
+    pauses/restarts the scheduled task for a consistent HNSW snapshot.
+11. **`jarvis ask "<q>"`** (always grounded), **`jarvis delegate "<task>"`** (offload → cline
+    JSON), **`jarvis backup [dst]`**, digest model guard (`JARVIS_DIGEST_MODEL`), per-user
+    isolation chain locked 0700, desktop+webhook alerting (rate-limited), coverage 54%,
+    ruff debt 344→~220.
+12. **`jarvis delegate` caveat:** the box's cline reports **Cline Credits balance $0** — the
+    SSH/cline/JSON mechanism works, but offload needs credits funded (or another provider).
+
 ## How to resume after a reboot
 1. `cd /Users/lucasdespot/jarvis` (venv `.venv/bin/python`).
 2. Read this file + `logs/round8-handoff.md` + `logs/round7-handoff.md` + `docs/runtime-audit.md` + `docs/deployment-lightspeed.md` + `docs/topology.md`.

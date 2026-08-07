@@ -65,9 +65,26 @@ The whole "next-up" backlog is done:
 - **Hardened backup active** (`age` + key; encrypted archives validated).
 - Suite **398 passed / 1 skipped**; git `bot` == `main` == origin.
 
+## Round 9b (2026-08-07) — hardening pass, all delivered
+- **HTTPS (config-gated) + pinned client**: `jarvis server --gen-cert` → self-signed pair +
+  SHA256 fingerprint; `--tls-cert/--tls-key` (or `JARVIS_TLS_CERT/KEY`) serve HTTPS; client
+  pins the fingerprint (`JARVIS_TLS_FINGERPRINT`) over `https://`. Not yet enabled on the box.
+- **`jarvis backup [dst]`** — crash-consistent SQLite online-backup; `POST /api/admin/backup`
+  (token-gated) runs in-process; `scripts/jarvis-backup.sh` uses it (`JARVIS_BACKUP_STRICT=1`
+  pauses the scheduled task for a consistent HNSW snapshot, always restarts).
+- **`jarvis ask "<q>"`** — one-shot answer ALWAYS grounded on the brain (local or box).
+- **`jarvis delegate "<task>"`** — offload to box `cline`; ⚠️ box cline needs **Cline Credits**
+  (currently $0) to actually run.
+- **Digest model guard** (`JARVIS_DIGEST_MODEL`), **ingester idle fast-path**, **per-user
+  isolation 0700 chain**, **desktop+webhook alerting** (`JARVIS_ALERT_WEBHOOK`, rate-limited).
+- Coverage **54%** (extract_entities 96%, mayor 57%); ruff 344 → ~220; suite **450 passed**.
+- Full details: `UPGRADES.md` Round 9b + `logs/round9-handoff.md`. Box needs a
+  `git pull` + `JarvisServer` restart to activate (all backward-compatible).
+
 ## Config / secrets — locations (not values)
-`~/.config/jarvis/token`, `~/.config/jarvis/backup-key.age(.pub)` on the Mac; box env via
-`setx JARVIS_TOKEN` / `setx JARVIS_TRIGGERS`. Nothing secret is committed to the repo.
+`~/.config/jarvis/token`, `~/.config/jarvis/backup-key.age(.pub)`, and optionally
+`~/.config/jarvis/server-fingerprint` on the Mac; box env via `setx JARVIS_TOKEN` /
+`setx JARVIS_TRIGGERS`. Nothing secret is committed to the repo.
 
 ## For cline-on-Lightspeed specifically
 You have **memory + context**: read this file, then query the brain with

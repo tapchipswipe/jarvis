@@ -60,6 +60,20 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[planned]` 2026-08-06 — Enable `JARVIS_TOKEN` end-to-end (same value in box env + `server-start.bat` and in `~/.zshrc` on the Mac) + register the `com.user.jarvis-collect` LaunchAgent
 - `[done]` 2026-08-07 — **Server-side digests/triggers restored (Round 9):** config-gated `start_trigger_loop()` (env `JARVIS_TRIGGERS=1`, default OFF) runs a `TriggerLoop` **inside `jarvis server`** — per-tick Store open/close (no persistent second Chroma handle, same pattern as the ingester). Defaults: LLM morning-brief (08:00) + end-of-day wrap (18:00) weekdays, 30-min calendar notify poll. Wired into `run_dashboard`; 3 new tests.
 
+## Round 9b (2026-08-07) — Finish-the-backlog hardening pass
+
+- `[done]` **HTTPS + pinned client (config-gated):** `jarvis server --tls-cert/--tls-key` (or `JARVIS_TLS_CERT/KEY`) serves HTTPS; `jarvis server --gen-cert` mints a self-signed pair + fingerprint. Client `remote.py` supports `https://` with **SHA256 cert-fingerprint pinning** (`JARVIS_TLS_FINGERPRINT` or `~/.config/jarvis/server-fingerprint`) → real MitM resistance without a CA. TLS secrets are gitignored (`*.pem`). Tests: end-to-end against a real local TLS server (9 tests).
+- `[done]` **Ingester idle fast-path:** a drained/unchanged inbox now idles on a cheap fingerprint (count + max mtime_ns) instead of re-scanning the tree every cycle; `idle` exposed in `/api/ingest/status`; `JARVIS_INBOX_IDLE` configurable.
+- `[done]` **Crash-consistent backups:** new `jarvis backup` (SQLite online-backup for meta.db/embed_cache/chroma.sqlite3 — valid even while live) + token-gated in-process `POST /api/admin/backup` (avoids invoking a second Python on the Windows Store-Python box). `scripts/jarvis-backup.sh` now uses it; `JARVIS_BACKUP_STRICT=1` pauses the `JarvisServer` scheduled task for a fully consistent HNSW snapshot and always restarts it.
+- `[done]` **Digest model guard:** `JARVIS_DIGEST_MODEL` configurable (default chat model); large-tier models log a RAM-discipline warning; an `[ollama …]` error string is never digested (falls back to chat model then static). Bug fixed: a dead model previously got digested as error text.
+- `[done]` **`jarvis ask "<question>"`** — one-shot, ALWAYS grounded on the brain: retrieves top memories, answers via LLM, prints answer + grounding sources (local or box in client mode; `--json-out`).
+- `[done]` **`jarvis delegate "<task>"`** — productized offload: runs `cline` on the box via SSH and returns its JSON. NOTE: the box's cline currently reports **Cline Credits balance $0** — mechanical path validated; needs credits funded to actually run work.
+- `[done]` **Multi-user isolation hardening:** `ensure_private_dir` now locks 0700 on *every* directory Jarvis creates (whole `~/jarvis/users/<user>` chain), not just the leaf.
+- `[done]` **Coverage 50 → 54%** (extract_entities 0→96%, mayor 37→57%) — 24 new tests; ruff debt 344 → ~220 (131 mechanical auto-fixes applied; remaining are intentional catch-all `except Exception` guards — BLE001 — plus a few style items, documented).
+- `[done]` **Alerting:** `scripts/jarvis-health-check.sh` now reaches you — macOS Notification Center banner + optional `JARVIS_ALERT_WEBHOOK` (ntfy/Telegram/Discord), rate-limited per alert-type (default 30 min) so a persistent outage pages you once.
+- `[done]` **Token-over-HTTPS integration test** locked in the suite (client sends `X-Jarvis-Token` over a real TLS channel).
+- `[deferred]` Tailscale ACL console edit (scopes who can hit `:8766`) — requires the Tailscale admin console; docs note it. HTTPS + token make the LAN/plain-HTTP exposure moot.
+
 
 ## Round 7 (2026-08-06) — Thin-client cutover (backfill + retire Mac brain)
 
