@@ -400,7 +400,7 @@ def test_ask_grounds_on_local_brain(monkeypatch):
     # never call the (potentially unmocked) local store/LLM — stub the query
     monkeypatch.setattr(
         Brain, "query",
-        lambda self, question, n_results=8, source_filter=None: (
+        lambda self, question, **kw: (
             "The fence post is solid.",
             [{"source": "deep", "timestamp": "2026-01-01T00:00:00",
               "content": "installed the fence post"}]),
@@ -431,11 +431,107 @@ def test_ask_client_mode_delegates_to_box(monkeypatch):
 
     monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
     monkeypatch.setattr(remote, "chat",
-                        lambda message, max_steps=8, model=None: {"response": "box answer"})
+                        lambda message, session_id=None, max_steps=8, model=None:
+                        {"response": "box answer"})
 
     result = CliRunner().invoke(cli, ["ask", "hello", "--json-out"])
     assert result.exit_code == 0, result.output
     data = _json.loads(result.output)
     assert data["answer"] == "box answer"
     assert data["remote"] is True
+
+
+def test_ask_session_threads_and_persists(monkeypatch):
+    """`ask --session <id>` must thread prior turns into the query and persist the
+    exchange to the session store (Round 9 #6)."""
+    import json as _json
+
+    from click.testing import CliRunner
+
+    from jarvis.brain import Brain
+    from jarvis.cli import cli
+
+    class _FakeStore:
+        def close(self): pass
+
+    class _FakeSDB:
+        def __init__(self): self.msgs = []
+        def close(self): pass
+        def get_messages(self, sid, limit=100):
+            return [{"role": "user", "content": "earlier q"},
+                    {"role": "assistant", "content": "earlier a"}]
+        def create_session(self, title=""): return "sess-1"
+        def append_message(self, sid, role, content, tool_calls=None):
+            self.msgs.append((role, content))
+
+    fake_sdb = _FakeSDB()
+    seen = {}
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
+    monkeypatch.setattr("jarvis.cli.Store", lambda *a, **k: _FakeStore())
+    monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: fake_sdb)
+    monkeypatch.setattr(
+        Brain, "query",
+        lambda self, question, **kw: (seen.update(history=kw.get("history")) or "follow-up answer", []))
+
+    result = CliRunner().invoke(cli, ["ask", "follow up?", "--session", "sess-1", "--json-out"])
+    assert result.exit_code == 0, result.output
+    data = _json.loads(result.output)
+    assert data["session_id"] == "sess-1"
+    # history was loaded from the session and passed into the grounded query
+    assert seen["history"][0]["content"] == "earlier q"
+    # user + assistant turns appended back to the session
+    assert fake_sdb.msgs[0][0] == "user" and fake_sdb.msgs[-1][0] == "assistant"
+
+
+def test_ask_save_writes_back_to_brain(monkeypatch):
+    """`ask --save` must persist the Q&A back into the brain as an 'ask' memory."""
+    from click.testing import CliRunner
+
+    from jarvis.brain import Brain
+    from jarvis.cli import cli
+
+    class _FakeStore:
+        def close(self): pass
+
+    saved = {}
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
+    monkeypatch.setattr("jarvis.cli.Store", lambda *a, **k: _FakeStore())
+    monkeypatch.setattr(
+        Brain, "query",
+        lambda self, question, **kw: ("the saved answer", []))
+    monkeypatch.setattr(
+        Brain, "remember",
+        lambda self, text, source="manual", tags=None, classify=False:
+            saved.update(text=text, source=source, tags=tags) or 1)
+
+    result = CliRunner().invoke(cli, ["ask", "a question", "--save"])
+    assert result.exit_code == 0, result.output
+    assert "Q: a question" in saved["text"]
+    assert saved["source"] == "ask"
+    assert saved["tags"] == ["ask"]
+
+
+def test_ask_remote_threads_session_and_saves(monkeypatch):
+    """Client-mode `ask --session/--save` must thread to the box and write back."""
+    from click.testing import CliRunner
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    seen = {}
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "chat",
+                        lambda message, session_id=None, max_steps=8, model=None:
+                        seen.update(sid=session_id, msg=message) or {"response": "box threaded answer"})
+    monkeypatch.setattr(remote, "remember_batch",
+                        lambda items: seen.update(save_items=items) or {"added": 1})
+
+    result = CliRunner().invoke(cli, ["ask", "hello again", "--session", "s9", "--save", "--json-out"])
+    assert result.exit_code == 0, result.output
+    import json as _json
+    data = _json.loads(result.output)
+    assert data["answer"] == "box threaded answer"
+    assert seen["sid"] == "s9"
+    assert seen["msg"] == "hello again"
+    assert seen["save_items"][0]["source"] == "ask"
 

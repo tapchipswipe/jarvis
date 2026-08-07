@@ -66,7 +66,7 @@ class Brain:
         self.store = store
         self.model = model
 
-    def query(self, user_query: str, n_results: int = 8, source_filter: str | None = None, verbose: bool = False) -> tuple[str, list[dict]]:
+    def query(self, user_query: str, n_results: int = 8, source_filter: str | None = None, verbose: bool = False, history: list | None = None) -> tuple[str, list[dict]]:
         q_emb = get_embedding(user_query)
         memories = self.store.search(q_emb, n_results=n_results, source_filter=source_filter)
         context_parts = []
@@ -89,10 +89,16 @@ class Brain:
             "Answer using the context provided. If the context is incomplete, say so. Keep answers concise and actionable.\n\n"
             f"RELEVANT MEMORIES:\n{context}{linked}"
         )
-        response = _ollama_chat(model=self.model, messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query},
-        ])
+        messages = [{"role": "system", "content": system_prompt}]
+        # Optional thread: prior turns from the session keep follow-ups coherent.
+        if history:
+            for turn in history[-20:]:
+                role = turn.get("role")
+                content = turn.get("content")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_query})
+        response = _ollama_chat(model=self.model, messages=messages)
         answer = response.get("message", {}).get("content", "[no response]")
         if verbose:
             conf = self._confidence(memories)

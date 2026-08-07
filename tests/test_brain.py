@@ -200,6 +200,28 @@ def test_build_digest_small_model_then_chat_fallback(store, monkeypatch):
     assert _chat_args[1] == "test-model"
     assert "digest via" in text
 
+def test_query_passes_history_into_messages(store, monkeypatch):
+    """Threading: prior session turns must be injected between the system prompt
+    and the new user query (Round 9 #6)."""
+    import jarvis.brain as B
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        b = _brain(store)
+        seen = {}
+        def _chat(model, messages):
+            seen["m"] = messages
+            return {"message": {"content": "ok"}}
+        monkeypatch.setattr(B, "_ollama_chat", _chat)
+        b.query("follow up?", history=[
+            {"role": "user", "content": "first q"},
+            {"role": "assistant", "content": "first a"},
+        ])
+    roles = [m["role"] for m in seen["m"]]
+    contents = [m["content"] for m in seen["m"]]
+    assert roles == ["system", "user", "assistant", "user"]
+    assert "first q" in contents and "first a" in contents
+    assert contents[-1] == "follow up?"
+
+
 def test_query_injects_related_entities(store):
     fid = "mem-q1"
     store.add(fid, "manual", "1", "2026-01-01T10:00:00", "worked with alice on the plan", [], {}, [0.1] * 8)

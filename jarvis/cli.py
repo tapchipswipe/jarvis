@@ -800,40 +800,71 @@ def chat(model, verbose, is_new, resume, max_steps):
 @click.option("--source", default=None, help="Restrict grounding to a source (deep/manual/device/...)")
 @click.option("--model", default=None, help="LLM model override")
 @click.option("--json-out", is_flag=True, help="Emit the result as JSON")
+@click.option("--session", "session_id", default=None, help="Resume/thread an ask session by ID")
+@click.option("--save", "save_qa", is_flag=True, help="Store this Q&A back to memory (tag 'ask')")
 @click.argument("question")
-def ask(question, n_results, source, model, json_out):
+def ask(question, n_results, source, model, json_out, session_id, save_qa):
     """Ask Jarvis a one-shot question, ALWAYS grounded on the brain.
 
     Retrieves the most relevant memories, sends them alongside the question to
     the LLM, and prints the answer plus the grounding sources — so it never
     fabricates: if the brain has nothing relevant it will say so. In client mode
     it asks the box (the shared single brain) rather than the local store.
+
+    Threading: pass the same --session <id> on follow-ups to carry prior turns
+    as conversation context. --save writes the Q&A back into memory (tag 'ask')
+    so a good exchange becomes searchable context.
     """
     from jarvis import remote as _remote
 
     if _remote.is_remote():
-        resp = _remote.chat(question, max_steps=1, model=model)
+        resp = _remote.chat(question, session_id=session_id or None,
+                            max_steps=1, model=model)
         answer = (resp.get("response") or resp.get("answer") or "").strip()
         if not answer and isinstance(resp.get("message"), str):
             answer = resp["message"].strip()
+        if save_qa and answer:
+            _remote.remember_batch([{"content": f"Q: {question}\nA: {answer}",
+                                    "source": "ask", "tags": ["ask"]}])
         if json_out:
-            click.echo(json.dumps({"answer": answer, "remote": True}))
+            click.echo(json.dumps({"answer": answer, "remote": True,
+                                   "session_id": session_id or resp.get("session_id")}))
         else:
             click.echo(answer or "(no answer returned)")
         return
 
     store = Store()
+    sdb = None
+    history = []
+    sid = session_id
     try:
         brain = Brain(store, model=model) if model else Brain(store)
+        if sid or save_qa:
+            from jarvis.sessions import SessionDB
+            sdb = SessionDB()
+            if sid:
+                history = [m for m in sdb.get_messages(sid, limit=20)
+                           if m.get("role") in ("user", "assistant") and m.get("content")]
         answer, memories = brain.query(question, n_results=n_results,
-                                       source_filter=source)
+                                       source_filter=source, history=history)
+        if sdb:
+            if not sid:
+                sid = sdb.create_session(title="ask")
+            sdb.append_message(sid, "user", question)
+            sdb.append_message(sid, "assistant", answer)
+        if save_qa and answer:
+            brain.remember(f"Q: {question}\nA: {answer}", source="ask",
+                           tags=["ask"], classify=False)
         if json_out:
             click.echo(json.dumps({
                 "answer": answer,
+                "session_id": sid,
                 "sources": [{"source": m["source"], "timestamp": m["timestamp"],
                              "content": m["content"]} for m in memories],
             }))
             return
+        if sid:
+            click.echo(f"(session {sid})")
         click.echo(answer)
         if memories:
             click.echo(f"\n-- grounded in {len(memories)} memory(-ies) --")
@@ -846,6 +877,8 @@ def ask(question, n_results, source, model, json_out):
                 click.echo(f"  [{m['source']}] {m['timestamp']}  {m['content'][:120]}")
     finally:
         store.close()
+        if sdb:
+            sdb.close()
 
 
 def _show_alerts(brain: Brain):
