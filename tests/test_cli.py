@@ -111,6 +111,43 @@ def test_search_surfaces_server_error_not_offline(monkeypatch):
     assert "Offline" not in result.output
 
 
+def test_status_reports_live_box_in_client_mode(monkeypatch):
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.pending_count.return_value = 0
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr(remote, "health_deep",
+                        lambda: {"ok": True, "memories": 3954, "mode": "local", "uptime": 600})
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["status"])
+    assert result.exit_code == 0
+    assert "Box (thin client): ok=True memories=3954 mode=local" in result.output
+    assert "Outbox: 0 pending." in result.output
+
+
+def test_status_offline_reports_box_unreachable(monkeypatch):
+    import urllib.error
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.pending_count.return_value = 3
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr(remote, "health_deep", lambda *a, **k: (_ for _ in ()).throw(
+        urllib.error.URLError("down")))
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["status"])
+    assert result.exit_code == 0
+    assert "Box unreachable" in result.output
+
+
 def test_task_list_command_still_registered():
     """The CLI command remains ``task list`` after the rename."""
     from jarvis.cli import cli

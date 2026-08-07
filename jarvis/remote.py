@@ -52,6 +52,11 @@ def health():
     return _request("GET", "/api/health")
 
 
+def health_deep():
+    """Store-aware health: includes the box's active memory count."""
+    return _request("GET", "/api/health/deep")
+
+
 def remember_batch(memories: list[dict]) -> dict:
     return _request("POST", "/api/remember", {"memories": memories})
 

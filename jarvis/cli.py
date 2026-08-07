@@ -228,6 +228,29 @@ def search(query, source, n, verbose):
             click.echo(f"  entities: {', '.join(e['name'] for e in ents)}")
 @cli.command()
 def status():
+    """Show status. In thin-client mode this reports the live box, not the local
+    (rollback) store — the box is the single source of truth in FULL-THIN."""
+    from jarvis import remote
+    if remote.is_remote():
+        from jarvis.cache import Cache
+        cache = Cache()
+        try:
+            pending = cache.pending_count()
+        finally:
+            cache.close()
+        try:
+            deep = remote.health_deep()
+            click.echo(
+                f"Box (thin client): ok={deep.get('ok')} memories={deep.get('memories')} "
+                f"mode={deep.get('mode')} uptime={int(deep.get('uptime', 0))}s"
+            )
+            if pending:
+                click.echo(f"Outbox: {pending} pending write(s) not yet flushed (run `jarvis flush`).")
+            else:
+                click.echo("Outbox: 0 pending.")
+        except Exception:  # noqa: BLE001 - box unreachable; report the local view
+            click.echo("Box unreachable — offline. Reporting the local (rollback/cache) view.")
+        return
     store = Store()
     stats = store.stats()
     store.close()

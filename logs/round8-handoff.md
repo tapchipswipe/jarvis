@@ -39,9 +39,13 @@ This session runs while the user is away. All work is agent-driven, committed to
   progress registry so the box inbox drain is observable once the server restarts
   (verified the running box server predates the ingester — inbox still 5,458 files,
   no cursor). Suite 342 passed, 1 skipped.
-- [x] **Round 6 (pending commit):** CLI search offline-read hardening — a real HTTP
+- [x] **Round 6 (6333664):** CLI search offline-read hardening — a real HTTP
   error (e.g. 403 from the new token guards) is now reported as "Server error (code)"
   instead of being mislabelled "Offline (cached subset)". 2 new tests. Suite 344
   passed, 1 skipped. Confirmed the offline fallback itself was already implemented.
+- [x] **Round 7 (pending commit):** `jarvis status` is now remote-aware — in client
+  mode it reports the live box (`/api/health/deep` memories/mode/uptime) + local
+  outbox backlog instead of the stale local (rollback) store. 2 new tests; ruff clean.
+  Suite 346 passed, 1 skipped.
 
 
