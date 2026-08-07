@@ -191,8 +191,6 @@ def start_background_ingester() -> None:
       JARVIS_INBOX_COOLDOWN    -> pause s per ingested file (default 0.2)
       JARVIS_INBOX_CYCLE       -> s between cycles (default 15)
     """
-    import threading
-
     if os.environ.get("JARVIS_INBOX_DISABLE") == "1":
         logger.info("Inbox ingester disabled via JARVIS_INBOX_DISABLE=1")
         _set_status(False, enabled=False)

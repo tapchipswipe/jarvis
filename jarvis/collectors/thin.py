@@ -1,7 +1,7 @@
 """jarvis/collectors/thin.py — thin-client ambient collector (files -> outbox -> server).
 
 In FULL-THIN the Mac is a client: it must *never* write a local brain. Collectors
-enqueue raw raw text into the disposable outbox (``~/.cache/jarvis/cache.db``), and
+enqueue raw text into the disposable outbox (``~/.cache/jarvis/cache.db``), and
 a ``flush`` pushes the backlog to the Lightspeed ``jarvis server`` over
 ``/api/remember``. The server is the single writer; store.add() is content-hash
 idempotent, so re-scanning a file that already exists on the box is a no-op there.
