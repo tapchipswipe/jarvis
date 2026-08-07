@@ -406,6 +406,38 @@ def test_check_mode_switch_no_change(mayor, monkeypatch):
     q.close()
 
 
+def test_start_night_mode_closes_log_handle(mayor, monkeypatch):
+    """Popen must not leak the log file handle on night-mode sync spawn."""
+    m, q = mayor
+    captured = {}
+
+    def fake_popen(cmd, cwd=None, stdout=None, stderr=None):
+        captured["stdout"] = stdout
+        captured["cmd"] = cmd
+        return object()
+
+    monkeypatch.setattr("jarvis.mayor.subprocess.Popen", fake_popen)
+    m._start_night_mode()
+
+    # The child process was spawned with the log file as stdout.
+    assert captured["cmd"] == [".venv/bin/python", "-m", "jarvis.cli", "sync", "--source", "all"]
+    handle = captured["stdout"]
+    assert handle is not None
+    # Parent-side handle must have been closed after the spawn (no fd leak).
+    assert handle.closed
+    q.close()
+
+
+def test_start_night_mode_logs_to_night_sync_file(mayor, monkeypatch):
+    """The sync child's output is still directed to night_sync.log."""
+    m, q = mayor
+    monkeypatch.setattr("jarvis.mayor.subprocess.Popen", lambda *a, **k: object())
+    m._start_night_mode()
+    log_path = m.project_root / "logs" / "night_sync.log"
+    assert log_path.exists()
+    q.close()
+
+
 # ── task dispatch ────────────────────────────────────────────────────────────
 
 def test_dispatch_next_task_skips_outside_coding_mode(mayor):

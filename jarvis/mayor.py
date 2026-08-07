@@ -416,13 +416,19 @@ class Mayor:
     def _start_night_mode(self):
         """Start the Jarvis memory daemon for night mode."""
         try:
-            # Run a sync in the background
-            subprocess.Popen(
-                [".venv/bin/python", "-m", "jarvis.cli", "sync", "--source", "all"],
-                cwd=self.project_root,
-                stdout=open(self.project_root / "logs" / "night_sync.log", "a"),
-                stderr=subprocess.STDOUT,
-            )
+            # Run a sync in the background. Open the log file through a context
+            # manager so the parent's handle is closed after Popen spawns the
+            # child (Popen dup's the fd into the child, so the child keeps
+            # writing). This avoids leaking an fd on every night-mode switch.
+            log_path = self.project_root / "logs" / "night_sync.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a") as log_file:
+                subprocess.Popen(
+                    [".venv/bin/python", "-m", "jarvis.cli", "sync", "--source", "all"],
+                    cwd=self.project_root,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
             logger.info("Started night mode sync")
         except Exception as e:
             logger.error("Could not start night mode: %s", e)
