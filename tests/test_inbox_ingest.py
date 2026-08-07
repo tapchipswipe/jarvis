@@ -101,6 +101,7 @@ def test_process_batch_empty_dir_updates_status(tmp_path):
     assert st["active"] is True
     assert st["done"] is True
     assert st["remaining"] == 0
+    assert st["errors"] == 0
 
 
 def test_process_batch_advances_cursor_across_calls(tmp_path, monkeypatch):
@@ -157,4 +158,45 @@ def test_process_batch_advances_cursor_across_calls(tmp_path, monkeypatch):
         assert dups is None
     finally:
         s.close()
+
+
+def test_process_batch_counts_errors(tmp_path, monkeypatch):
+    """A file that raises during ingest is counted as an error, not silently lost."""
+    from unittest.mock import patch
+
+    from jarvis import inbox_ingest
+    from jarvis.store import Store
+
+    inbox_root = tmp_path / "inbox"
+    dev = inbox_root / "dev1"
+    dev.mkdir(parents=True)
+    (dev / "a.txt").write_text("valid note alpha", encoding="utf-8")
+    (dev / "bad.txt").write_text("content that will blow up", encoding="utf-8")
+    (dev / "b.txt").write_text("valid note beta", encoding="utf-8")
+
+    def _mkstore():
+        with patch("jarvis.store.chromadb.PersistentClient"):
+            return Store(chroma_dir=tmp_path / "chroma", db_path=tmp_path / "meta.db")
+
+    monkeypatch.setattr(inbox_ingest, "Store", _mkstore)
+    cursor = tmp_path / "cursor.txt"
+
+    # make ingest raise for exactly one path
+    orig = inbox_ingest.ingest_inbox_file
+
+    def _flaky(store, path):
+        if "bad" in path.name:
+            raise RuntimeError("boom")
+        return orig(store, path)
+
+    monkeypatch.setattr(inbox_ingest, "ingest_inbox_file", _flaky)
+
+    with patch("jarvis.embed.get_embedding", lambda *a, **k: [0.1] * 8):
+        # one batch of 3
+        res = inbox_ingest.process_batch(inbox_dir=inbox_root, batch=10, cooldown=0, cursor_path=cursor)
+        assert res["processed"] == 3
+        assert res["errors"] == 1
+        assert res["added"] == 2  # the two valid notes
+        st = inbox_ingest.ingest_status()
+        assert st["errors"] == 1
 

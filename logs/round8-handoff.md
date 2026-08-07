@@ -115,9 +115,16 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 20 (828770b):** corrected + completed the `UPGRADES.md` Round 8 section
   (inbox ingester is in git but needs a box restart to run; added the observability,
   thin-client correctness, doctor, utcnow, and runtime-audit entries).
-- [x] **Round 21 (pending commit):** more `remote` transport contract tests — `memories`
+- [x] **Round 21 (f8cede5):** more `remote` transport contract tests — `memories`
   query-string (incl. since), None-arg omission, `export` payload, and `remote_ok()` false
   on unreachable. Suite 374 passed, 1 skipped.
+- [x] **Round 22 (aca25bf):** refreshed `docs/STATUS.md` (HEAD `f8cede5`, box-restart
+  gating, 374 tests, updated action list).
+- [x] **Round 23 (7ab6472):** added the "morning TL;DR" summary to the top of
+  `logs/round8-handoff.md` for a fast resume.
+- [x] **Round 24 (pending commit):** inbox ingester now tracks per-batch `errors`
+  (process_batch + `/api/ingest/status` + ingest_status) so a failing file isn't
+  invisible; + error-accounting test. Suite 375 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the

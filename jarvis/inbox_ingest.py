@@ -40,7 +40,8 @@ _SUFFIXES = {".md", ".txt", ".csv"}
 
 # Thread-safe progress registry for /api/ingest/status observability.
 _status_lock = threading.Lock()
-_status: dict = {"active": False, "enabled": False, "inbox": str(DEFAULT_INBOX)}
+_status: dict = {"active": False, "enabled": False, "inbox": str(DEFAULT_INBOX),
+                 "errors": 0}
 
 
 def ingest_status() -> dict:
@@ -132,8 +133,8 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     files = sorted(inbox_files(inbox_dir), key=lambda p: str(p))
     if not files:
         _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), remaining=0,
-                    processed=0, added=0, done=True, cursor=None)
-        return {"processed": 0, "added": 0, "remaining": 0,
+                    processed=0, added=0, errors=0, done=True, cursor=None)
+        return {"processed": 0, "added": 0, "errors": 0, "remaining": 0,
                 "done": True, "cursor": None}
 
     start_idx = 0
@@ -151,18 +152,20 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     todo = files[start_idx:start_idx + batch]
     if not todo:
         _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), remaining=0,
-                    processed=0, added=0, done=True, cursor=str(files[-1]))
-        return {"processed": 0, "added": 0, "remaining": 0,
+                    processed=0, added=0, errors=0, done=True, cursor=str(files[-1]))
+        return {"processed": 0, "added": 0, "errors": 0, "remaining": 0,
                 "done": True, "cursor": str(files[-1])}
 
     store = Store()
     processed = 0
     added = 0
+    errors = 0
     try:
         for path in todo:
             try:
                 added += ingest_inbox_file(store, path)
             except Exception:
+                errors += 1
                 logger.warning("inbox ingest failed for %s", path, exc_info=True)
             processed += 1
             if added and cooldown:
@@ -171,10 +174,10 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
         store.close()
     remaining = len(files) - (start_idx + processed)
     _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), processed=processed,
-                added=added, remaining=remaining, done=remaining <= 0,
+                added=added, errors=errors, remaining=remaining, done=remaining <= 0,
                 cursor=str(todo[-1]))
-    return {"processed": processed, "added": added, "remaining": remaining,
-            "done": remaining <= 0, "cursor": str(todo[-1])}
+    return {"processed": processed, "added": added, "errors": errors,
+            "remaining": remaining, "done": remaining <= 0, "cursor": str(todo[-1])}
 
 
 
