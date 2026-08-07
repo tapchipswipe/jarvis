@@ -146,8 +146,14 @@ def get_embeddings(texts: list[str], model: str = DEFAULT_EMBED_MODEL) -> list[l
     return [emb for _, emb in out]
 
 
-def get_embedding(text: str, model: str = DEFAULT_EMBED_MODEL) -> list[float]:
+def get_embedding(text: str, model: str = DEFAULT_EMBED_MODEL) -> list[float] | None:
+    """Embed a single piece of *text*, or return ``None`` if it failed.
+
+    Returning ``None`` (rather than a degenerate all-zero vector) is the explicit
+    failure signal so callers can skip writing a poisoned embedding to the vector
+    store and leave the memory un-embedded for a later retry.
+    """
     result = get_embeddings([text], model=model)
-    if result:
+    if result and result[0]:
         return result[0]
-    return [0.0] * 768
+    return None

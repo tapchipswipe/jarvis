@@ -111,13 +111,23 @@ def test_get_embedding_returns_float_list():
     assert all(isinstance(x, float) for x in result)
 
 
+def test_get_embedding_returns_none_for_empty_response():
+    # Ollama responded but returned no usable embedding -> explicit failure signal.
+    cm = _make_fake_urlopen({"model": "nomic-embed-text"})
+    with patch("jarvis.embed.urllib.request.urlopen", return_value=cm):
+        result = get_embedding("hello world")
+
+    assert result is None
+
+
 def test_get_embedding_fallback_on_failure():
     import urllib.error
     with patch("jarvis.embed.urllib.request.urlopen", side_effect=urllib.error.URLError("down")):
         result = get_embedding("hello world")
 
-    assert len(result) == 768
-    assert all(x == 0.0 for x in result)
+    # A failed Ollama embed must signal failure (None), not a degenerate zero-vector,
+    # so the caller can leave the memory un-embedded and retry later.
+    assert result is None
 
 
 def test_get_embedding_uses_default_model():

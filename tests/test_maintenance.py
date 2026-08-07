@@ -4,7 +4,7 @@ Mayor idle-maintenance loop.
 """
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from jarvis.maintenance import promote_old, reindex_missing
 
@@ -39,6 +39,40 @@ def test_reindex_missing_accepts_provided_store(tmp_path):
         })()
         # must not close a caller-provided store / open its own
         assert reindex_missing(store=provided, limit=5) == 0
+
+
+def test_reindex_missing_skips_failed_embedding(tmp_path):
+    """When get_embedding fails (None), the row must stay un-embedded so a later
+    reindex run retries it instead of committing a degenerate zero-vector."""
+    with patch("jarvis.maintenance.get_embedding", return_value=None):
+        store = type("S", (), {
+            "get_unembedded": lambda self, limit=200: [
+                {"id": "m1", "content": "c1", "source": "s", "timestamp": "t1",
+                 "tier": "raw", "weight": 0.3, "route": "unclassified"}
+            ],
+            "collection": MagicMock(),
+            "mark_embedded": MagicMock(),
+        })()
+        assert reindex_missing(store=store, limit=5) == 0
+        store.collection.add.assert_not_called()
+        store.mark_embedded.assert_not_called()
+
+
+def test_reindex_missing_skips_on_vector_write_failure(tmp_path):
+    """If the vector write raises, the row must not be marked embedded (retry later)."""
+    with patch("jarvis.maintenance.get_embedding", return_value=[0.1] * 8):
+        col = MagicMock()
+        col.add.side_effect = RuntimeError("chroma down")
+        store = type("S", (), {
+            "get_unembedded": lambda self, limit=200: [
+                {"id": "m1", "content": "c1", "source": "s", "timestamp": "t1",
+                 "tier": "raw", "weight": 0.3, "route": "unclassified"}
+            ],
+            "collection": col,
+            "mark_embedded": MagicMock(),
+        })()
+        assert reindex_missing(store=store, limit=5) == 0
+        store.mark_embedded.assert_not_called()
 
 
 # ── Mayor idle maintenance ───────────────────────────────────────────────────

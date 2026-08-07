@@ -22,6 +22,11 @@ def reindex_missing(store: Store | None = None, limit: int = 200) -> int:
         done = 0
         for m in rows:
             emb = get_embedding(m["content"])
+            if emb is None:
+                # Embedding failed (e.g. Ollama down): leave the row un-embedded
+                # so a later reindex run retries it instead of retrying a
+                # degenerate zero-vector.
+                continue
             meta = {
                 "source": m["source"],
                 "timestamp": m["timestamp"],
@@ -34,8 +39,9 @@ def reindex_missing(store: Store | None = None, limit: int = 200) -> int:
                     ids=[m["id"]], embeddings=[emb],
                     documents=[m["content"]], metadatas=[meta],
                 )
-            except Exception:  # noqa: BLE001, S110 - vector write is best-effort
-                pass
+            except Exception:  # noqa: BLE001, S112 - vector write is best-effort
+                # Write failed -> do not mark embedded; retry next run.
+                continue
             store.mark_embedded(m["id"])
             done += 1
         return done

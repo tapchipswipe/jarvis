@@ -76,6 +76,47 @@ def test_add_memory_duplicate_ignored(store):
     assert result is True
 
 
+def test_add_with_failed_embedding_leaves_unembedded(store):
+    """store.add must not write a degenerate embedding to Chroma nor set
+    embedded_at when the embedding failed (None), so reindex_missing can retry."""
+    fid = fingerprint("test", "1", "hello world", "2025-06-01")
+    store.collection.add.reset_mock()
+    result = store.add(
+        fid, "test", "1", "2025-06-01T10:00:00", "hello world",
+        ["tag1"], {}, None, tier="raw"
+    )
+    assert result is True
+    assert store.exists(fid)
+    # No vector written to Chroma.
+    store.collection.add.assert_not_called()
+    # embedded_at stays NULL -> get_unembedded() returns it for a retry.
+    row = store.conn.execute("SELECT embedded_at FROM memories WHERE id = ?", (fid,)).fetchone()
+    assert row["embedded_at"] is None
+    assert [m["id"] for m in store.get_unembedded()] == [fid]
+
+
+def test_add_with_empty_embedding_leaves_unembedded(store):
+    """An empty embedding is also treated as a failure (no vector, no embedded_at)."""
+    fid = fingerprint("test", "1", "hello world", "2025-06-01")
+    store.collection.add.reset_mock()
+    store.add(fid, "test", "1", "2025-06-01T10:00:00", "hello world", ["tag1"], {}, [], tier="raw")
+    store.collection.add.assert_not_called()
+    row = store.conn.execute("SELECT embedded_at FROM memories WHERE id = ?", (fid,)).fetchone()
+    assert row["embedded_at"] is None
+
+
+def test_add_with_valid_embedding_sets_embedded_at(store):
+    """A successful embedding is written to Chroma and embedded_at is set."""
+    fid = fingerprint("test", "1", "hello world", "2025-06-01")
+    emb = [0.1] * 768
+    store.collection.add.reset_mock()
+    store.add(fid, "test", "1", "2025-06-01T10:00:00", "hello world", ["tag1"], {}, emb, tier="raw")
+    store.collection.add.assert_called_once()
+    row = store.conn.execute("SELECT embedded_at FROM memories WHERE id = ?", (fid,)).fetchone()
+    assert row["embedded_at"] is not None
+    assert store.get_unembedded() == []
+
+
 def test_exists_false_for_unknown(store):
     assert store.exists("nonexistent_id_12345") is False
 

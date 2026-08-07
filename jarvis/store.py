@@ -271,7 +271,7 @@ class Store:
         )
         self.conn.commit()
 
-    def add(self, fid: str, source: str, source_id: str, timestamp: str, content: str, tags: list, metadata: dict, embedding: list[float], tier: str = "raw", expires_at: str | None = None, consolidated_from: str | None = None, superseded: bool = False, route: str = "unclassified"):
+    def add(self, fid: str, source: str, source_id: str, timestamp: str, content: str, tags: list, metadata: dict, embedding: list[float] | None, tier: str = "raw", expires_at: str | None = None, consolidated_from: str | None = None, superseded: bool = False, route: str = "unclassified"):
         content_hash = self._content_hash(content)
         if self.exists_by_content(content_hash):
             self.merge_device_tags(content_hash, tags)
@@ -280,13 +280,19 @@ class Store:
             return True
         weight = self._tier_weight(tier)
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        # A missing/failed embedding (None or empty) means the memory is stored
+        # without a vector: embedded_at stays NULL and Chroma is untouched, so
+        # reindex_missing() can retry the embed later instead of permanently
+        # poisoning search with a degenerate zero-vector.
+        embedded_at = now if embedding else None
         self.conn.execute(
             "INSERT OR IGNORE INTO memories (id, source, source_id, timestamp, content, content_hash, tags, metadata, tier, weight, route, expires_at, consolidated_from, superseded, embedded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (fid, source, source_id, timestamp, content, content_hash, json.dumps(tags or []), json.dumps(metadata or {}), tier, weight, route, expires_at, consolidated_from, 1 if superseded else 0, now),
+            (fid, source, source_id, timestamp, content, content_hash, json.dumps(tags or []), json.dumps(metadata or {}), tier, weight, route, expires_at, consolidated_from, 1 if superseded else 0, embedded_at),
         )
         self.conn.commit()
-        chroma_meta = {"source": source, "timestamp": timestamp, "tier": tier, "weight": weight, "route": route}
-        self.collection.add(ids=[fid], embeddings=[embedding], documents=[content], metadatas=[chroma_meta])
+        if embedding:
+            chroma_meta = {"source": source, "timestamp": timestamp, "tier": tier, "weight": weight, "route": route}
+            self.collection.add(ids=[fid], embeddings=[embedding], documents=[content], metadatas=[chroma_meta])
         return True
 
     def search(self, query_embedding: list[float], n_results: int = 10, source_filter: str | None = None, re_rank: bool = True):
