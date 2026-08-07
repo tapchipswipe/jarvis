@@ -128,9 +128,13 @@ This session runs while the user is away. All work is agent-driven, committed to
   (the box's git is actually at `966d7b2`, ~20 commits behind — it MUST `git pull`
   before restart); added `flush` CLI tests (success/offline/not-client). Also verified
   box HEAD = `966d7b2`. Suite 378 passed, 1 skipped.
-- [x] **Round 26 (pending commit):** rewrote `README.md` for the FULL-THIN topology
+- [x] **Round 26 (1b4e497):** rewrote `README.md` for the FULL-THIN topology
   (box brain, Mac thin client), current thin-client + server commands, resume points,
   and tests/lint + security notes.
+- [x] **Round 27 (pending commit):** BUG FIX — `jarvis collect --root <dir>` passed
+  click string roots but `scan_once`/`_walk` called `Path` methods on them (would crash
+  on a real scan). `scan_once` now coerces roots to `Path`; verified end-to-end with a
+  real (isolated) CLI scan + new string-root test. Suite 379 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the

@@ -71,6 +71,19 @@ def test_scan_skips_blank(tmp_path, monkeypatch):
     assert stats["enqueued"] == 0
 
 
+def test_scan_accepts_string_roots(tmp_path, monkeypatch):
+    """--root passes *strings* (click.Path→str); scan_once must coerce to Path."""
+    from jarvis.collectors import thin
+
+    monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "cache.db"))
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.md").write_text("String-root note about tailscale vpn setup details.", encoding="utf-8")
+
+    stats = thin.scan_once(roots=[str(root)], max_files=100)  # real scan path, str not Path
+    assert stats["enqueued"] == 1
+
+
 def test_collect_cli_needs_client_mode(monkeypatch):
     """Outside client mode the CLI refuses so the Mac never writes a local brain."""
     from jarvis.cli import cli

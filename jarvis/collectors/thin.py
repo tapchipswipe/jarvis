@@ -65,7 +65,7 @@ def scan_once(roots=None, extensions=None, max_files: int = 2000, marker_prefix:
     """
     from jarvis.cache import Cache
 
-    roots = list(roots) if roots else COLLECT_DIRS
+    roots = [Path(r) for r in roots] if roots else COLLECT_DIRS
     extensions = set(extensions) if extensions else COLLECT_EXTENSIONS
     stats = {"files": 0, "enqueued": 0, "dups": 0, "blank": 0,
              "skipped_seen": 0, "errors": 0}
