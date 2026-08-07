@@ -139,10 +139,10 @@ def get_related(store, entity_id: str, depth: int = 1) -> list[dict]:
         WHERE r.source_entity = ?
         UNION ALL
         SELECT r.relation_type, r.confidence, r.created_at,
-               e1.canonical_name AS source_name,
-               e2.canonical_name AS target_name,
-               e2.entity_type AS target_type,
-               e2.id AS target_id
+               e2.canonical_name AS source_name,
+               e1.canonical_name AS target_name,
+               e1.entity_type AS target_type,
+               e1.id AS target_id
         FROM relationships r
         JOIN entities e1 ON r.source_entity = e1.id
         JOIN entities e2 ON r.target_entity = e2.id

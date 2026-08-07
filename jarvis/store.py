@@ -27,6 +27,12 @@ ROUTE_TAG_MAP = {
     "unclassified": [],
 }
 
+# Relation types where the edge is symmetric (undirected). For these we store a
+# single canonical row per unordered pair: the lexicographically-smaller entity
+# id is always persisted as `source_entity` so reversed adds collapse instead of
+# creating duplicate A->B / B->A rows that inflate edge counts.
+UNDIRECTED_RELATIONS = {"co_participant"}
+
 
 def fingerprint(source: str, source_id: str, content: str, date: str) -> str:
     return hashlib.sha256(f"{source}:{source_id}:{content[:256]}:{date}".encode()).hexdigest()
@@ -250,6 +256,12 @@ class Store:
         """Create a relationship edge between two entities"""
         if not source_entity or not target_entity:
             return
+        # For undirected relations (e.g. co_participant), canonicalize the pair
+        # so the smaller entity id is always stored as source_entity. This makes
+        # reversed adds (B,A) collapse onto the same directed key as (A,B),
+        # preventing duplicate symmetric rows that inflate edge counts.
+        if relation_type in UNDIRECTED_RELATIONS and target_entity < source_entity:
+            source_entity, target_entity = target_entity, source_entity
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         # Upsert: if same pair + relation exists, keep best confidence
         existing = self.conn.execute(

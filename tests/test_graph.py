@@ -203,6 +203,46 @@ def test_infer_relationships_creates_edges(store):
     assert len(rows) >= 1
 
 
+def test_infer_relationships_collapses_reversed_pair(store):
+    """A co-occurring pair must yield exactly ONE canonical relationship row.
+
+    entity_ids aren't ordered, so the same pair can appear reversed across
+    memories (A->B in one, B->A in another). add_relationship must normalize
+    undirected (co_participant) edges so those collapse instead of creating a
+    reversed duplicate, while get_related still resolves both directions.
+    """
+    from datetime import datetime, timezone
+    now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    eid1 = upsert_entity(store, "Alice", entity_type="person")
+    eid2 = upsert_entity(store, "Bob", entity_type="person")
+    from jarvis.store import fingerprint
+    # Two memories, same co-occurring pair stored in reversed order.
+    for idx, (first, second) in enumerate([(eid1, eid2), (eid2, eid1)]):
+        fid = fingerprint("test", str(idx), f"meeting {idx}", now_ts)
+        store.conn.execute(
+            "INSERT INTO memories (id, source, source_id, timestamp, content, content_hash, tags, metadata, tier, weight, route, expires_at, consolidated_from, superseded, embedded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (fid, "test", str(idx), now_ts, f"meeting {idx}", "hash", "[]", "{}", "raw", 0.3, "unclassified", None, None, 0, now_ts)
+        )
+        store.link_memory_entity(fid, first)
+        store.link_memory_entity(fid, second)
+
+    infer_relationships(store, limit_hours=24, max_memories=500)
+
+    rows = store.conn.execute(
+        "SELECT * FROM relationships WHERE relation_type = 'co_participant'"
+    ).fetchall()
+    # No reversed duplicate: exactly one canonical row for the unordered pair.
+    assert len(rows) == 1
+
+    # get_related still returns the neighbor from both directions.
+    related1 = get_related(store, eid1)
+    assert len(related1) == 1
+    assert related1[0]["entity_name"] == "bob"
+    related2 = get_related(store, eid2)
+    assert len(related2) == 1
+    assert related2[0]["entity_name"] == "alice"
+
+
 # ── Knowledge Graph HTTP API (dashboard endpoints) ─────────────────────────────
 
 
