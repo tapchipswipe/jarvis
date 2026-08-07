@@ -473,27 +473,55 @@ def explore(source, tag, tier, route, device, n, offset):
 def export(fmt, output, source, tier):
     """Export all memories to JSON or Markdown.
 
-    Writes a timestamped file by default; use --output - to print to stdout.
+    In thin-client mode it pulls from the live box (single source of truth); in local
+    mode it reads the local store. Writes a timestamped file by default; --output - = stdout.
     """
-    fmt = "markdown" if fmt == "md" else fmt
-    store = Store()
-    try:
-        query = "SELECT * FROM memories WHERE superseded = 0"
-        params = []
-        if source:
-            query += " AND source = ?"
-            params.append(source)
-        if tier:
-            query += " AND tier = ?"
-            params.append(tier)
-        query += " ORDER BY timestamp DESC"
-        rows = [dict(r) for r in store.conn.execute(query, params).fetchall()]
-    finally:
-        store.close()
+    from jarvis import remote
 
-    for r in rows:
-        r["tags"] = json.loads(r["tags"]) if r.get("tags") else []
-        r["metadata"] = json.loads(r["metadata"]) if r.get("metadata") else {}
+    fmt = "markdown" if fmt == "md" else fmt
+
+    def _normalize(rows):
+        for r in rows:
+            if isinstance(r.get("tags"), str):
+                try:
+                    r["tags"] = json.loads(r["tags"])
+                except Exception:  # noqa: BLE001 - best-effort tag parse
+                    r["tags"] = []
+            if isinstance(r.get("metadata"), str):
+                try:
+                    r["metadata"] = json.loads(r["metadata"])
+                except Exception:  # noqa: BLE001 - best-effort metadata parse
+                    r["metadata"] = {}
+        return rows
+
+    rows = []
+    if remote.is_remote():
+        try:
+            data = remote.export("json")
+        except Exception as e:  # noqa: BLE001 - surface box export failures
+            click.echo(f"Export failed (box): {e}")
+            return
+        rows = _normalize(data.get("memories") or [])
+        if source:
+            rows = [r for r in rows if r.get("source") == source]
+        if tier:
+            rows = [r for r in rows if r.get("tier") == tier]
+    else:
+        store = Store()
+        try:
+            query = "SELECT * FROM memories WHERE superseded = 0"
+            params = []
+            if source:
+                query += " AND source = ?"
+                params.append(source)
+            if tier:
+                query += " AND tier = ?"
+                params.append(tier)
+            query += " ORDER BY timestamp DESC"
+            rows = [dict(r) for r in store.conn.execute(query, params).fetchall()]
+        finally:
+            store.close()
+        rows = _normalize(rows)
 
     if fmt == "json":
         payload = {

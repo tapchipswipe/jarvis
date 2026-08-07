@@ -70,9 +70,13 @@ This session runs while the user is away. All work is agent-driven, committed to
   client API surface. Suite 358 passed, 1 skipped.
 - [x] **Round 14 (9ba03b1):** AGENTS.md start-here now references round8-handoff +
   runtime-audit; documents the thin-client CLI commands.
-- [x] **Round 15 (pending commit):** `jarvis doctor` — consolidated local+box diagnostics
+- [x] **Round 15 (69b861f):** `jarvis doctor` — consolidated local+box diagnostics
   (mode, outbox backlog, box health+memories, ingest status, os). Verified live against
   the real box (all PASS). 2 new tests. Suite 360 passed, 1 skipped.
+- [x] **Round 16 (pending commit):** `jarvis export` is now thin-client aware — in client
+  mode it pulls from the live box (`/api/export` JSON, tags/metadata normalized
+  client-side) instead of the local rollback store; only local mode reads the store.
+  3 new client-mode tests (+ allocution autouse pin). Suite 363 passed, 1 skipped.
 
 ### Live thin-client validation (2026-08-07, read-only)
 `jarvis status` → live box (memories=3954); `jarvis search 'tailscale' -n 3` → real box

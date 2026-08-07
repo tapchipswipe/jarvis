@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
-
-from click.testing import CliRunner
 from unittest.mock import patch
+
+import pytest
+from click.testing import CliRunner
 
 from jarvis.cli import cli
 
@@ -12,6 +13,13 @@ EXPECTED_CONTENTS = {
     "mem-1": "Jarvis remembers a fact about the user.",
     "mem-2": "Lunch with Sam on Friday.",
 }
+
+
+@pytest.fixture(autouse=True)
+def _local_export_mode(monkeypatch):
+    """These tests exercise the local-store export path; pin client mode OFF so the
+    ambient thin-client env (Round 7) can't redirect them to the box."""
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
 
 
 def _seed_memory(store):
@@ -131,3 +139,64 @@ def test_export_filters_by_source_and_tier(store, tmp_path):
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["count"] == 1
     assert data["memories"][0]["id"] == "mem-2"
+
+
+# ── thin-client (box) export ──────────────────────────────────────────────────
+
+_BOX_MEMORIES = [
+    {"id": "box-1", "content": "Box note one about tailscale mesh", "source": "deep",
+     "timestamp": "2026-01-01T00:00:00", "tier": "raw", "tags": "[\"deep\"]",
+     "metadata": "{\"path\": \"/box/x.md\"}", "route": "unclassified"},
+    {"id": "box-2", "content": "Box note two, a manual bookkeeping entry", "source": "manual",
+     "timestamp": "2026-01-02T00:00:00", "tier": "session", "tags": "[]",
+     "metadata": "{}", "route": "reference_note"},
+]
+
+
+def test_export_client_mode_pulls_from_box_not_local_store(tmp_path, monkeypatch):
+    """In client mode export must reach the box and never open the local store."""
+    from jarvis import remote
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "export", lambda fmt="json": {"count": 2, "memories": _BOX_MEMORIES})
+    # if the local store were opened this test would fail loudly instead of silently
+    monkeypatch.setattr("jarvis.cli.Store",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("local store used in client mode")))
+
+    out = tmp_path / "client-export.json"
+    result = CliRunner().invoke(cli, ["export", "--format", "json", "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["count"] == 2
+    # tags/metadata arrive as JSON strings from the box and must be normalized
+    assert data["memories"][0]["tags"] == ["deep"]
+    assert data["memories"][0]["metadata"] == {"path": "/box/x.md"}
+    assert {m["id"] for m in data["memories"]} == {"box-1", "box-2"}
+
+
+def test_export_client_mode_markdown_stdout(monkeypatch):
+    from jarvis import remote
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "export", lambda fmt="json": {"count": 1, "memories": [_BOX_MEMORIES[0]]})
+
+    result = CliRunner().invoke(cli, ["export", "--format", "markdown", "-o", "-"])
+    assert result.exit_code == 0, result.output
+    assert "# Jarvis Memory Export" in result.output
+    assert "Box note one about tailscale mesh" in result.output
+
+
+def test_export_client_mode_filters_client_side(tmp_path, monkeypatch):
+    from jarvis import remote
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "export", lambda fmt="json": {"count": 2, "memories": _BOX_MEMORIES})
+    monkeypatch.setattr("jarvis.cli.Store",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("local store used in client mode")))
+
+    out = tmp_path / "client-filtered.json"
+    result = CliRunner().invoke(cli, ["export", "--format", "json", "--tier", "session", "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["count"] == 1
+    assert data["memories"][0]["id"] == "box-2"
