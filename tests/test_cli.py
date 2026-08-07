@@ -549,3 +549,36 @@ def test_ask_remote_threads_session_and_saves(monkeypatch):
     assert fake_sdb.msgs[0][0] == "user"
     assert seen["save_items"][0]["source"] == "ask"
 
+
+def test_digest_now_remote(monkeypatch):
+    """`digest --now` in client mode must ask the box for an on-demand digest."""
+    import json as _json
+
+    from click.testing import CliRunner
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    seen = {}
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "digest",
+                        lambda kind="morning_brief": seen.update(kind=kind) or
+                        {"kind": kind, "text": "Good morning! Here is your digest."})
+    result = CliRunner().invoke(cli, ["digest", "--now", "--json-out"])
+    assert result.exit_code == 0, result.output
+    data = _json.loads(result.output)
+    assert "Good morning!" in data["text"]
+    assert seen["kind"] == "morning_brief"
+
+
+def test_digest_report_without_now(monkeypatch):
+    """`digest` without --now just reports the schedule (no network)."""
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    result = CliRunner().invoke(cli, ["digest"])
+    assert result.exit_code == 0
+    assert "08:00" in result.output and "--now" in result.output
+

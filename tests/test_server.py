@@ -296,6 +296,30 @@ def test_api_query_requires_token(client, monkeypatch):
     assert client.get("/api/query", params={"q": "hi"}).status_code == 403
 
 
+def test_api_digest_endpoint(client, monkeypatch):
+    """POST /api/digest must generate an on-demand digest in-process."""
+    from unittest.mock import patch
+
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.embed.get_embedding", return_value=[0.1] * 8):
+        r0 = client.post("/api/remember", json={"memories": [{"content": "shipped the push queue"}]})
+        assert r0.status_code == 200
+
+    with patch("jarvis.task_queue.TaskQueue"), \
+         patch("jarvis.brain._ollama_chat",
+               lambda model, messages: {"message": {"content": "morning digest text"}}):
+        r = client.post("/api/digest", json={"kind": "morning_brief"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["kind"] == "morning_brief"
+        assert "morning digest text" in body["text"]
+
+
+def test_api_digest_requires_token(client, monkeypatch):
+    monkeypatch.setenv("JARVIS_TOKEN", "sekret")
+    assert client.post("/api/digest", json={"kind": "morning_brief"}).status_code == 403
+
+
 # ── server.py shim ─────────────────────────────────────────────────────────────
 def test_server_shim_exposes_same_app():
     from jarvis import dashboard, server

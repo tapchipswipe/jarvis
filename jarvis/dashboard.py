@@ -1000,6 +1000,25 @@ def api_admin_backup(request: Request, payload: dict):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.post("/api/digest")
+def api_digest(request: Request, payload: dict):
+    """Generate a digest on demand (idea 1). Runs Brain.build_digest in-process
+    so the schedule doesn't have to wait for 08:00/18:00 to preview quality.
+    Optional {"kind": "morning_brief"|"end_of_day"}. Token-gated."""
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    kind = (payload or {}).get("kind", "morning_brief")
+    store = _get_store()
+    try:
+        from jarvis.brain import Brain
+        text = Brain(store).build_digest(kind=kind)
+        return {"kind": kind, "text": text}
+    except Exception as exc:  # noqa: BLE001 - clean error to the caller
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    finally:
+        store.close()
+
+
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
 _TRIGGER_LOOP = None  # keep a strong ref so the daemon thread isn't GC'd

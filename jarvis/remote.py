@@ -169,6 +169,11 @@ def query(question: str, n: int = 8, source: str | None = None,
     return _request("GET", f"/api/query?{qs}")
 
 
+def digest(kind: str = "morning_brief") -> dict:
+    """Ask the box to generate a digest on demand (/api/digest, in-process)."""
+    return _request("POST", "/api/digest", {"kind": kind}, timeout=180)
+
+
 def chat(message: str, session_id: str | None = None, max_steps: int = 8, model: str | None = None) -> dict:
     payload = {"message": message, "session_id": session_id, "max_steps": max_steps}
     if model:

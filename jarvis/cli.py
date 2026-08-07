@@ -796,6 +796,45 @@ def chat(model, verbose, is_new, resume, max_steps):
 
 
 @cli.command()
+@click.option("--now", "do_now", is_flag=True,
+              help="Generate the digest on demand (idea 1) instead of waiting for the schedule")
+@click.option("--kind", default="morning_brief", show_default=True,
+              type=click.Choice(["morning_brief", "end_of_day"]),
+              help="Which digest to build")
+@click.option("--json-out", is_flag=True, help="Emit the result as JSON")
+def digest(do_now, kind, json_out):
+    """Get Jarvis's morning/end-of-day digest.
+
+    By default reports config; with --now it generates the digest immediately
+    (runs in-process on the box via /api/digest, or locally in local mode) so
+    you can preview quality without waiting for 08:00/18:00.
+    """
+    from jarvis import remote as _remote
+
+    if not do_now:
+        click.echo("Digests are scheduled at 08:00 (morning_brief) / 18:00 (end_of_day), "
+                   "model JARVIS_DIGEST_MODEL. Use --now to generate one immediately.")
+        return
+
+    text = ""
+    if _remote.is_remote():
+        resp = _remote.digest(kind=kind)
+        text = (resp.get("text") or "").strip()
+    else:
+        store = Store()
+        try:
+            text = Brain(store).build_digest(kind=kind)
+        finally:
+            store.close()
+
+    if json_out:
+        click.echo(json.dumps({"kind": kind, "text": text}))
+        return
+    click.echo(f"=== Jarvis {kind.replace('_', ' ')} ===")
+    click.echo(text)
+
+
+@cli.command()
 @click.option("--n", "n_results", default=8, type=int, help="Memories to ground on")
 @click.option("--source", default=None, help="Restrict grounding to a source (deep/manual/device/...)")
 @click.option("--model", default=None, help="LLM model override")
