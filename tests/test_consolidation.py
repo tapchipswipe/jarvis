@@ -129,6 +129,46 @@ def test_run_daily_with_summaries(mock_summarize, mock_emb, mock_store_cls):
     mock_store.close.assert_called_once()
 
 
+@patch("jarvis.consolidation.Store")
+@patch("jarvis.consolidation.get_embedding")
+@patch("jarvis.consolidation.summarize_cluster")
+def test_run_daily_dedup_fires_on_second_run(mock_summarize, mock_emb, mock_store_cls):
+    """Repeated consolidation on the same input must not create duplicates.
+
+    The fingerprint date must be stable (day, not a live per-run timestamp) so
+    store.exists() fires on the second run and the memory is not re-added.
+    """
+    added = set()
+
+    def fake_exists(fid):
+        return fid in added
+
+    def fake_add(fid, *args, **kwargs):
+        added.add(fid)
+
+    mock_store = MagicMock()
+    mock_store_cls.return_value = mock_store
+    mock_store.get_recent_raw.return_value = [
+        {"id": f"m{i}", "content": f"content {i}", "timestamp": f"2025-01-0{i%9+1}T10:00:00", "source": "test", "tags": ["work"]}
+        for i in range(25)
+    ]
+    # store.exists() returns whether the fid was already added on a prior run,
+    # simulating the real dedup path across two consolidation runs.
+    mock_store.exists.side_effect = fake_exists
+    mock_store.add.side_effect = fake_add
+    mock_store.conn.execute.return_value = MagicMock(fetchall=MagicMock(return_value=[]))
+    mock_summarize.return_value = "Daily summary"
+    mock_emb.return_value = [0.1] * 768
+
+    first = run_daily()
+    second = run_daily()
+
+    # First run adds the consolidated memories; the second run is fully deduped.
+    assert first == 1
+    assert second == 0
+    assert mock_store.add.call_count == 1
+
+
 # ── run_weekly ────────────────────────────────────────────────────────────────
 
 @patch("jarvis.consolidation.Store")

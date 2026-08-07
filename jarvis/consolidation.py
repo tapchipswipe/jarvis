@@ -46,12 +46,17 @@ def run_daily():
         return 0
     clusters = cluster_by_topic(raws)
     added = 0
+    # Stable day date: both the source_id and the fingerprint date must be stable
+    # across runs so store.exists() dedup fires. A live timestamp made the
+    # fingerprint differ every run and duplicate consolidated memories were
+    # created on repeated consolidation.
+    day = datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()
     for cluster in clusters:
         summary = summarize_cluster(cluster, PROMPT_DAILY)
         if not summary:
             continue
         all_ids = [m["id"] for m in cluster]
-        fid = fingerprint("consolidation", f"daily-{datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()}", summary, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+        fid = fingerprint("consolidation", f"daily-{day}", summary, day)
         existing = fid.rsplit("-", 1)[0]
         if store.exists(fid):
             continue
@@ -78,7 +83,8 @@ def run_weekly():
     if not reflection:
         store.close()
         return 0
-    fid = fingerprint("consolidation", f"weekly-{datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()}", reflection, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+    day = datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()
+    fid = fingerprint("consolidation", f"weekly-{day}", reflection, day)
     if store.exists(fid):
         store.close()
         return 0
@@ -105,7 +111,8 @@ def run_monthly():
     if not arc:
         store.close()
         return 0
-    fid = fingerprint("consolidation", f"monthly-{datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()}", arc, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+    day = datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()
+    fid = fingerprint("consolidation", f"monthly-{day}", arc, day)
     if store.exists(fid):
         store.close()
         return 0
