@@ -216,3 +216,135 @@ def test_query_injects_related_entities(store):
     sys_prompt = m_chat.call_args[1]["messages"][0]["content"]
     assert "RELATED ENTITIES" in sys_prompt
     assert "Alice Smith" in sys_prompt
+# ── helper + new coverage (Round 9) ──────────────────────────────────────────
+
+def test_messages_to_prompt_renders_roles():
+    from jarvis.brain import _messages_to_prompt
+    out = _messages_to_prompt([
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u"},
+        {"role": "assistant", "content": "a"},
+        {"role": "other", "content": "drop me"},
+    ])
+    assert "System: sys" in out and "User: u" in out and "Assistant: a" in out
+    assert "drop me" not in out
+
+
+def test_ollama_chat_success_and_error(monkeypatch):
+    from jarvis import brain as B
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"response": "hi"}'
+
+    monkeypatch.setattr("jarvis.brain.urllib.request.urlopen",
+                        lambda req, timeout=180: _Resp())
+    assert B._ollama_chat("m", [{"role": "user", "content": "x"}]) == \
+        {"message": {"content": "hi"}}
+
+    import urllib.error
+    monkeypatch.setattr("jarvis.brain.urllib.request.urlopen",
+                        lambda req, timeout=180: (_ for _ in ()).throw(
+                            urllib.error.URLError("down")))
+    out = B._ollama_chat("m", [])
+    assert out["message"]["content"].startswith("[ollama connection error")
+
+
+def test_confidence_levels(store):
+    b = _brain(store)
+    assert b._confidence([]) == "low"
+    assert b._confidence([{"weight": 1.2}]) == "high"
+    assert b._confidence([{"weight": 0.7}]) == "medium"
+    assert b._confidence([{"weight": 0.3}]) == "low"
+
+
+def test_chat_substantive_path(store, monkeypatch):
+    import jarvis.brain as B
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b = _brain(store)
+        b.remember("Alice likes hiking on weekends.", source="manual")
+
+    monkeypatch.setattr(B, "_ollama_chat",
+                        lambda model, messages: {"message": {"content": "answer from memory"}})
+    session: list = []
+    answer, _mems, _n = b.chat(session, "What does Alice like doing?")
+    assert "answer from memory" in answer
+    assert session[0]["role"] == "user"
+    assert session[-1]["role"] == "assistant"
+
+
+def test_chat_non_substantive_is_noted(store):
+    b = _brain(store)
+    session: list = []
+    answer, mems, n = b.chat(session, "ok")
+    assert answer == "Noted."
+    assert mems == [] and n == 0
+
+
+def test_save_session_gates_on_turn_count(store):
+    b = _brain(store)
+    short = [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
+    assert b.save_session(short) is False
+    long_session = []
+    for i in range(3):
+        long_session += [{"role": "user", "content": f"q{i}"},
+                         {"role": "assistant", "content": f"a{i}"}]
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        assert b.save_session(long_session) is True
+
+
+def test_get_recent_activity_returns_rows(store):
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b = _brain(store)
+        b.remember("recent activity marker", source="manual")
+    act = b.get_recent_activity(hours=24, limit=20)
+    assert any("recent activity marker" in r["content"] for r in act)
+
+
+def test_remember_with_classify(store, monkeypatch):
+    seen = []
+    monkeypatch.setattr("jarvis.routes.classify_existing",
+                        lambda store, memory: seen.append(memory["id"]) or {"route": "escalate"})
+    b = _brain(store)
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        added = b.remember("classify me please", source="manual", classify=True)
+    assert added >= 1
+    assert seen  # classify_existing was invoked
+
+
+def test_classify_memory_found_and_missing(store, monkeypatch):
+    b = _brain(store)
+    assert b.classify_memory("does-not-exist") == {}
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b.remember("a specific memory id mxyz", source="manual")
+    row = store.conn.execute("SELECT id FROM memories WHERE content LIKE '%mxyz%'").fetchone()
+    out = b.classify_memory(row["id"])
+    assert out  # non-empty dict returned
+
+
+def test_correct_nonexistent_id_still_adds(store):
+    b = _brain(store)
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        added = b.correct("ghost-id", "this corrects a missing memory")
+    assert added >= 1
+
+
+def test_upgrade_adds_and_appends(store, tmp_path, monkeypatch):
+    """`upgrade` stores a memory and appends to UPGRADES.md. (Note: the memory
+    fingerprint includes a fresh timestamp, so repeated calls are distinct —
+    dedupe only applies to an identical call within the same microsecond.)"""
+    from jarvis import paths as P
+    upgrades = tmp_path / "UPGRADES.md"
+    upgrades.write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "config_file", lambda *a: upgrades)
+    b = _brain(store)
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        first = b.upgrade("Add a rocket mode", status="requested")
+    assert first >= 1
+    assert "rocket mode" in upgrades.read_text(encoding="utf-8")
+
