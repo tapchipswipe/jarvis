@@ -791,6 +791,8 @@ def chat(model, verbose, is_new, resume, max_steps):
         _chat_remote(model, verbose, is_new, resume, max_steps)
         return
 
+    from jarvis.agent import run_turn
+
     session_db = SessionDB()
     store = Store()
 

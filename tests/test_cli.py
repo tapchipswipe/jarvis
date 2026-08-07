@@ -713,6 +713,76 @@ def test_chat_remote_routes_turns_through_box(monkeypatch):
     assert "Session saved on the box. Goodbye." in result.output
 
 
+def test_chat_local_turn_uses_run_turn(monkeypatch):
+    """Regression: local (non-remote) ``chat`` must run each prompt through
+    ``agent.run_turn`` and print the answer, instead of raising NameError from
+    the undefined ``run_turn`` reference in the local chat body."""
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    class _FakeSDB:
+        def __init__(self):
+            self.sid = "sess-1"
+
+        def get_session(self, sid):
+            return {"id": sid, "title": "t"}
+
+        def create_session(self, title="", tier="raw"):
+            self.sid = "sess-1"
+            return self.sid
+
+        def get_messages(self, sid, limit=100):
+            return []
+
+        def append_message(self, *a, **k):
+            pass
+
+        def update_session(self, *a, **k):
+            pass
+
+        def close(self):
+            pass
+
+    fake_store = MagicMock()
+    fake_store.close = MagicMock()
+    monkeypatch.setattr("jarvis.cli.SessionDB", lambda *a, **k: _FakeSDB())
+    monkeypatch.setattr("jarvis.cli.Store", lambda *a, **k: fake_store)
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
+
+    calls = []
+    monkeypatch.setattr(
+        "jarvis.agent.run_turn",
+        lambda user_input, sid, session_db, store_db, max_steps, verbose, model: (
+            calls.append(
+                {
+                    "user_input": user_input,
+                    "sid": sid,
+                    "max_steps": max_steps,
+                    "verbose": verbose,
+                    "model": model,
+                }
+            )
+            or ("local jarvis reply", [{"tool": "search", "args": {"q": "x"}}])
+        ),
+    )
+
+    result = CliRunner().invoke(
+        cli, ["chat", "--verbose"], input="My Chat\nhello sir\n/quit\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls, "local chat never invoked agent.run_turn"
+    assert calls[0]["user_input"] == "hello sir"
+    assert calls[0]["sid"] == "sess-1"
+    assert calls[0]["max_steps"] == 8
+    assert calls[0]["verbose"] is True
+    # The answer printed by the local turn, no NameError.
+    assert "jarvis: local jarvis reply" in result.output
+    assert "[tools: 1 calls]" in result.output
+    assert "Goodbye." in result.output
+
+
 def test_chat_sources_lists_tool_messages_local(monkeypatch):
     """Regression: ``/sources`` in local ``chat`` must list messages whose
     ``role == 'tool'`` (the stored tool-result rows).
