@@ -41,7 +41,7 @@ _SUFFIXES = {".md", ".txt", ".csv"}
 # Thread-safe progress registry for /api/ingest/status observability.
 _status_lock = threading.Lock()
 _status: dict = {"active": False, "enabled": False, "inbox": str(DEFAULT_INBOX),
-                 "errors": 0, "total": 0}
+                 "errors": 0, "total": 0, "idle": False}
 
 
 def ingest_status() -> dict:
@@ -118,6 +118,33 @@ def inbox_files(inbox_dir: Path | None = None) -> list[Path]:
         return []
     return [p for p in root.rglob("*")
             if p.is_file() and p.suffix.lower() in _SUFFIXES]
+
+
+def _inbox_marker(root: Path) -> tuple[int, int] | None:
+    """Cheap fingerprint (file count, max mtime_ns) of the inbox tree.
+
+    Lets an unchanged, drained inbox *idle* without re-running the full
+    scan+dedupe pass on every cycle: new or modified files bump max mtime,
+    deletions change the count. Returns None when *root* is absent.
+    """
+    if not root.is_dir():
+        return None
+    count = 0
+    max_mtime = 0
+    try:
+        for dirpath, _dirnames, filenames in os.walk(root):
+            for fn in filenames:
+                if Path(fn).suffix.lower() not in _SUFFIXES:
+                    continue
+                try:
+                    st = os.lstat(os.path.join(dirpath, fn))
+                except OSError:
+                    continue
+                count += 1
+                max_mtime = max(max_mtime, st.st_mtime_ns)
+    except OSError:
+        return None
+    return (count, max_mtime)
 
 
 def process_batch(inbox_dir: Path | None = None, batch: int = 50,
@@ -207,18 +234,35 @@ def start_background_ingester() -> None:
 
     def _loop() -> None:
         logger.info("Inbox backlog ingester started on %s (batch=%d)", inbox_dir, batch)
+        idle = float(os.environ.get("JARVIS_INBOX_IDLE", "30"))
+        last_marker: tuple[int, int] | None = None
+        idle_state = False
         while True:
             try:
+                marker = _inbox_marker(inbox_dir)
+                if marker is not None and marker == last_marker and idle_state:
+                    # Inbox unchanged since it finished draining -> idle-poll on
+                    # the cheap fingerprint instead of re-scanning the tree (a
+                    # new/modified file bumps the marker and drops us out here).
+                    _set_status(True, inbox=str(inbox_dir), total=marker[0],
+                                remaining=0, processed=0, added=0, errors=0,
+                                done=True, cursor=None, idle=True)
+                    time.sleep(idle)
+                    continue
+
                 res = process_batch(inbox_dir, batch=batch, cooldown=cooldown,
                                     cursor_path=cursor_path)
+                last_marker = marker
                 if res.get("done"):
                     logger.info("Inbox backlog drained: %s", res)
+                    idle_state = True
                     try:  # reset cursor so a fresh scan picks up new files anywhere
                         cursor_path.unlink(missing_ok=True)
                     except OSError:
                         pass
-                    time.sleep(30.0)  # idle-poll for new arrivals
+                    time.sleep(idle)
                 else:
+                    idle_state = False
                     if res.get("cursor"):
                         try:
                             cursor_path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,9 +270,10 @@ def start_background_ingester() -> None:
                         except OSError:
                             pass
                     logger.info("Inbox ingester progress: %s", res)
+                    time.sleep(cycle)
             except Exception:
                 logger.exception("inbox ingester cycle error")
-            time.sleep(cycle)
+                time.sleep(cycle)
 
     t = threading.Thread(target=_loop, name="jarvis-inbox-ingester", daemon=True)
     t.start()

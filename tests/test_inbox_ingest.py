@@ -6,6 +6,7 @@ No LLM/network: embeddings are mocked, and the ingest path is sidecar-driven
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -159,6 +160,73 @@ def test_process_batch_advances_cursor_across_calls(tmp_path, monkeypatch):
         assert dups is None
     finally:
         s.close()
+
+
+def test_inbox_marker_tracks_count_and_mtime(tmp_path):
+    """The idle fingerprint reflects (matching-file count, max mtime_ns) and
+    changes when a new file lands — that's what wakes the ingester from idle."""
+    from jarvis import inbox_ingest
+    d = tmp_path / "in" / "dev1"
+    d.mkdir(parents=True)
+    (d / "a.md").write_text("x", encoding="utf-8")
+    (d / "b.txt").write_text("y", encoding="utf-8")
+    (d / "c.csv").write_text("z", encoding="utf-8")
+    (d / "ignore.log").write_text("zz", encoding="utf-8")  # not an ingestable suffix
+    m1 = inbox_ingest._inbox_marker(tmp_path / "in")
+    assert m1 is not None
+    count1, max_mt1 = m1
+    assert count1 == 3  # only .md/.txt/.csv, .log ignored
+    assert max_mt1 > 0
+    time.sleep(0.02)
+    (d / "d.md").write_text("new note", encoding="utf-8")
+    m2 = inbox_ingest._inbox_marker(tmp_path / "in")
+    assert m2 is not None
+    assert m2 != m1
+    assert m2[0] == 4
+
+
+def test_inbox_marker_none_when_dir_absent(tmp_path):
+    from jarvis import inbox_ingest
+    assert inbox_ingest._inbox_marker(tmp_path / "definitely-not-here") is None
+
+
+def test_loop_idles_without_rescan_when_inbox_unchanged(tmp_path, monkeypatch):
+    """Regression for Round 9 'idle optimization': a drained, unchanged inbox
+    must NOT re-run process_batch every cycle (the cheap marker fast-path skips
+    it), i.e. the loop polls idly instead of re-scanning the tree."""
+    import time
+
+    from jarvis import inbox_ingest
+
+    inbox = tmp_path / "inbox"
+    dev = inbox / "dev1"
+    dev.mkdir(parents=True)
+    (dev / "a.txt").write_text("some note", encoding="utf-8")
+
+    calls = {"n": 0}
+
+    def _pb(*_a, **_k):
+        calls["n"] += 1
+        return {"processed": 1, "added": 1, "errors": 0, "remaining": 0,
+                "total": 1, "done": True, "cursor": str(dev / "a.txt")}
+
+    monkeypatch.setattr(inbox_ingest, "process_batch", _pb)
+    monkeypatch.setattr(inbox_ingest, "_set_status", lambda *_a, **_k: None)
+    monkeypatch.setenv("JARVIS_INBOX_CYCLE", "0.02")
+    monkeypatch.setenv("JARVIS_INBOX_IDLE", "0.03")
+    monkeypatch.setenv("JARVIS_INBOX", str(inbox))
+
+    inbox_ingest.start_background_ingester()  # daemon thread
+
+    # give it time to drain once
+    deadline = time.time() + 3
+    while time.time() < deadline and calls["n"] < 1:
+        time.sleep(0.01)
+    assert calls["n"] >= 1
+
+    # hold through several idle cycles: with an unchanged marker it must NOT rescan
+    time.sleep(0.4)
+    assert calls["n"] < 4  # a runaway rescan would burn many more calls
 
 
 def test_process_batch_counts_errors(tmp_path, monkeypatch):
