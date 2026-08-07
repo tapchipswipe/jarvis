@@ -10,6 +10,7 @@ Covers:
 """
 from __future__ import annotations
 
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -269,6 +270,116 @@ def test_action_digest(mock_digest, mock_brief, mock_notify):
     mock_digest.assert_called_once()
     mock_brief.assert_called_once()
     mock_notify.assert_called_once()
+
+
+# ── calendar_poll action (upcoming-events-poll) ───────────────────────────────
+
+def _calendar_store(rows):
+    """Build a minimal in-memory sqlite store with calendar-sourced memories."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        "CREATE TABLE memories ("
+        " id TEXT PRIMARY KEY, source TEXT, timestamp DATETIME,"
+        " content TEXT, superseded INTEGER DEFAULT 0);"
+    )
+    for i, r in enumerate(rows):
+        conn.execute(
+            "INSERT INTO memories (id, source, timestamp, content, superseded)"
+            " VALUES (?, 'calendar', ?, ?, 0)",
+            (f"cal-{i}", r["timestamp"], r["content"]),
+        )
+    conn.commit()
+    store = MagicMock()
+    store.conn = conn
+    return store, conn
+
+
+@patch("jarvis.triggers.send_notification")
+def test_calendar_poll_no_events_no_notification(mock_notify):
+    """Poll with no calendar rows => no notification fires."""
+    store, conn = _calendar_store([])
+    try:
+        ctx = _make_ctx(
+            store=store,
+            now=datetime(2025, 6, 15, 10, 0, 0, tzinfo=timezone.utc),
+        )
+        result = _dispatch_action(
+            {"type": "calendar_poll", "title": "📅 Upcoming Events"}, ctx
+        )
+        assert result == "calendar_poll:no_events"
+        mock_notify.assert_not_called()
+    finally:
+        conn.close()
+
+
+@patch("jarvis.triggers.send_notification")
+def test_calendar_poll_upcoming_event_notifies(mock_notify):
+    """Poll with an event within the window => notification fires with details."""
+    store, conn = _calendar_store([
+        {
+            "timestamp": "2025-06-15T11:00:00",
+            "content": "Team Standup\n2025-06-15T11:00:00 → 2025-06-15T11:30:00\nRoom 4",
+        },
+    ])
+    try:
+        ctx = _make_ctx(
+            store=store,
+            now=datetime(2025, 6, 15, 10, 0, 0, tzinfo=timezone.utc),
+        )
+        result = _dispatch_action(
+            {"type": "calendar_poll", "title": "📅 Upcoming Events", "window_minutes": 120},
+            ctx,
+        )
+        assert result == "calendar_poll:1"
+        mock_notify.assert_called_once()
+        title, body = mock_notify.call_args.args
+        assert title == "📅 Upcoming Events"
+        assert "Team Standup" in body
+        assert "11:00" in body
+    finally:
+        conn.close()
+
+
+@patch("jarvis.triggers.send_notification")
+def test_calendar_poll_event_outside_window_no_notify(mock_notify):
+    """An event starting beyond the 2h window must NOT trigger a notification."""
+    store, conn = _calendar_store([
+        {"timestamp": "2025-06-15T15:00:00", "content": "Much Later\n2025-06-15T15:00:00"},
+    ])
+    try:
+        ctx = _make_ctx(
+            store=store,
+            now=datetime(2025, 6, 15, 10, 0, 0, tzinfo=timezone.utc),
+        )
+        _dispatch_action(
+            {"type": "calendar_poll", "title": "📅 Upcoming Events", "window_minutes": 120},
+            ctx,
+        )
+        mock_notify.assert_not_called()
+    finally:
+        conn.close()
+
+
+def test_upcoming_events_poll_advanced_even_when_no_events():
+    """The poll still counts as fired (last_poll_ts advances) with zero events."""
+    from jarvis.triggers import load_triggers
+
+    trigger = next(
+        t for t in load_triggers(config_path=Path("/tmp/nonexistent-triggers.toml"))
+        if t.name == "upcoming-events-poll"
+    )
+    assert trigger.TYPE == "poll"
+    assert trigger.actions[0]["type"] == "calendar_poll"
+    engine = TriggerEngine([trigger])
+    store, conn = _calendar_store([])
+    try:
+        with patch("jarvis.triggers.send_notification") as mock_notify:
+            engine.evaluate(store=store, state=MagicMock())
+        mock_notify.assert_not_called()
+        assert "last_poll_ts" in engine._events["upcoming-events-poll"]
+    finally:
+        conn.close()
 
 
 # ── load_triggers ─────────────────────────────────────────────────────────────

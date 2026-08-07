@@ -31,7 +31,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -291,6 +291,84 @@ def _action_notify(
     body  = spec.get("body", "")
     send_notification(title, body)
     return f"notify:{title}"
+
+
+def _query_upcoming_events(ctx: TriggerContext, window_minutes: int) -> list[dict]:
+    """Return calendar-sourced memories whose start time falls within the window.
+
+    Calendar events are stored as ``source = 'calendar'`` rows whose ``timestamp``
+    is the event start time (ISO-format, same convention used by the
+    ``check_calendar`` tool). We bound the query to ``[now, now + window]`` so a
+    poll only fires when a real event is imminent. Falls back to an empty list on
+    any store/query error (best-effort, never raises).
+    """
+    store = ctx.store
+    if store is None:
+        return []
+    now = ctx.now
+    if now.tzinfo is not None:
+        now = now.astimezone(timezone.utc).replace(tzinfo=None)
+    start = now.isoformat()
+    end = (now + timedelta(minutes=window_minutes)).isoformat()
+    try:
+        rows = store.conn.execute(
+            "SELECT content, timestamp FROM memories "
+            "WHERE source = 'calendar' AND superseded = 0 "
+            "AND timestamp >= ? AND timestamp <= ? "
+            "ORDER BY timestamp ASC LIMIT 20",
+            (start, end),
+        ).fetchall()
+    except Exception:  # best-effort; never break the poll
+        logger.debug("Could not query upcoming calendar events", exc_info=True)
+        return []
+    events = []
+    for row in rows:
+        content = row["content"] or ""
+        title = content.split("\n")[0].strip() or "Event"
+        events.append({"title": title, "timestamp": row["timestamp"]})
+    return events
+
+
+def _format_ts(ts: str) -> str:
+    """Render an ISO timestamp as a short HH:MM clock time (best-effort)."""
+    try:
+        return datetime.fromisoformat(ts).strftime("%H:%M")
+    except Exception:  # noqa: BLE001 - fall back to the raw string
+        return ts or ""
+
+
+def _format_events(events: list[dict], cap: int = 5) -> str:
+    """Render a compact bullet list of upcoming events for a notification body."""
+    lines = [f"• {e['title']} @ {_format_ts(e['timestamp'])}" for e in events[:cap]]
+    if len(events) > cap:
+        lines.append(f"…and {len(events) - cap} more")
+    return "\n".join(lines)
+
+
+@_register_action("calendar_poll")
+def _action_calendar_poll(
+    spec: dict,
+    ctx: TriggerContext,
+    **kwargs: Any,
+) -> str:
+    """Poll the store for calendar events in the next window and notify only if any.
+
+    Returns a non-empty result even when no events are found so the poll still
+    counts as "fired" (the engine advances ``last_poll_ts``), but only calls
+    ``send_notification`` when at least one real event exists — no more static
+    boilerplate body on a timer.
+    """
+    window = int(spec.get("window_minutes", 120))
+    title = spec.get("title", kwargs.get("trigger_name", "📅 Upcoming Events"))
+    events = _query_upcoming_events(ctx, window)
+    if not events:
+        logger.debug(
+            "[%s] no upcoming calendar events in next %d min",
+            kwargs.get("trigger_name", title), window,
+        )
+        return "calendar_poll:no_events"
+    send_notification(title, _format_events(events))
+    return f"calendar_poll:{len(events)}"
 
 
 @_register_action("brief")
@@ -555,9 +633,9 @@ HARDCODED_TRIGGERS: list[dict[str, Any]] = [
         "cooldown": 1800,
         "actions": [
             {
-                "type": "notify",
+                "type": "calendar_poll",
                 "title": "📅 Upcoming Events",
-                "body": "Checking calendar for upcoming events in next 2 hours…",
+                "window_minutes": 120,   # next 2 hours
             }
         ],
     },
