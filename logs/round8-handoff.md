@@ -169,9 +169,12 @@ This session runs while the user is away. All work is agent-driven, committed to
   Suite 390 passed, 1 skipped.
 - [x] **Round 34 (61c6fe7):** refreshed `docs/deployment-lightspeed.md` runbook — box git
   is ~33 commits behind; restart now includes `git pull` + new verify steps.
-- [x] **Round 35 (pending commit):** `jarvis doctor` now also verifies git sync
+- [x] **Round 35 (2ab0b3e):** `jarvis doctor` now also verifies git sync
   (`bot`==`main`==`origin/bot`) — all 6 checks PASS live. 1 test update.
   Suite 390 passed, 1 skipped.
+- [x] **Round 36 (73ffe16):** final night-state bottom-line added to the handoff log.
+- [x] **Round 37 (pending commit):** `jarvis export --since <iso>` — client-side timestamp
+  filter (works in local + thin-client modes). 1 new test. Suite 391 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the

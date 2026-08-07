@@ -200,3 +200,19 @@ def test_export_client_mode_filters_client_side(tmp_path, monkeypatch):
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["count"] == 1
     assert data["memories"][0]["id"] == "box-2"
+
+
+def test_export_since_filters_client_side(tmp_path, monkeypatch):
+    from jarvis import remote
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "export", lambda fmt="json": {"count": 2, "memories": _BOX_MEMORIES})
+
+    out = tmp_path / "since.json"
+    # box-2 (2026-01-02) is at/after the cutoff; box-1 (2026-01-01) is not
+    result = CliRunner().invoke(cli, ["export", "--format", "json", "--since", "2026-01-02",
+                                      "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["count"] == 1
+    assert data["memories"][0]["id"] == "box-2"

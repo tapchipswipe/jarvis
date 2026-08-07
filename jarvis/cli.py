@@ -512,7 +512,8 @@ def explore(source, tag, tier, route, device, n, offset):
 @click.option("--output", "-o", default=None, help="Output path ('-' for stdout; default: timestamped file under the jarvis data dir)")
 @click.option("--source", default=None, help="Filter by source")
 @click.option("--tier", default=None, help="Filter by tier (raw, session, reflection, arc)")
-def export(fmt, output, source, tier):
+@click.option("--since", default=None, help="Only export memories with timestamp >= this ISO value")
+def export(fmt, output, source, tier, since):
     """Export all memories to JSON or Markdown.
 
     In thin-client mode it pulls from the live box (single source of truth); in local
@@ -564,6 +565,9 @@ def export(fmt, output, source, tier):
         finally:
             store.close()
         rows = _normalize(rows)
+
+    if since:
+        rows = [r for r in rows if (r.get("timestamp") or "") >= since]
 
     if fmt == "json":
         payload = {
