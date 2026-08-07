@@ -10,6 +10,15 @@ from jarvis.ingest import chunk_document
 from jarvis.store import fingerprint
 
 DEFAULT_CHAT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
+
+
+def chat_model() -> str:
+    """Active chat/query model — configurable via JARVIS_CHAT_MODEL.
+
+    On the RAM-tight box the 7B is slow (20-60s per answer); set
+    JARVIS_CHAT_MODEL to a small model (e.g. llama3.2:1b) for snappy
+    ask/console/chat responses. Defaults to the 7B."""
+    return os.environ.get("JARVIS_CHAT_MODEL", "").strip() or DEFAULT_CHAT_MODEL
 _OLLAMA_HOST = "127.0.0.1"
 _OLLAMA_PORT = 11434
 
@@ -66,9 +75,9 @@ def _messages_to_prompt(messages: list[dict]) -> str:
 
 
 class Brain:
-    def __init__(self, store, model: str = DEFAULT_CHAT_MODEL):
+    def __init__(self, store, model: str | None = None):
         self.store = store
-        self.model = model
+        self.model = model or chat_model()
 
     def query(self, user_query: str, n_results: int = 8, source_filter: str | None = None, verbose: bool = False, history: list | None = None) -> tuple[str, list[dict]]:
         q_emb = get_embedding(user_query)

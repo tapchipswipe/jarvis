@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -997,7 +998,14 @@ def console(session_id, show_entities, save_qa):
         nonlocal last_qa
         history = [m for m in sdb.get_messages(sid, limit=20)
                    if m.get("role") in ("user", "assistant") and m.get("content")]
-        answer, memories, entities = _ask_grounded(text, history=history)
+        sys.stdout.write("(thinking…")
+        sys.stdout.flush()
+        try:
+            answer, memories, entities = _ask_grounded(text, history=history)
+        except Exception as exc:  # noqa: BLE001 - recover gracefully
+            print(f"  error: {exc})")
+            return
+        print(")")
         sdb.append_message(sid, "user", text)
         sdb.append_message(sid, "assistant", answer)
         last_qa = {"q": text, "a": answer}
