@@ -13,6 +13,12 @@
 # fine for rollback/recovery, not a point-in-time backup. For a strict
 # consistent snapshot, stop `jarvis server` first.
 #
+# For a hardened 3-2-1, an age-encrypted archive is produced (below) when `age`
+# and a recipient public key are present. Generate once:
+#   age-keygen -o ~/.config/jarvis/backup-key.age     # keep this PRIVATE
+#   # the sibling .pub file is the recipient used for encryption.
+# Alternative: push the plain snapshot to TrueNAS/extra disk for a 3rd copy.
+#
 # Register (Mac crontab):
 #   0 4 * * * /bin/bash /Users/lucasdespot/jarvis/scripts/jarvis-backup.sh >> /Users/lucasdespot/jarvis/logs/jarvis-backup.log 2>&1
 # ============================================================
@@ -55,5 +61,19 @@ scp $SSH_OPTS -r -q "$BOX_USER@$BOX_HOST:$BOX_TS_DIR" "$MAC_DST/store-$DAY_TAG" 
 # prune old Mac snapshots
 ls -1dt "$MAC_DST"/store-* 2>/dev/null | tail -n +$((KEEP_MAC+1)) | xargs rm -rf 2>/dev/null
 echo "[$TS] Off-box copy -> $MAC_DST/store-$DAY_TAG"
+
+# 4. 3-2-1 hardening (OPT-IN): wrap today's snapshot in an age-encrypted archive
+#    for off-site storage when `age` + a recipient pubkey are available.
+AGE_PUB="${JARVIS_AGE_PUBKEY:-$HOME/.config/jarvis/backup-key.age.pub}"
+if command -v age >/dev/null 2>&1 && [ -n "$AGE_PUB" ] && [ -f "$AGE_PUB" ] && \
+   [ -d "$MAC_DST/store-$DAY_TAG" ]; then
+    AGE_ARCHIVE="$MAC_DST/store-$DAY_TAG.tar.gz.age"
+    if tar -C "$MAC_DST" -czf - "store-$DAY_TAG" | age -R "$AGE_PUB" -o "$AGE_ARCHIVE" && [ -s "$AGE_ARCHIVE" ]; then
+        echo "[$TS] age-encrypted archive -> $AGE_ARCHIVE"
+    else
+        echo "[$TS] WARNING: age archive empty/failed — plain snapshot kept."
+    fi
+fi
+
 echo "[$TS] === Backup complete ==="
 

@@ -224,3 +224,18 @@ memories (round-trip OK); `jarvis ingest-status` → correctly surfaces the expe
 - Fix: `netsh advfirewall firewall delete rule name=Python` (deleted 2 rules).
 - Verified: LAN 8766 = 200, **Tailscale 8766 = 200**, `jarvis status` over Tailscale OK.
   `JARVIS_REMOTE` stays on the Tailscale IP (the designed path).
+
+## Finish-the-backlog (2026-08-07, same day)
+- **Box re-deployed to 573e329** (digests code + monitor + total field). Restart retried
+  properly (the first kill silently failed; killed PID explicitly, port freed, restarted).
+- **JARVIS_TOKEN ENABLED end-to-end**: 48-hex token in `~/.config/jarvis/token` (Mac,
+  + `~/.zshrc`) and box user env via `setx` (inherited by the restarted server). Verified
+  no-token `/api/search` = 403, with-token = 200. Health/ingest endpoints stay open.
+- **Ambient collection REGISTERED**: `com.user.jarvis-collect` LaunchAgent loaded; validated
+  end-to-end (collect->outbox->flush with token; 45 memories pushed, 0 failed).
+- **Offload pilot DONE**: box `cline --json "Reply: pong"` returned JSON
+  (done/completed, 4.2s) using cline-hosted `muse-spark-1.2` — no local box RAM.
+- **Hardened backup OPT-IN**: `jarvis-backup.sh` now age-encrypts the off-box snapshot when
+  `age` + pubkey exist (`age-keygen -o ~/.config/jarvis/backup-key.age` once).
+- Ingester (after reset) idempotently re-scanning the ~2,730-file inbox as duplicates; it
+  settles to `remaining: 0` again — harmless, all content-hash deduped.

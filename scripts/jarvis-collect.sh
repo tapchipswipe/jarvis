@@ -32,7 +32,8 @@ TS=$(date "+%Y-%m-%d %H:%M:%S")
 
 export JARVIS_MODE=client
 export JARVIS_REMOTE="http://$BOX_HOST:$PORT"
-# optional: export JARVIS_TOKEN="<same value as the box>"
+# LaunchAgent context doesn't source ~/.zshrc, so read the shared token file:
+export JARVIS_TOKEN="$(cat "$HOME/.config/jarvis/token" 2>/dev/null)"
 
 if [ ! -x "$VENV_PY" ]; then
     echo "[$TS] no venv at $VENV_PY" >> "$LOG_DIR/collect.log"

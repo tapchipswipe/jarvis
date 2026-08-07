@@ -27,23 +27,33 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
   narrower block for other ports if hardening needed.)
 - `/api/health` on the box is instant (async-pure).
 - Duplicate-content memories collapse on migration (content-hash dedupe).
-- Token auth is config-gated: no `JARVIS_TOKEN` is set yet, so the API is open on the network.
+- Token auth is config-gated: **`JARVIS_TOKEN` is now SET end-to-end** (see actions).
 
 ## Immediate next actions (priority order)
 1. **Inbox drain DONE (2026-08-07):** the box's in-process ingester drained the full
    backlog to `remaining: 0, errors: 0`; brain went **3954 → 4119** (+165 net-new, ~2,565
    deduped by content-hash). Use `scripts/monitor-ingest.py` for future drains.
-2. **Resolve the Tailscale-8766 anomaly** (or adopt the LAN `JARVIS_REMOTE` explicitly).
-3. **Enable `JARVIS_TOKEN`** end-to-end (same value in the box env + `server-start.bat` and `~/.zshrc` on the Mac) now that all mutating/sensitive routes are guarded.
-4. **Register thin-client ambient collection**: `launchctl load ~/Library/LaunchAgents/com.user.jarvis-collect.plist` (30-min `collect --flush`).
+2. **Connectivity RESOLVED:** the box had two `Python — Block` firewall rules dropping
+   inbound 8766 on the shared Private profile (LAN + Tailscale); removed → both paths 200.
+3. **`JARVIS_TOKEN` ENABLED end-to-end (2026-08-07):** 48-hex token in
+   `~/.config/jarvis/token` (+ `~/.zshrc` export) on the Mac and in the box's user env
+   (`setx JARVIS_TOKEN`, inherited by the restarted server). Verified: no-token `/api/search`
+   → 403, with-token → 200, `jarvis search`/`status` work over Tailscale. Health endpoints
+   stay open for the notifier/monitor.
+4. **Ambient collection REGISTERED (2026-08-07):** `com.user.jarvis-collect` LaunchAgent
+   loaded (30-min `collect --flush`; validated end-to-end with the token — 45 memories
+   pushed, 0 failed). Box brain now ~4,120+ and growing.
 5. **Server-side digests/triggers BUILT (Round 9):** config-gated `start_trigger_loop()` in
    `jarvis/triggers.py` (per-tick Store open/close, no persistent second Chroma handle) wired
-   into `run_dashboard`. **Enable on the box by setting `JARVIS_TRIGGERS=1`** in
-   `server-start.bat` + env, then restart — digests fire at 08:00/18:00 (weekdays) + a
-   30-min calendar notify poll. Keep model-tier discipline (small models / not while a 7B
-   is resident).
-6. **Offload pilot:** delegate ONE heavy task to the Lightspeed Cline CLI and confirm the JSON round-trip.
-7. **Hardened backup:** strict-consistent snapshot or TrueNAS/age-encrypted archive (current backup is a warm copy).
+   into `run_dashboard`, deployed to the box (OFF by default). **Enable on the box with
+   `JARVIS_TRIGGERS=1`** in `server-start.bat` + env, then restart — digests at 08:00/18:00
+   (weekdays) + 30-min calendar poll. Keep model-tier discipline.
+6. **Offload pilot DONE (2026-08-07):** `ssh … 'cline --cwd C:\Users\despo\jarvis --json "…"'`
+   returned structured JSON (`done/completed, text: "pong"`) in 4.2s using a
+   **Cline-hosted model (muse-spark-1.2)** — zero local box RAM. Mechanism validated.
+7. **Hardened backup OPT-IN ready (2026-08-07):** `scripts/jarvis-backup.sh` now produces an
+   **age-encrypted archive** when `age` + `~/.config/jarvis/backup-key.age.pub` exist
+   (`age-keygen -o ~/.config/jarvis/backup-key.age` once). TrueNAS/3rd copy still optional.
 
 ## How to resume after a reboot
 1. `cd /Users/lucasdespot/jarvis` (venv `.venv/bin/python`).
