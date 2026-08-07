@@ -862,12 +862,27 @@ def _ask_grounded(question, n_results=8, source=None, model=None, history=None):
         store.close()
 
 
-def _render_grounded(answer, memories, entities, show_entities=True, session_id=None):
-    """Shared human-readable output for ask/console."""
+def _is_recall(question: str) -> bool:
+    """True when the question is about the user's own data/memories (so sources
+    are worth showing) vs. plain small-talk (which should just answer)."""
+    q = (question or "").lower()
+    return any(k in q for k in (
+        "what did", "what have", "when did", "where did", "remember", "find ",
+        "search", "my memories", "my notes", "show me", "tell me about",
+        "what do you know about", "what is", "who is", "recap", "summarize",
+        " notes on", "what about", "list the", "look up", "lookup"))
+
+
+def _render_grounded(answer, memories, entities, show_entities=True, session_id=None,
+                     show_sources=True):
+    """Shared human-readable output for ask/console.
+
+    show_sources=False hides the grounded-memory dump for natural chat; sources
+    show when the user asks (/sources) or the question is a recall request."""
     if session_id:
         click.echo(f"(session {session_id})")
     click.echo(answer or "(no answer returned)")
-    if memories:
+    if show_sources and memories:
         click.echo(f"\n-- grounded in {len(memories)} memory(-ies) --")
         seen = set()
         for m in memories:
@@ -996,6 +1011,7 @@ def console(session_id, show_entities, save_qa):
 
     last_qa = {"q": "", "a": ""}
     model_override = None  # None=auto-tier; else a tier (fast/medium/big) or model id
+    show_sources = False   # sources hidden by default for natural chat
 
     def ask_line(text):
         nonlocal last_qa
@@ -1013,7 +1029,11 @@ def console(session_id, show_entities, save_qa):
         sdb.append_message(sid, "user", text)
         sdb.append_message(sid, "assistant", answer)
         last_qa = {"q": text, "a": answer}
-        _render_grounded(answer, memories, entities, show_entities=show_entities)
+        # Show sources only when the toggle is on OR the question is a recall
+        # request about the user's own data — casual chat stays clean.
+        want_sources = show_sources or _is_recall(text)
+        _render_grounded(answer, memories, entities, show_entities=show_entities,
+                         show_sources=want_sources)
         if not save_qa and answer:
             _save_ask(text, answer)
 
@@ -1031,7 +1051,7 @@ def console(session_id, show_entities, save_qa):
                 click.echo("Goodbye.")
                 break
             if low == "/help":
-                click.echo("/help /model [fast|medium|big|id|auto] /session <id> /clear /save /digest /status /quit")
+                click.echo("/help /model [tier|id|auto] /sources [on|off] /session /clear /save /digest /status /quit")
                 continue
             if low == "/model":
                 # show current
@@ -1044,6 +1064,21 @@ def console(session_id, show_entities, save_qa):
                     click.echo(f"(model set to {model_override})")
                 else:
                     click.echo(f"(model tier: {model_override or 'auto'})")
+                continue
+            if low == "/sources":
+                click.echo(f"(sources: {'on' if show_sources else 'off'})")
+                continue
+            if low.startswith("/sources"):
+                parts = text.split()
+                state = parts[1].lower() if len(parts) > 1 else ""
+                if state in ("on", "true", "1", "yes"):
+                    show_sources = True
+                    click.echo("(sources: on)")
+                elif state in ("off", "false", "0", "no"):
+                    show_sources = False
+                    click.echo("(sources: off)")
+                else:
+                    click.echo(f"(sources: {'on' if show_sources else 'off'})")
                 continue
             if low == "/clear":
                 sdb.close()

@@ -585,7 +585,8 @@ def test_digest_report_without_now(monkeypatch):
 
 def test_console_interactive_loop(monkeypatch):
     """`jarvis console` must answer a piped question and honor /quit (idea: an
-    interactive Iron-Man-style terminal)."""
+    interactive Iron-Man-style terminal). Sources are hidden by default for
+    natural chat."""
     from click.testing import CliRunner
 
     from jarvis import remote
@@ -605,7 +606,10 @@ def test_console_interactive_loop(monkeypatch):
     monkeypatch.setattr(remote, "query",
                         lambda question, n=8, source=None, history=None, model=None:
                         seen.update(q=question) or {"answer": "console says hello",
-                                                    "memories": [], "entities": {}})
+                                                    "memories": [{"source": "shell",
+                                                                  "timestamp": "2026-01-01T00:00:00",
+                                                                  "content": "some memory"}],
+                                                    "entities": {}})
     monkeypatch.setattr(remote, "remember_batch", lambda items: {"added": 1})
     monkeypatch.setattr(remote, "health_deep", lambda: {"memories": 5, "mode": "local"})
 
@@ -617,4 +621,49 @@ def test_console_interactive_loop(monkeypatch):
     assert "memories=5" in result.output
     assert "Goodbye." in result.output
     assert seen.get("q") == "hello jarvis"
+    # casual chat is clean: sources hidden by default
+    assert "grounded in 1 memory" not in result.output
+
+
+def test_console_sources_toggle_shows_sources(monkeypatch):
+    """`/sources on` must reveal the grounded-memory dump; a recall question
+    shows sources even when the toggle is off."""
+    from click.testing import CliRunner
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    class _FakeSDB:
+        def __init__(self): self.msgs = []
+        def close(self): pass
+        def get_messages(self, sid, limit=100): return []
+        def create_session(self, title=""): return "c1"
+        def append_message(self, sid, role, content, tool_calls=None):
+            self.msgs.append((role, content))
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: _FakeSDB())
+    monkeypatch.setattr(remote, "query",
+                        lambda question, n=8, source=None, history=None, model=None:
+                        {"answer": "here is the finding",
+                         "memories": [{"source": "deep", "timestamp": "2026-01-01T00:00:00",
+                                       "content": "a relevant memory"}],
+                         "entities": {}})
+    monkeypatch.setattr(remote, "remember_batch", lambda items: {"added": 1})
+
+    # /sources on then a casual question -> sources shown
+    result = CliRunner().invoke(cli, ["console", "--no-save"],
+                                input="/sources on\nhello again\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert "(sources: on)" in result.output
+    assert "grounded in 1 memory" in result.output
+
+
+def test_is_recall_detects_memory_questions():
+    from jarvis.cli import _is_recall
+    assert _is_recall("what did I do yesterday") is True
+    assert _is_recall("show me my memories about the deploy") is True
+    assert _is_recall("tell me about the sync protocol") is True
+    assert _is_recall("hello sir how are you") is False
+    assert _is_recall("thanks!") is False
 
