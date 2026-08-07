@@ -73,13 +73,6 @@ def _from_calendar(text: str) -> list[dict]:
         raw = _clean_name(m.group(1))
         if len(raw.split()) >= 2:
             ents.append({"name": raw, "type": "person", "confidence": 0.90})
-    # Event titles often contain org keywords
-    org_hints = re.findall(
-        r"(?i)\b(team|dept|department|division|inc|llc|university|college|labs?|foundation)\b",
-        text,
-    )
-    for _ in org_hints:
-        ents.append({"name": "Organization reference", "type": "org", "confidence": 0.45})
     return _dedupe(ents)
 
 
@@ -123,13 +116,6 @@ def _from_browser(text: str) -> list[dict]:
                 ents.append({"name": domain, "type": "domain", "confidence": 0.80})
         except Exception:
             pass
-    # Org hints in page title
-    org_hints = re.findall(
-        r"(?i)\b(team|dept|department|division|inc|llc|university|college|labs?|foundation|company|corp|group)\b",
-        text,
-    )
-    for _ in org_hints:
-        ents.append({"name": "Organization reference", "type": "org", "confidence": 0.40})
     return _dedupe(ents)
 
 

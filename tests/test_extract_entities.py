@@ -35,12 +35,13 @@ def test_contacts_extracts_persons():
     assert all(e["confidence"] >= 0.9 for e in ents)
 
 
-def test_calendar_attendees_and_org_hints():
+def test_calendar_attendees_and_no_junk_org():
     text = "Meeting at 3pm. Attendees: Sara Lee, Tom Wu\nTeam sync with Engineering dept"
     ents = ee._from_calendar(text)
     person_names = {e["name"] for e in ents if e["type"] == "person"}
     assert "Sara Lee" in person_names
-    assert any(e["type"] == "org" for e in ents)
+    # No placeholder 'Organization reference' junk entity should be emitted.
+    assert all(e["name"] != "Organization reference" for e in ents)
 
 
 def test_email_from_to_and_domains():
@@ -56,12 +57,13 @@ def test_email_from_to_and_domains():
     assert any(e["type"] == "domain" and e["name"] == "acme.io" for e in ents)
 
 
-def test_browser_domains_and_org_hints():
+def test_browser_domains_and_no_junk_org():
     text = "Visited https://Example.com and https://another.dev — RESEARCH Labs group"
     ents = ee._from_browser(text)
     domains = {e["name"] for e in ents if e["type"] == "domain"}
     assert "example.com" in domains
-    assert any(e["type"] == "org" for e in ents)
+    # No placeholder 'Organization reference' junk entity should be emitted.
+    assert all(e["name"] != "Organization reference" for e in ents)
 
 
 def test_chat_speakers():
