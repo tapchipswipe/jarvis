@@ -36,7 +36,12 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 2. **Resolve the Tailscale-8766 anomaly** (or adopt the LAN `JARVIS_REMOTE` explicitly).
 3. **Enable `JARVIS_TOKEN`** end-to-end (same value in the box env + `server-start.bat` and `~/.zshrc` on the Mac) now that all mutating/sensitive routes are guarded.
 4. **Register thin-client ambient collection**: `launchctl load ~/Library/LaunchAgents/com.user.jarvis-collect.plist` (30-min `collect --flush`).
-5. **Restore server-side digests/triggers**: add a config-gated `TriggerLoop` inside `run_dashboard` (default OFF; RAM discipline) — Mayor idle-maintenance already runs.
+5. **Server-side digests/triggers BUILT (Round 9):** config-gated `start_trigger_loop()` in
+   `jarvis/triggers.py` (per-tick Store open/close, no persistent second Chroma handle) wired
+   into `run_dashboard`. **Enable on the box by setting `JARVIS_TRIGGERS=1`** in
+   `server-start.bat` + env, then restart — digests fire at 08:00/18:00 (weekdays) + a
+   30-min calendar notify poll. Keep model-tier discipline (small models / not while a 7B
+   is resident).
 6. **Offload pilot:** delegate ONE heavy task to the Lightspeed Cline CLI and confirm the JSON round-trip.
 7. **Hardened backup:** strict-consistent snapshot or TrueNAS/age-encrypted archive (current backup is a warm copy).
 

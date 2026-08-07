@@ -935,16 +935,24 @@ def api_ingest_status(request: Request):
 
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
+_TRIGGER_LOOP = None  # keep a strong ref so the daemon thread isn't GC'd
+
+
 def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL):
-    """Start the dashboard server with Mayor background loop."""
+    """Start the dashboard server with Mayor + (opt-in) trigger background loops."""
     import uvicorn
 
     from jarvis.inbox_ingest import start_background_ingester
+    from jarvis.triggers import start_trigger_loop
 
+    global _TRIGGER_LOOP
     # Start the Mayor background loop (task dispatch, mode switching)
     _start_mayor()
     # Start the throttled box-inbox backlog ingester (same-process, embed-only)
     start_background_ingester()
+    # Start the server-side trigger loop (morning/end-of-day digests) — gated by
+    # JARVIS_TRIGGERS=1 (default OFF; RAM/model-tier discipline).
+    _TRIGGER_LOOP = start_trigger_loop()
 
     print(f"Starting Jarvis Dashboard on http://0.0.0.0:{port}")
     print(f"Daemon URL: {daemon_url}")

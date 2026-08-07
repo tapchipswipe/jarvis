@@ -422,3 +422,67 @@ def test_trigger_loop_survives_engine_errors():
         loop.join(timeout=2)
     assert not loop.is_alive()
     assert engine.evaluate.call_count >= 2  # loop kept going after the error
+# ── server-side TriggerLoop (Round 9: config-gated in-process digests) ─────────
+
+def test_start_trigger_loop_disabled_by_default(monkeypatch):
+    """JARVIS_TRIGGERS unset/0 -> no loop, no TriggerLoop constructed."""
+    from jarvis import triggers
+
+    monkeypatch.delenv("JARVIS_TRIGGERS", raising=False)
+    with patch.object(triggers, "TriggerLoop") as TL:
+        assert triggers.start_trigger_loop() is None
+        TL.assert_not_called()
+    monkeypatch.setenv("JARVIS_TRIGGERS", "0")
+    with patch.object(triggers, "TriggerLoop") as TL:
+        assert triggers.start_trigger_loop() is None
+        TL.assert_not_called()
+
+
+def test_start_trigger_loop_enabled_starts_gated(monkeypatch):
+    """JARVIS_TRIGGERS=1 -> loop started with per-tick store_factory, no persistent store."""
+    from jarvis import triggers
+
+    monkeypatch.setenv("JARVIS_TRIGGERS", "1")
+    fake_loop = MagicMock()
+    fake_loop.trigger_count = 3
+    with patch.object(triggers, "TriggerLoop", return_value=fake_loop) as TL, \
+         patch.object(triggers, "TriggerEngine"), \
+         patch.object(triggers, "load_triggers", return_value=[]):
+        result = triggers.start_trigger_loop(interval=10)
+    assert result is fake_loop
+    TL.assert_called_once()
+    kwargs = TL.call_args.kwargs
+    assert kwargs.get("store") is None            # no persistent handle
+    assert kwargs.get("store_factory") is not None  # per-tick open/close
+    fake_loop.start.assert_called_once()
+
+
+def test_trigger_loop_opens_and_closes_store_per_tick():
+    """store_factory: a fresh store is opened and closed on every tick."""
+    from jarvis.triggers import TriggerLoop
+
+    engine = MagicMock()
+    opened = []
+
+    class FakeStore:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    def factory():
+        s = FakeStore()
+        opened.append(s)
+        return s
+
+    loop = TriggerLoop(store=None, store_factory=factory, interval=0.05, engine=engine)
+    loop.start()
+    time.sleep(0.15)
+    loop.stop()
+    loop.join(timeout=2)
+
+    assert len(opened) >= 1          # at least one tick ran
+    assert all(s.closed for s in opened)  # every tick store was closed
+    engine.evaluate.assert_called()
+

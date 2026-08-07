@@ -654,12 +654,14 @@ class TriggerLoop(threading.Thread):
         state: Any = None,
         *,
         interval: int = DEFAULT_POLL_INTERVAL,
-        config_path: Optional[Path] = None,
-        engine: Optional[TriggerEngine] = None,
+        config_path: Path | None = None,
+        engine: TriggerEngine | None = None,
+        store_factory: Callable[[], Any] | None = None,
     ) -> None:
         super().__init__(name="trigger-loop", daemon=True)
         self.store = store
         self.state = state
+        self.store_factory = store_factory
         interval = float(interval)
         if interval <= 0:
             raise TriggerError(
@@ -685,19 +687,68 @@ class TriggerLoop(threading.Thread):
 
     def run(self) -> None:
         logger.info(
-            "Trigger loop started (interval=%ds, %d trigger(s))",
+            "Trigger loop started (interval=%ss, %d trigger(s))",
             self.interval, self.trigger_count,
         )
         while not self._stop_event.is_set():
             tick = time.monotonic()
+            # When a store_factory is supplied we open a fresh Store per tick and
+            # close it afterwards (same serialized open/close pattern as the inbox
+            # ingester) so we never hold a second persistent Chroma handle.
+            store = self.store_factory() if self.store_factory is not None else self.store
             try:
-                self.engine.evaluate(self.store, self.state)
-            except Exception as exc:          # noqa: BLE001
-                logger.error(
-                    "Trigger loop iteration failed: %s", exc, exc_info=True
-                )
+                try:
+                    self.engine.evaluate(store, self.state)
+                except Exception:
+                    logger.exception("Trigger loop iteration failed")
+            finally:
+                if self.store_factory is not None and store is not None:
+                    try:
+                        store.close()
+                    except Exception:
+                        logger.debug("Trigger loop store close failed", exc_info=True)
             # Sleep out the remainder of the interval; stop() wakes us early.
             elapsed = time.monotonic() - tick
             self._stop_event.wait(max(0.0, self.interval - elapsed))
         logger.info("Trigger loop stopped")
+
+
+def start_trigger_loop(
+    interval: int = DEFAULT_POLL_INTERVAL,
+    config_path: Path | None = None,
+) -> TriggerLoop | None:
+    """Start the trigger loop **inside the `jarvis server` process** (server side).
+
+    Gated by env ``JARVIS_TRIGGERS=1`` — default OFF so existing deployments are
+    untouched. Uses a *per-tick* Store open/close (``store_factory``) so we never
+    hold a second persistent Chroma handle on the single-brain box — the same
+    serialized open/close pattern the inbox ingester already runs successfully.
+
+    RAM/model-tier note: the hardcoded defaults fire LLM digests at 08:00/18:00 and a
+    calendar notify poll every 30 min. Keep the model-tier discipline (small models /
+    not while a 7B is resident) when enabling on the RAM-tight box.
+
+    Returns the running TriggerLoop (for tests/manual stop), or None when disabled.
+    """
+    if os.environ.get("JARVIS_TRIGGERS", "0") != "1":
+        logger.info("Trigger loop DISABLED (set JARVIS_TRIGGERS=1 to enable)")
+        return None
+
+    def _store_factory():
+        from jarvis.store import Store
+        return Store()
+
+    engine = TriggerEngine(load_triggers(config_path=config_path))
+    loop = TriggerLoop(
+        store=None,                 # no persistent store; use per-tick factory
+        store_factory=_store_factory,
+        interval=interval,
+        engine=engine,
+    )
+    loop.start()
+    logger.info(
+        "Trigger loop started in-process (interval=%ss, %d trigger(s))",
+        interval, loop.trigger_count,
+    )
+    return loop
 

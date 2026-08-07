@@ -13,7 +13,7 @@ kept current with `docs/STATUS.md` and `docs/topology.md`.
 | Mayor loop (mode switching coding/memory) | RUNS | `run_dashboard → _start_mayor().run_loop()` |
 | Mayor idle maintenance (reindex ~ every 5 min, promote ~ every 6 h, VRAM-guarded) | RUNS | `mayor.run_loop → _maybe_idle_maintenance()` (verified in `mayor.py`) |
 | Inbox backlog ingester (embed-only, throttled, content-hash idempotent) | WIRED, **needs process restart** | `run_dashboard → start_background_ingester()` |
-| Time/poll/event **trigger loop + digests** (morning/end-of-day briefings) | **NOT running** | `TriggerLoop` is **not** started by `run_dashboard`; it died with the retired daemon |
+| Time/poll/event **trigger loop + digests** (morning/end-of-day briefings) | **OPT-IN (OFF by default)** | Config-gated `start_trigger_loop()` wired into `run_dashboard` (Round 9); enable with `JARVIS_TRIGGERS=1` |
 
 ### Verified observations (2026-08-07)
 - Box git working tree is `966d7b2` (== `bot` == `origin/bot`), but the *running*

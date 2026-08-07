@@ -58,7 +58,7 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2026-08-06 — Modernized every `datetime.utcnow()` call (22 source files) to `datetime.now(timezone.utc).replace(tzinfo=None)` — string-identical naive-UTC; pytest warnings fell from ~370 to 2 (both 3rd-party)
 - `[done]` 2026-08-06 — SAFE-boundary decision + `docs/runtime-audit.md`: verified exactly what runs in the `jarvis server` process (API, Mayor loop, Mayor idle-maintenance YES; inbox ingester wired-but-needs-restart; `TriggerLoop` triggers/digests NOT running — died with the daemon) and confirmed the thin-client read/write/status/export/memories/doctor paths live against the box
 - `[planned]` 2026-08-06 — Enable `JARVIS_TOKEN` end-to-end (same value in box env + `server-start.bat` and in `~/.zshrc` on the Mac) + register the `com.user.jarvis-collect` LaunchAgent
-- `[planned]` 2026-08-06 — After the box restarts: let the ingester drain `C:/data/jarvis/inbox`, reconcile counts, then (RAM permitting) restore server-side digests by adding a config-gated `TriggerLoop` inside `run_dashboard`
+- `[done]` 2026-08-07 — **Server-side digests/triggers restored (Round 9):** config-gated `start_trigger_loop()` (env `JARVIS_TRIGGERS=1`, default OFF) runs a `TriggerLoop` **inside `jarvis server`** — per-tick Store open/close (no persistent second Chroma handle, same pattern as the ingester). Defaults: LLM morning-brief (08:00) + end-of-day wrap (18:00) weekdays, 30-min calendar notify poll. Wired into `run_dashboard`; 3 new tests.
 
 
 ## Round 7 (2026-08-06) — Thin-client cutover (backfill + retire Mac brain)
