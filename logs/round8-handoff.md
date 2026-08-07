@@ -144,8 +144,11 @@ This session runs while the user is away. All work is agent-driven, committed to
   (`_maybe_idle_maintenance`: runs reindex(limit=200)+promote(7d,500) when idle and not
   VRAM-busy; skips when Ollama is generating or an approved task is queued, timer held).
   Mayor 15 → 18 tests. Suite 383 passed, 1 skipped.
-- [x] **Round 31 (pending commit):** `scripts/verify.sh` — one-command QA gate
+- [x] **Round 31 (8db9e84):** `scripts/verify.sh` — one-command QA gate
   (full pytest + ruff + import smoke) for the user/agent to run anytime.
+- [x] **Round 32 (pending commit):** new `tests/test_ingest.py` — chunking primitives
+  (empty/short, overlap chunk boundaries, de-overlapped reconstruction, metadata attach).
+  Suite 389 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the
