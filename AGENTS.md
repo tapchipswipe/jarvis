@@ -42,7 +42,7 @@ To resume after a reboot (context was reset): read those files, check live state
 - **Mac = thin client (cut over).** CLI read/write the server over Tailscale via `jarvis/cache.py`
   (disposable outbox + rolling tail). Mac-local daemon/dashboard/watcher/sync are **retired** (plists in
   `~/jarvis/rollback-launchagents-*/`); the local `~/jarvis/data` store is kept only as a rollback copy.
-  `JARVIS_MODE=client` + `JARVIS_REMOTE=http://100.102.0.99:8766` live in `~/.zshrc`.
+  `JARVIS_MODE=client` + `JARVIS_REMOTE=https://100.102.0.99:8766` live in `~/.zshrc`.
 - **Remote agent:** a headless Cline CLI is installed on Lightspeed (`cline` v3.0.51) and can be
   driven from the Mac via `ssh despo@100.102.0.99 'cline --cwd <repo> --json "<task>"'` to offload
   maintenance/Windows-native work off the Mac. Delegate ONE task at a time (box RAM-tight).

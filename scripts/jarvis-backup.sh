@@ -40,7 +40,7 @@ mkdir -p "$MAC_DST"
 echo "[$TS] === Jarvis backup === (strict=$STRICT)"
 
 # 1. Health gate — do not take a backup snapshot while the brain is unhealthy.
-if ! curl -m 8 -fsS http://"$BOX_HOST":8766/api/health >/dev/null 2>&1; then
+if ! curl -m 8 -fsS -k https://"$BOX_HOST":8766/api/health >/dev/null 2>&1; then
     echo "[$TS] ABORT: box health check failed — skipping backup."
     exit 2
 fi
@@ -60,7 +60,7 @@ if [ -z "${JARVIS_TOKEN:-}" ] && [ -f "$HOME/.config/jarvis/token" ]; then
     JARVIS_TOKEN=$(cat "$HOME/.config/jarvis/token")
 fi
 BOX_TS_DIR="$BOX_ROLLBACK_ROOT/$TS"
-if ! curl -m 180 -fsS -X POST "http://$BOX_HOST:8766/api/admin/backup" \
+if ! curl -m 180 -fsS -k -X POST "https://$BOX_HOST:8766/api/admin/backup" \
       -H "Content-Type: application/json" \
       ${JARVIS_TOKEN:+-H "X-Jarvis-Token: $JARVIS_TOKEN"} \
       -d "{\"dst\": \"$BOX_TS_DIR\"}" -o "$MAC_DST/backup-report.json"; then
@@ -79,11 +79,11 @@ if [ "$STRICT" = "1" ]; then
     ssh $SSH_OPTS "$BOX_USER@$BOX_HOST" "Start-ScheduledTask -TaskName JarvisServer" 2>/dev/null
     for _ in 1 2 3 4 5 6; do
         sleep 6
-        if curl -m 8 -fsS http://"$BOX_HOST":8766/api/health >/dev/null 2>&1; then
+        if curl -m 8 -fsS -k https://"$BOX_HOST":8766/api/health >/dev/null 2>&1; then
             echo "[$TS] Server healthy again."; break
         fi
     done
-    curl -m 8 -fsS http://"$BOX_HOST":8766/api/health >/dev/null 2>&1 || \
+    curl -m 8 -fsS -k https://"$BOX_HOST":8766/api/health >/dev/null 2>&1 || \
         echo "[$TS] WARN: server not healthy after restart — check Task Scheduler."
 fi
 

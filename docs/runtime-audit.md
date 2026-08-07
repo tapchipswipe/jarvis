@@ -21,7 +21,7 @@ kept current with `docs/STATUS.md` and `docs/topology.md`.
   has **5,458 files** untouched, and no `inbox_ingest_cursor.txt` exists in
   `C:/Users/despo/jarvis/data`. **Restarting the scheduled task `JarvisServer` (or
   re-running `server-start.bat`) is all that's needed to activate it** — then watch
-  `curl http://100.102.0.99:8766/api/ingest/status` as it drains.
+  `curl https://100.102.0.99:8766/api/ingest/status` as it drains.
 - `/api/health/deep` reports 3,954 active memories; the count is stable because the
   backlog hasn't been drained yet.
 

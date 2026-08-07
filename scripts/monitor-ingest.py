@@ -6,10 +6,10 @@ plain-ASCII otherwise). When stdout is not a TTY it prints one compact line per 
 instead of redrawing, so it works under nohup/log files too.
 
 Usage:
-    python scripts/monitor-ingest.py [--url http://192.168.1.94:8766] [--interval 10]
+    python scripts/monitor-ingest.py [--url https://100.102.0.99:8766] [--interval 10]
                                      [--once] [--max-wait 3600]
 
-    * --url defaults to $JARVIS_REMOTE or http://100.102.0.99:8766
+    * --url defaults to $JARVIS_REMOTE or https://100.102.0.99:8766
     * exits 0 when the drain is done (remaining == 0), 2 if the endpoint is absent
       (pre-deploy server), 1 on repeated unreachable.
 """
@@ -18,15 +18,24 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.error
 import urllib.request
 
 
+def _ssl_ctx():
+    """Accept the box's self-signed cert (transport is still TLS-encrypted)."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 def fetch_status(url: str, timeout: int = 10) -> dict:
     req = urllib.request.Request(url + "/api/ingest/status", headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx()) as resp:
         return json.loads(resp.read().decode("utf-8") or "{}")
 
 
@@ -49,7 +58,7 @@ def render_bar(pct: float, width: int = 30) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default=os.environ.get("JARVIS_REMOTE", "http://100.102.0.99:8766").rstrip("/"))
+    ap.add_argument("--url", default=os.environ.get("JARVIS_REMOTE", "https://100.102.0.99:8766").rstrip("/"))
     ap.add_argument("--interval", type=float, default=10.0, help="seconds between polls")
     ap.add_argument("--once", action="store_true", help="single poll then exit")
     ap.add_argument("--max-wait", type=float, default=0.0, help="stop after N seconds (0 = until done)")

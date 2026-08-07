@@ -18,7 +18,7 @@ See `docs/topology.md`, `docs/runtime-audit.md`.
   `...\logs\server.out.log`. Box user-env (set via `setx`): `JARVIS_TOKEN`,
   `JARVIS_TRIGGERS=1`, `OLLAMA_HOST=127.0.0.1`, `OLLAMA_PORT=11434`.
 - **Mac client:** repo `~/jarvis` (venv `.venv/bin/python`); `~/.zshrc` exports
-  `JARVIS_MODE=client`, `JARVIS_REMOTE=http://100.102.0.99:8766`, and
+  `JARVIS_MODE=client`, `JARVIS_REMOTE=https://100.102.0.99:8766`, and
   `JARVIS_TOKEN=$(cat ~/.config/jarvis/token)`. **Secrets live in `~/.config/jarvis/`:**
   `token`, `backup-key.age` (private), `backup-key.age.pub` (recipient).
 
@@ -67,9 +67,9 @@ The whole "next-up" backlog is done:
 - Suite **398 passed / 1 skipped**; git `bot` == `main` == origin.
 
 ## Round 9b (2026-08-07) — hardening pass, all delivered
-- **HTTPS (config-gated) + pinned client**: `jarvis server --gen-cert` → self-signed pair +
-  SHA256 fingerprint; `--tls-cert/--tls-key` (or `JARVIS_TLS_CERT/KEY`) serve HTTPS; client
-  pins the fingerprint (`JARVIS_TLS_FINGERPRINT`) over `https://`. Not yet enabled on the box.
+- **HTTPS enabled end-to-end**: self-signed cert, box serves `https://100.102.0.99:8766`;
+  Mac client pins the cert fingerprint (`JARVIS_TLS_FINGERPRINT`); ops scripts use HTTPS
+  (`-k`/encrypted transport). Plain HTTP is gone. Cert at `~/.config/jarvis/server-cert.pem`.
 - **`jarvis backup [dst]`** — crash-consistent SQLite online-backup; `POST /api/admin/backup`
   (token-gated) runs in-process; `scripts/jarvis-backup.sh` uses it (`JARVIS_BACKUP_STRICT=1`
   pauses the scheduled task for a consistent HNSW snapshot, always restarts).

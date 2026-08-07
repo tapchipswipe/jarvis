@@ -38,7 +38,7 @@ cd /d C:\Users\despo\jarvis
 1. Stop current: `ssh despo@100.102.0.99 'powershell -Command "Get-Process | Where-Object {$_.ProcessName -match ''python'' and $_.Id -ne <other>} | Stop-Process -Force"'` (or kill the bat's cmd + python pid on 8766).
 2. Start: `ssh despo@100.102.0.99 'cmd /c start "" C:\data\jarvis\server-start.bat'`  (or log off/on to trigger the task).
 3. Verify from the Mac:
-   - `curl http://100.102.0.99:8766/api/health` and `/api/health/deep`
+   - `curl https://100.102.0.99:8766/api/health` and `/api/health/deep`
    - `.venv/bin/python -m jarvis.cli doctor` (mode/box/ingest/os)
    - Watch the inbox drain: `.venv/bin/python -m jarvis.cli ingest-status` until `remaining` → 0.
 

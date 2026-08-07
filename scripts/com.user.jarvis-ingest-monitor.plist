@@ -9,7 +9,7 @@
 		<string>/Users/lucasdespot/jarvis/.venv/bin/python</string>
 		<string>/Users/lucasdespot/jarvis/scripts/monitor-ingest.py</string>
 		<string>--url</string>
-		<string>http://192.168.1.94:8766</string>
+		<string>https://100.102.0.99:8766</string>
 		<string>--interval</string>
 		<string>15</string>
 	</array>

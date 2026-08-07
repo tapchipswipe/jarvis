@@ -61,9 +61,9 @@ notify_alert() {
 }
 
 # 1. Box health
-if HEALTH=$(curl -m 8 -fsS "http://$BOX_HOST:$PORT/api/health" 2>/dev/null); then
+if HEALTH=$(curl -m 8 -fsS -k "https://$BOX_HOST:$PORT/api/health" 2>/dev/null); then
     notice "box health: $(printf '%s' "$HEALTH" | head -c 80)"
-    DEEP=$(curl -m 15 -fsS "http://$BOX_HOST:$PORT/api/health/deep" 2>/dev/null || true)
+    DEEP=$(curl -m 15 -fsS -k "https://$BOX_HOST:$PORT/api/health/deep" 2>/dev/null || true)
     notice "box deep: $(printf '%s' "$DEEP" | head -c 100)"
 else
     notify_alert "BOX UNREACHABLE" "no response on $BOX_HOST:$PORT/api/health"
@@ -92,7 +92,7 @@ else
 fi
 
 # 4. Inbox backlog ingester progress (present once the box server runs 966d7b2+)
-INGEST=$(curl -m 8 -fsS "http://$BOX_HOST:$PORT/api/ingest/status" 2>/dev/null || true)
+INGEST=$(curl -m 8 -fsS -k "https://$BOX_HOST:$PORT/api/ingest/status" 2>/dev/null || true)
 if [ -n "$INGEST" ]; then
     notice "box ingest: $(printf '%s' "$INGEST" | head -c 200)"
 else

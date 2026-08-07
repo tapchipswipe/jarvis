@@ -11,7 +11,7 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
   - Env: `OLLAMA_HOST=127.0.0.1`, `OLLAMA_PORT=11434` (user env + in the bat). Canonical store at `C:\Users\despo\jarvis\data\` — active memory count 3,954 (`/api/health/deep`), **stable until the running server is restarted onto the pushed commit**.
   - API: `/api/backfill`, `/api/remember`, `/api/search`, `/api/chat`, `/api/memories`, `/api/export`, `/api/ingest/status`, `/api/health(+deep)`, plus dashboard/task/session routes — mutating + sensitive reads token-guarded.
   - Runbook: `docs/deployment-lightspeed.md`. What-runs-where: `docs/runtime-audit.md`.
-- **Mac = thin client.** `~/.zshrc` sets `JARVIS_MODE=client`, `JARVIS_REMOTE=http://100.102.0.99:8766`. CLI remember/search/status/export/memories/timeline/collect/flush/ingest-status/doctor route to the box (or queue to the disposable outbox). Mac-local services (daemon 8765, dashboard 8766, watcher, sync) are **stopped + plists retired**; Mac store (`~/jarvis/data`, 3,951 rows) left intact for rollback.
+- **Mac = thin client.** `~/.zshrc` sets `JARVIS_MODE=client`, `JARVIS_REMOTE=https://100.102.0.99:8766`. CLI remember/search/status/export/memories/timeline/collect/flush/ingest-status/doctor route to the box (or queue to the disposable outbox). Mac-local services (daemon 8765, dashboard 8766, watcher, sync) are **stopped + plists retired**; Mac store (`~/jarvis/data`, 3,951 rows) left intact for rollback.
 - **Remote agent:** headless Cline on the box (`cline` v3.0.51): `ssh despo@100.102.0.99 'cline --cwd C:\Users\despo\jarvis --json "<task>"'`. Delegate one task at a time (box RAM-tight).
 
 ## Branches / git
@@ -58,11 +58,12 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
    tar-list OK). TrueNAS / 3rd copy still optional.
 
 ## Round 9b hardening pass (2026-08-07) — all delivered, box NOT yet restarted onto it
-8. **HTTPS server (config-gated) + pinned client:** `jarvis server --gen-cert` → self-signed
-   pair + SHA256 fingerprint; serve with `--tls-cert/--tls-key` (or `JARVIS_TLS_CERT/KEY`).
-   Client `remote.py` pins the fingerprint (`JARVIS_TLS_FINGERPRINT`) over `https://` →
-   MitM-resistant without a CA. `.pem` secrets are gitignored. (Not enabled on the box yet —
-   plain HTTP + token remains until the next deploy.)
+8. **HTTPS live + pinned client (2026-08-07):** self-signed cert at
+   `C:\Users\despo\jarvis\server-cert.pem` (key `.pem` private); box serves `https://100.102.0.99:8766`.
+   Mac `~/.zshrc`: `JARVIS_REMOTE=https://…`, `JARVIS_TLS_FINGERPRINT=` the cert SHA256
+   (client pins it); copy of the cert at `~/.config/jarvis/server-cert.pem`. Ops scripts
+   (`health-check`, `backup`, `monitor-ingest`) use HTTPS (`-k`/unverified — encrypted transport);
+   the CLI client uses real fingerprint pinning (MitM-resistant). Plain HTTP is gone.
 9. **Ingester idle fast-path** (drained inbox stops re-scanning; `/api/ingest/status.idle`).
 10. **Crash-consistent backups:** `jarvis backup` + token-gated `POST /api/admin/backup`
     (SQLite online-backup); `scripts/jarvis-backup.sh` uses it; `JARVIS_BACKUP_STRICT=1`
@@ -79,6 +80,6 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 ## How to resume after a reboot
 1. `cd /Users/lucasdespot/jarvis` (venv `.venv/bin/python`).
 2. Read this file + `logs/round8-handoff.md` + `logs/round7-handoff.md` + `docs/runtime-audit.md` + `docs/deployment-lightspeed.md` + `docs/topology.md`.
-3. Verify live: `git status`; `launchctl list | grep -E 'jarvis-(backup|health)'` (resilience); `curl http://100.102.0.99:8766/api/health` + `/api/health/deep` (box); `.venv/bin/python -m jarvis.cli doctor` (thin-client diagnostics).
+3. Verify live: `git status`; `launchctl list | grep -E 'jarvis-(backup|health)'` (resilience); `curl https://100.102.0.99:8766/api/health` + `/api/health/deep` (box); `.venv/bin/python -m jarvis.cli doctor` (thin-client diagnostics).
 4. Continue with the priority list above; keep `main`/`bot` in sync and tests green (`.venv/bin/python -m pytest -p no:cacheprovider`).
 
