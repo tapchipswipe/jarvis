@@ -11,14 +11,17 @@ You are Cline working on the **Jarvis** project (repo root = this directory).
 If this is a new/continued session, reconstruct context from these, in order:
 1. **`docs/STATUS.md`** — the canonical snapshot: topology, what's deployed+where, branches,
    services, known issues, and the concrete **next actions**.
-2. **`logs/round7-handoff.md`** — the newest session narrative (what was done last + decisions).
-3. **`docs/deployment-lightspeed.md`** — the Lightspeed server runbook (paths, restart, reverse).
-4. **`docs/topology.md`** — the agreed architecture (FULL-THIN: Lightspeed = brain, Mac = thin client).
-5. `docs/system-diagram.md` / `docs/architecture.md` — overall layout.
-6. `UPGRADES.md` — feature history / `[planned]` vs `[done]`.
+2. **`logs/round8-handoff.md`** (newest) then `logs/round7-handoff.md` — session narratives (what
+   was done + decisions).
+3. **`docs/runtime-audit.md`** — verified "what runs where" on the server (incl. the inbox
+   ingester needs-restart note and the triggers/digests gap).
+4. **`docs/deployment-lightspeed.md`** — the Lightspeed server runbook (paths, restart, reverse).
+5. **`docs/topology.md`** — the agreed architecture (FULL-THIN: Lightspeed = brain, Mac = thin client).
+6. `docs/system-diagram.md` / `docs/architecture.md` — overall layout.
+7. `UPGRADES.md` — feature history / `[planned]` vs `[done]`.
 
 To resume after a reboot (context was reset): read those files, check live state
-(`git status`, `launchctl list | grep jarvis`, `curl <server>/api/health`), then continue.
+(`git status`, `launchctl list | grep jarvis`, `curl <server>/api/health` + `/api/health/deep`), then continue.
 
 ## Current architecture (top level) — cutover DONE (Round 7)
 - **Lightspeed (Dell G7, 16 GB, Tailscale 100.102.0.99) = single source of truth + single writer.**
@@ -39,9 +42,11 @@ To resume after a reboot (context was reset): read those files, check live state
 
 ## Commands (CLI at `python -m jarvis.cli ...`; use the venv at `.venv/bin/python`)
 - Chat/search/remember/status/sessions/graph via `jarvis.cli`
+- Thin client: `jarvis collect` (ambient files → outbox → server), `jarvis flush` (push outbox),
+  `jarvis ingest-status` (box inbox-drain progress), `jarvis status` (live box view)
 - Server: `jarvis server --check` (deploy validation), `jarvis server --port 8766` (run)
-- Maintenance: `jarvis reindex`, `jarvis promote`, `jarvis profiles`
-- Tests: `.venv/bin/python -m pytest -p no:cacheprovider` (keep @ 300+; target green)
+- Maintenance: `jarvis reindex`, `jarvis promote`, `jarvis backfill --dry-run`, `jarvis profiles`
+- Tests: `.venv/bin/python -m pytest -p no:cacheprovider` (keep @ 350+; target green)
 - Lint: `/opt/homebrew/bin/ruff check jarvis/ tests/`
 
 ## Rules
