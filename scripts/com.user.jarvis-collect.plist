@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.user.jarvis-collect</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/lucasdespot/jarvis/scripts/jarvis-collect.sh</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>JARVIS_ROOT</key>
+		<string>/Users/lucasdespot/jarvis</string>
+	</dict>
+	<key>StartInterval</key>
+	<integer>1800</integer>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/lucasdespot/jarvis/logs/collect.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/lucasdespot/jarvis/logs/collect.log</string>
+</dict>
+</plist>

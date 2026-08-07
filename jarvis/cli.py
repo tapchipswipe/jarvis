@@ -1071,5 +1071,44 @@ def flush():
             click.echo(f"Pushed {res.get('pushed', 0)} memory(-ies); {res.get('failed', 0)} failed, kept queued.")
     finally:
         cache.close()
+
+
+@cli.command()
+@click.option("--max-files", default=2000, help="Cap on files walked per run")
+@click.option("--flush", "do_flush", is_flag=True, help="Flush the outbox to the server after scanning")
+def collect(max_files, do_flush):
+    """Thin-client ambient collection: queue new file text to the outbox -> server.
+
+    Refuses to run outside JARVIS_MODE=client (the box is the single writer in
+    FULL-THIN). Idempotent: unchanged files are skipped and duplicate content is
+    dropped, so re-running is safe.
+    """
+    from jarvis import remote
+    from jarvis.collectors import thin
+
+    if not remote.is_remote():
+        click.echo(
+            "collect requires thin-client mode (JARVIS_MODE=client + JARVIS_REMOTE); "
+            "the Mac never writes a local brain in FULL-THIN."
+        )
+        raise SystemExit(2)
+    stats = thin.scan_once(max_files=max_files)
+    line = (
+        f"Scanned {stats['files']} file(s): enqueued {stats['enqueued']}, "
+        f"dup {stats['dups']}, blank {stats['blank']}, "
+        f"seen-skip {stats['skipped_seen']}, errors {stats['errors']}."
+    )
+    click.echo(line)
+    if do_flush:
+        res = thin.flush_once()
+        click.echo(
+            f"Flushed outbox: pushed={res.get('pushed', 0)} "
+            f"failed={res.get('failed', 0)} offline={bool(res.get('offline'))}."
+        )
+
+
+if __name__ == "__main__":
+    cli()
+
 if __name__ == "__main__":
     cli()

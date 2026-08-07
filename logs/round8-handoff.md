@@ -26,8 +26,14 @@ This session runs while the user is away. All work is agent-driven, committed to
   test. Suite green.
 - [x] **Round 2 (73e0a1f):** Synced `docs/STATUS.md` + `UPGRADES.md` with the real
   state (inbox ingester deployed + running at `966d7b2`); resequenced next actions.
-- [x] **Round 3 (pending commit):** Added `_host_ok` token guards to the previously-open
+- [x] **Round 3 (05d4377):** Added `_host_ok` token guards to the previously-open
   mutating/sensitive routes — `/api/idea`, `/api/tasks/approve`, `/api/tasks/reject`,
   `/api/sessions`, and `/api/export`. `/api/health` stays open (Mac health checker).
   2 new server tests. Suite 334 passed, 1 skipped.
+- [x] **Round 4 (pending commit):** Restored thin-client ambient collection —
+  `jarvis/collectors/thin.py` (files→outbox→server, content-hash + fingerprint
+  idempotent, bounded) + `jarvis collect` CLI (refuses outside client mode) + 5
+  hermetic tests + opt-in `scripts/jarvis-collect.sh` + LaunchAgent plist (NOT
+  auto-started). Live isolated smoke test OK. Suite 339 passed, 1 skipped.
+
 
