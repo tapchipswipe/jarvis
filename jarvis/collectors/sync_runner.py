@@ -47,10 +47,13 @@ def run_sync(target: str = "all", progress_callback=None):
     results = {}
     if target in ("all", "files"):
         try:
-            from jarvis.collectors import browser, kilo, shell
             from jarvis.collectors.files import start_watcher
             observer = start_watcher(store)
-            observer.join(timeout=5)
+            try:
+                observer.join(timeout=5)
+            finally:
+                observer.stop()
+                observer.join()
             results["files"] = "ok"
         except Exception as e:
             results["files"] = f"error: {e}"

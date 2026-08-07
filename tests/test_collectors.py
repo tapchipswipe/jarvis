@@ -663,6 +663,17 @@ class TestSyncRunner:
             assert isinstance(results, dict)
             assert "files" in results
 
+    def test_run_sync_stops_observer(self, mock_store):
+        """run_sync must stop the watchdog observer to avoid a thread leak."""
+        observer = MagicMock()
+        with patch("jarvis.collectors.sync_runner.Store", return_value=mock_store), \
+             patch("jarvis.collectors.files.start_watcher", return_value=observer):
+            from jarvis.collectors.sync_runner import run_sync
+            results = run_sync("files")
+            assert results["files"] == "ok"
+            observer.stop.assert_called_once()
+            assert observer.join.call_count >= 1
+
     def test_run_sync_unknown_target(self, mock_store):
         with patch("jarvis.collectors.sync_runner.Store", return_value=mock_store):
             from jarvis.collectors.sync_runner import run_sync
