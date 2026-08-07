@@ -838,11 +838,13 @@ def digest(do_now, kind, json_out):
 def _ask_grounded(question, n_results=8, source=None, model=None, history=None):
     """Return (answer, memories, entities) for a grounded question.
 
-    Uses the box's /api/query in client mode, else the local Brain.query."""
+    Uses the box's /api/query in client mode, else the local Brain.query.
+    `model` optionally overrides the auto-tiered chat model."""
     from jarvis import remote as _remote
 
     if _remote.is_remote():
-        resp = _remote.query(question, n=n_results, source=source, history=history)
+        resp = _remote.query(question, n=n_results, source=source,
+                             history=history, model=model)
         return ((resp.get("answer") or "").strip(),
                 resp.get("memories") or [], resp.get("entities") or {})
     store = Store()
@@ -993,6 +995,7 @@ def console(session_id, show_entities, save_qa):
     click.echo(f"(session {sid})  type /help for commands, /quit to exit.\n")
 
     last_qa = {"q": "", "a": ""}
+    model_override = None  # None=auto-tier; else a tier (fast/medium/big) or model id
 
     def ask_line(text):
         nonlocal last_qa
@@ -1001,7 +1004,8 @@ def console(session_id, show_entities, save_qa):
         sys.stdout.write("(thinking…")
         sys.stdout.flush()
         try:
-            answer, memories, entities = _ask_grounded(text, history=history)
+            answer, memories, entities = _ask_grounded(text, history=history,
+                                                       model=model_override)
         except Exception as exc:  # noqa: BLE001 - recover gracefully
             print(f"  error: {exc})")
             return
@@ -1027,7 +1031,19 @@ def console(session_id, show_entities, save_qa):
                 click.echo("Goodbye.")
                 break
             if low == "/help":
-                click.echo("/help /session <id> /clear /save /digest /status /quit")
+                click.echo("/help /model [fast|medium|big|id|auto] /session <id> /clear /save /digest /status /quit")
+                continue
+            if low == "/model":
+                # show current
+                click.echo(f"(model tier: {model_override or 'auto'})")
+                continue
+            if low.startswith("/model"):
+                parts = text.split()
+                if len(parts) > 1 and parts[1]:
+                    model_override = parts[1]
+                    click.echo(f"(model set to {model_override})")
+                else:
+                    click.echo(f"(model tier: {model_override or 'auto'})")
                 continue
             if low == "/clear":
                 sdb.close()

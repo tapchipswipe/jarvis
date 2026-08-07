@@ -779,13 +779,16 @@ def api_search(request: Request, q: str = "", n: int = 10, source: str | None = 
 
 @app.get("/api/query")
 def api_query(request: Request, q: str = "", n: int = 8, source: str | None = None,
-              history: str | None = None):
+              history: str | None = None, model: str | None = None):
     """Grounded Q&A: Brain.query against the canonical brain.
 
     Returns {answer, memories, entities}. Optional `history` is a JSON-encoded
-    list of prior turns (for threading). This is the correct tool for
-    `jarvis ask` — unlike /api/chat it does NOT run the agentic loop, so a
-    simple question returns a clean answer instead of a tool fragment.
+    list of prior turns (for threading). Optional `model` overrides the chat
+    model: a tier name (fast/medium/big) auto-resolves, or an exact model id.
+    Without `model`, the box auto-routes by question complexity (fast/small for
+    casual, big/large for hard). This is the correct tool for `jarvis ask` —
+    unlike /api/chat it does NOT run the agentic loop, so a simple question
+    returns a clean answer instead of a tool fragment.
     """
     if not _host_ok(request):
         return JSONResponse({"error": "forbidden"}, status_code=403)
@@ -799,14 +802,16 @@ def api_query(request: Request, q: str = "", n: int = 8, source: str | None = No
             hist = []
     store = _get_store()
     try:
-        from jarvis.brain import Brain
-        brain = Brain(store)
+        from jarvis.brain import Brain, select_model_for
+        resolved = select_model_for(q, force=model)
+        brain = Brain(store, model=resolved)
         answer, rows = brain.query(q, n_results=n, source_filter=source, history=hist)
         mems = [{k: r.get(k) for k in ("id", "source", "timestamp", "content")} for r in rows]
         links = store.lookup_entities([r.get("id") for r in rows]) if rows else {}
         entities = {mid: [{"name": e["name"], "entity_type": e["entity_type"]} for e in ents]
                     for mid, ents in links.items()}
-        return {"answer": answer, "memories": mems, "entities": entities, "count": len(rows)}
+        return {"answer": answer, "memories": mems, "entities": entities,
+                "count": len(rows), "model": resolved}
     finally:
         store.close()
 

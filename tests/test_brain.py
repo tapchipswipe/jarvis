@@ -391,3 +391,39 @@ def test_ollama_chat_honors_ollama_host_env(monkeypatch):
     B._ollama_chat("m", [{"role": "user", "content": "x"}])
     assert captured["u"] == "http://100.102.0.99:11434/api/generate"
 
+# ── model-tier routing (fast/medium/big) ─────────────────────────────────────
+
+def test_tier_for_routes_by_complexity():
+    from jarvis.brain import _tier_for
+    assert _tier_for("hello") == "fast"
+    assert _tier_for("hi there") == "fast"
+    assert _tier_for("how are you") == "fast"
+    assert _tier_for("thanks a lot") == "fast"
+    assert _tier_for("what did I do yesterday") == "fast"      # 5 words -> fast
+    assert _tier_for("what did I work on yesterday morning") == "medium"
+    assert _tier_for("explain how the sync protocol works") == "big"
+    assert _tier_for("please analyze and compare the two architectures in detail why does a work better than b") == "big"
+
+
+def test_select_model_for_uses_env_tiers(monkeypatch):
+    from jarvis.brain import select_model_for
+    monkeypatch.setenv("JARVIS_CHAT_MODEL", "medium-model")
+    monkeypatch.setenv("JARVIS_CHAT_MODEL_FAST", "fast-model")
+    monkeypatch.setenv("JARVIS_CHAT_MODEL_BIG", "big-model")
+    assert select_model_for("hello") == "fast-model"
+    assert select_model_for("what did I work on yesterday morning") == "medium-model"
+    assert select_model_for("explain the architecture") == "big-model"
+    # force a tier
+    assert select_model_for("hello", force="big") == "big-model"
+    # exact model id override
+    assert select_model_for("hello", force="qwen2.5:7b") == "qwen2.5:7b"
+
+
+def test_tier_model_falls_back_to_medium(monkeypatch):
+    from jarvis.brain import tier_model
+    monkeypatch.setenv("JARVIS_CHAT_MODEL", "medium-model")
+    monkeypatch.delenv("JARVIS_CHAT_MODEL_FAST", raising=False)
+    monkeypatch.delenv("JARVIS_CHAT_MODEL_BIG", raising=False)
+    assert tier_model("fast") == "medium-model"
+    assert tier_model("big") == "medium-model"
+    assert tier_model("medium") == "medium-model"

@@ -431,7 +431,7 @@ def test_ask_client_mode_delegates_to_box(monkeypatch):
 
     monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
     monkeypatch.setattr(remote, "query",
-                        lambda question, n=8, source=None, history=None:
+                        lambda question, n=8, source=None, history=None, model=None:
                         {"answer": "box answer", "memories": [], "entities": {}})
     monkeypatch.setattr(remote, "remember_batch", lambda items: {"added": 1})
 
@@ -534,7 +534,7 @@ def test_ask_remote_threads_session_and_saves(monkeypatch):
     monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
     monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: fake_sdb)
     monkeypatch.setattr(remote, "query",
-                        lambda question, n=8, source=None, history=None:
+                        lambda question, n=8, source=None, history=None, model=None:
                         seen.update(msg=question, hist=history) or
                         {"answer": "box threaded answer", "memories": [], "entities": {}})
     monkeypatch.setattr(remote, "remember_batch",
@@ -603,7 +603,7 @@ def test_console_interactive_loop(monkeypatch):
     monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
     monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: _FakeSDB())
     monkeypatch.setattr(remote, "query",
-                        lambda question, n=8, source=None, history=None:
+                        lambda question, n=8, source=None, history=None, model=None:
                         seen.update(q=question) or {"answer": "console says hello",
                                                     "memories": [], "entities": {}})
     monkeypatch.setattr(remote, "remember_batch", lambda items: {"added": 1})

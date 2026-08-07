@@ -10,6 +10,7 @@ from jarvis.ingest import chunk_document
 from jarvis.store import fingerprint
 
 DEFAULT_CHAT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
+CHAT_TIERS = ("fast", "medium", "big")
 
 
 def chat_model() -> str:
@@ -19,6 +20,53 @@ def chat_model() -> str:
     JARVIS_CHAT_MODEL to a small model (e.g. llama3.2:1b) for snappy
     ask/console/chat responses. Defaults to the 7B."""
     return os.environ.get("JARVIS_CHAT_MODEL", "").strip() or DEFAULT_CHAT_MODEL
+
+
+def tier_model(tier: str) -> str:
+    """The model for a named tier (fast/medium/big) from env.
+
+      JARVIS_CHAT_MODEL_FAST   -> small/snappy (e.g. qwen2.5:0.5b)
+      JARVIS_CHAT_MODEL_BIG    -> large/high-quality (e.g. qwen2.5:7b)
+      JARVIS_CHAT_MODEL        -> medium (default)
+    Any unset tier falls back to the medium model."""
+    if tier == "fast":
+        return os.environ.get("JARVIS_CHAT_MODEL_FAST", "").strip() or chat_model()
+    if tier == "big":
+        return os.environ.get("JARVIS_CHAT_MODEL_BIG", "").strip() or chat_model()
+    return chat_model()
+
+
+def _tier_for(question: str) -> str:
+    """Route a question to a model tier by lightweight complexity heuristics.
+
+    Hard-looking (long or obviously-hard) -> big; casual/short -> fast;
+    otherwise medium. Hard wins, so a short deep question still uses the big
+    model."""
+    q = (question or "").strip().lower()
+    words = q.split()
+    hard = any(kw in q for kw in (
+        "explain", "analyze", "compare", "why does", "how does", "summarize",
+        "write ", "design", "plan", "debug", "refactor", "architecture",
+        "implement", "review", "fix ", "step by step", "what is the best",
+        "how do i", "explain the difference"))
+    if len(words) >= 25 or hard:
+        return "big"
+    casual = any(kw in q for kw in (
+        "hello", " hey", "hi ", "thanks", "good morning", "good evening",
+        "good day", "how are you", "who are you", "what can you do",
+        "nice to", "thank you", "yo", "what's up"))
+    if casual or len(words) <= 6:
+        return "fast"
+    return "medium"
+
+
+def select_model_for(question: str, force: str | None = None) -> str:
+    """Pick a chat model for a question: auto-tier by complexity, or force a
+    specific tier (force in fast/medium/big) or an exact model id."""
+    if force and force not in CHAT_TIERS:
+        return force  # explicit model id
+    tier = force if force in CHAT_TIERS else _tier_for(question)
+    return tier_model(tier)
 _OLLAMA_HOST = "127.0.0.1"
 _OLLAMA_PORT = 11434
 

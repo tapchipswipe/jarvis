@@ -158,17 +158,21 @@ def search(q: str, n: int = 10, source: str | None = None) -> dict:
 
 
 def query(question: str, n: int = 8, source: str | None = None,
-          history: list | None = None, timeout: int = 180) -> dict:
+          history: list | None = None, model: str | None = None,
+          timeout: int = 180) -> dict:
     """Grounded Q&A against the box brain (Brain.query — clean answer, not the
     agentic loop; unlike chat this never returns a tool fragment).
 
-    Uses a long timeout (LLM answer generation on the box can take a while,
-    especially with a large chat model)."""
+    `model` optionally overrides the box's auto-tiered model selection (a tier
+    name like 'fast'/'big', or an exact model id). Uses a long timeout (LLM
+    answer generation can take a while, especially with a large chat model)."""
     qs = urllib.parse.urlencode({"q": question, "n": n})
     if source:
         qs += "&" + urllib.parse.urlencode({"source": source})
     if history:
         qs += "&history=" + urllib.parse.quote(json.dumps(history))
+    if model:
+        qs += "&model=" + urllib.parse.quote(model)
     return _request("GET", f"/api/query?{qs}", timeout=timeout)
 
 
