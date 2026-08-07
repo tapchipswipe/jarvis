@@ -69,3 +69,6 @@ rollback-launchagents-*/
 *.tar.gz
 *.tar.gz.enc
 *.age
+
+# Ingest runtime state (marker/cursor)
+inbox_ingest_*.txt
