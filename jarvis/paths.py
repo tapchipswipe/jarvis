@@ -83,10 +83,24 @@ def logs_dir(*parts: str) -> Path:
 
 
 def ensure_private_dir(path: Path) -> Path:
-    """Create a directory (parents too) with owner-only permissions."""
+    """Create a directory (parents too) with owner-only permissions.
+
+    Every directory that Jarvis actually *creates* — including intermediate
+    parents that don't exist yet — is chmod'd 0700, so a secondary profile's
+    whole isolation tree (e.g. ~/jarvis/users/<user>/...) is owner-only, not
+    just the leaf. Pre-existing dirs outside the created chain are left alone.
+    """
+    path = Path(path)
+    # Ancestors (leaf → rootward) that don't exist yet and will be created.
+    created = []
+    cur = path
+    while not cur.exists():
+        created.append(cur)
+        cur = cur.parent
     path.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(path, 0o700)
-    except OSError:
-        pass
+    for p in [path, *created]:
+        try:
+            os.chmod(p, 0o700)
+        except OSError:
+            pass
     return path

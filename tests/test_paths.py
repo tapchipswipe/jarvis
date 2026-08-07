@@ -62,6 +62,23 @@ def test_ensure_private_dir_owner_only(tmp_path):
     assert mode & 0o700 == 0o700
 
 
+def test_ensure_private_dir_locks_created_chain(tmp_path):
+    """Round 9 #7: every directory JARVIS creates — not just the leaf — must be
+    owner-only (0700), so a secondary profile's whole tree is isolated. A
+    pre-existing directory is left untouched."""
+    pre = tmp_path / "exists"
+    pre.mkdir()
+    leaf = pre / "users" / "alice" / "data" / "chroma"
+
+    paths.ensure_private_dir(leaf)
+
+    for created in (leaf, leaf.parent, leaf.parent.parent, leaf.parent.parent.parent):
+        mode = stat.S_IMODE(created.stat().st_mode)
+        assert mode & 0o077 == 0, f"{created} not owner-only: {oct(mode)}"
+    # the pre-existing ancestor keeps its own mode (not forcibly 0700)
+    assert stat.S_IMODE(pre.stat().st_mode) & 0o077 != 0
+
+
 def test_logs_dir_helper():
     assert paths.logs_dir("daemon.log") == paths.data_root() / "logs" / "daemon.log"
 
