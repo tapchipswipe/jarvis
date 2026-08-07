@@ -625,6 +625,50 @@ def test_console_interactive_loop(monkeypatch):
     assert "grounded in 1 memory" not in result.output
 
 
+def test_console_save_qa_default_saves_no_save_skips(monkeypatch):
+    """Regression: console /no-save must truly disable Q&A recall.
+
+    `console` used a single ``--no-save`` flag bound to ``save_qa`` (default
+    False) with a ``not save_qa`` guard, so the flag semantics were inverted
+    relative to `ask`: default never saved and passing ``--no-save`` forced a
+    save. Now it uses the same ``--save/--no-save`` (default True) + ``if
+    save_qa`` pattern as `ask` — default saves, ``--no-save`` skips.
+    """
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    class _FakeSDB:
+        def __init__(self): self.msgs = []
+        def close(self): pass
+        def get_messages(self, sid, limit=100): return []
+        def create_session(self, title="", tier="raw"): return "c1"
+        def append_message(self, sid, role, content, tool_calls=None):
+            self.msgs.append((role, content))
+
+    saved = []
+    monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: _FakeSDB())
+    monkeypatch.setattr(
+        "jarvis.cli._ask_grounded",
+        lambda question, history=None, model=None:
+        ("console answer", [], {}),
+    )
+    monkeypatch.setattr("jarvis.cli._save_ask",
+                        lambda q, a: saved.append((q, a)))
+
+    # Default (no --no-save): Q&A is saved back to memory.
+    result = CliRunner().invoke(cli, ["console"], input="remember me\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert saved == [("remember me", "console answer")]
+
+    saved.clear()
+    # --no-save: Q&A is NOT saved.
+    result = CliRunner().invoke(cli, ["console", "--no-save"],
+                                input="don't remember\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert saved == []
+
+
 def test_console_sources_toggle_shows_sources(monkeypatch):
     """`/sources on` must reveal the grounded-memory dump; a recall question
     shows sources even when the toggle is off."""

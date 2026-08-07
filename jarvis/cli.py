@@ -1031,8 +1031,8 @@ def ask(question, n_results, source, model, json_out, session_id, save_qa, show_
               help="Resume an existing console session by ID (else start a new one)")
 @click.option("--no-entities", "show_entities", is_flag=True, default=False,
               help="Hide related-knowledge-graph entities")
-@click.option("--no-save", "save_qa", is_flag=True, default=False,
-              help="Do not save console Q&A back to memory (default: save)")
+@click.option("--save/--no-save", "save_qa", default=True,
+              help="Store console Q&A back to memory (tag 'ask') [default: save]")
 def console(session_id, show_entities, save_qa):
     """Open an interactive Jarvis terminal — Iron-Man style.
 
@@ -1082,7 +1082,7 @@ def console(session_id, show_entities, save_qa):
         # auto-dumped, even for recall questions (which get a grounded summary).
         _render_grounded(answer, memories, entities, show_entities=show_entities,
                          show_sources=show_sources)
-        if not save_qa and answer:
+        if save_qa and answer:
             _save_ask(text, answer)
 
     try:
