@@ -21,6 +21,9 @@ def _time_ago(ts: str | None) -> str:
         return "never"
     try:
         t = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            # Naive timestamps are assumed to be UTC.
+            t = t.replace(tzinfo=timezone.utc)
         delta = datetime.now(timezone.utc) - t
         secs = int(delta.total_seconds())
         if secs < 60:

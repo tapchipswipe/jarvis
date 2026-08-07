@@ -96,11 +96,12 @@ def _send_osascript(title: str, body: str) -> bool:
 
 # ── Durable log ──────────────────────────────────────────────────────────────
 
-def _log_notification(title: str, body: str) -> None:
+def _log_notification(title: str, body: str, channel: str | None = None) -> None:
     state_dir = _state_dir()
     state_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    channel = "oscript" if SYSTEM == "Darwin" else "log"
+    if channel is None:
+        channel = "oscript" if SYSTEM == "Darwin" else "log"
     line = f"[{ts}] [{channel}] {title} | {body}\n"
     try:
         with _notifications_log().open("a", encoding="utf-8") as fh:
@@ -126,9 +127,13 @@ def send_notification(
     Backends are short-circuited: the first one that returns True wins and
     the rest are skipped, so only a single desktop popup is shown.
     """
-    if not _send_terminal_notifier(title, body, category):
-        _send_osascript(title, body)  # fall back to macOS built-in
-    _log_notification(title, body)    # durable record, always written
+    if _send_terminal_notifier(title, body, category):
+        channel = "terminal-notifier"
+    elif _send_osascript(title, body):
+        channel = "osascript"
+    else:
+        channel = "log"
+    _log_notification(title, body, channel)    # durable record, always written
 
 
 def write_briefing(title: str, content: str) -> Path:

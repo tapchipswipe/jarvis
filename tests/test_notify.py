@@ -67,6 +67,53 @@ def test_send_notification_falls_through_on_failure(tmp_path, monkeypatch):
     osa.assert_called_once_with("title", "body")
 
 
+def test_log_notification_records_actual_delivering_channel(tmp_path, monkeypatch):
+    """_log_notification must record the backend that actually delivered,
+    not a hard-coded label."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    with (
+        patch.object(notify, "_send_terminal_notifier", return_value=True),
+        patch.object(notify, "_send_osascript") as osa,
+    ):
+        notify.send_notification("title", "body")
+    osa.assert_not_called()
+    log = (tmp_path / "config" / "notifications.log").read_text()
+    assert "terminal-notifier" in log
+    assert "[oscript]" not in log
+
+
+def test_log_notification_records_fallback_channel(tmp_path, monkeypatch):
+    """When terminal-notifier fails but osascript succeeds, the log must
+    name osascript as the delivering channel."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    with (
+        patch.object(notify, "_send_terminal_notifier", return_value=False),
+        patch.object(notify, "_send_osascript", return_value=True),
+    ):
+        notify.send_notification("title", "body")
+    log = (tmp_path / "config" / "notifications.log").read_text()
+    assert "osascript" in log
+    assert "terminal-notifier" not in log
+
+
+def test_log_notification_records_failure_channel(tmp_path, monkeypatch):
+    """When every desktop backend fails, the log must record the durable
+    log-only channel rather than mislabeling it as a desktop backend."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    with (
+        patch.object(notify, "_send_terminal_notifier", return_value=False),
+        patch.object(notify, "_send_osascript", return_value=False),
+    ):
+        notify.send_notification("title", "body")
+    log = (tmp_path / "config" / "notifications.log").read_text()
+    assert "[log]" in log
+    assert "osascript" not in log
+    assert "terminal-notifier" not in log
+
+
 def test_write_briefing_creates_file(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
     path = notify.write_briefing("Morning", "Lots of content")
