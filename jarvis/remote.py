@@ -157,6 +157,18 @@ def search(q: str, n: int = 10, source: str | None = None) -> dict:
     return _request("GET", f"/api/search?{qs}")
 
 
+def query(question: str, n: int = 8, source: str | None = None,
+          history: list | None = None) -> dict:
+    """Grounded Q&A against the box brain (Brain.query — clean answer, not the
+    agentic loop; unlike chat this never returns a tool fragment)."""
+    qs = urllib.parse.urlencode({"q": question, "n": n})
+    if source:
+        qs += "&" + urllib.parse.urlencode({"source": source})
+    if history:
+        qs += "&history=" + urllib.parse.quote(json.dumps(history))
+    return _request("GET", f"/api/query?{qs}")
+
+
 def chat(message: str, session_id: str | None = None, max_steps: int = 8, model: str | None = None) -> dict:
     payload = {"message": message, "session_id": session_id, "max_steps": max_steps}
     if model:

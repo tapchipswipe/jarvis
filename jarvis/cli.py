@@ -801,9 +801,12 @@ def chat(model, verbose, is_new, resume, max_steps):
 @click.option("--model", default=None, help="LLM model override")
 @click.option("--json-out", is_flag=True, help="Emit the result as JSON")
 @click.option("--session", "session_id", default=None, help="Resume/thread an ask session by ID")
-@click.option("--save", "save_qa", is_flag=True, help="Store this Q&A back to memory (tag 'ask')")
+@click.option("--save/--no-save", "save_qa", default=True,
+              help="Store the Q&A back to memory (tag 'ask') [default: save]")
+@click.option("--entities/--no-entities", "show_entities", default=True,
+              help="Surface related knowledge-graph entities")
 @click.argument("question")
-def ask(question, n_results, source, model, json_out, session_id, save_qa):
+def ask(question, n_results, source, model, json_out, session_id, save_qa, show_entities):
     """Ask Jarvis a one-shot question, ALWAYS grounded on the brain.
 
     Retrieves the most relevant memories, sends them alongside the question to
@@ -812,60 +815,77 @@ def ask(question, n_results, source, model, json_out, session_id, save_qa):
     it asks the box (the shared single brain) rather than the local store.
 
     Threading: pass the same --session <id> on follow-ups to carry prior turns
-    as conversation context. --save writes the Q&A back into memory (tag 'ask')
-    so a good exchange becomes searchable context.
+    as conversation context. --save (default) writes the Q&A back into memory
+    (tag 'ask') so good exchanges become searchable context; use --no-save to
+    opt out.
     """
     from jarvis import remote as _remote
+    from jarvis.sessions import SessionDB
 
-    if _remote.is_remote():
-        resp = _remote.chat(question, session_id=session_id or None,
-                            max_steps=1, model=model)
-        answer = (resp.get("response") or resp.get("answer") or "").strip()
-        if not answer and isinstance(resp.get("message"), str):
-            answer = resp["message"].strip()
-        if save_qa and answer:
-            _remote.remember_batch([{"content": f"Q: {question}\nA: {answer}",
-                                    "source": "ask", "tags": ["ask"]}])
-        if json_out:
-            click.echo(json.dumps({"answer": answer, "remote": True,
-                                   "session_id": session_id or resp.get("session_id")}))
-        else:
-            click.echo(answer or "(no answer returned)")
-        return
-
-    store = Store()
     sdb = None
     history = []
     sid = session_id
+    answer = ""
+    memories = []
+    entities = {}
+
     try:
-        brain = Brain(store, model=model) if model else Brain(store)
         if sid or save_qa:
-            from jarvis.sessions import SessionDB
             sdb = SessionDB()
             if sid:
                 history = [m for m in sdb.get_messages(sid, limit=20)
                            if m.get("role") in ("user", "assistant") and m.get("content")]
-        answer, memories = brain.query(question, n_results=n_results,
-                                       source_filter=source, history=history)
+
+        if _remote.is_remote():
+            resp = _remote.query(question, n=n_results, source=source, history=history)
+            answer = (resp.get("answer") or "").strip()
+            memories = resp.get("memories") or []
+            entities = resp.get("entities") or {}
+        else:
+            store = Store()
+            try:
+                brain = Brain(store, model=model) if model else Brain(store)
+                answer, memories = brain.query(question, n_results=n_results,
+                                               source_filter=source, history=history)
+                if memories:
+                    links = store.lookup_entities([m.get("id") for m in memories])
+                    entities = {mid: [{"name": e["name"], "entity_type": e["entity_type"]}
+                                      for e in ents] for mid, ents in links.items()}
+            finally:
+                store.close()
+
         if sdb:
             if not sid:
                 sid = sdb.create_session(title="ask")
-            sdb.append_message(sid, "user", question)
-            sdb.append_message(sid, "assistant", answer)
+            if answer:
+                sdb.append_message(sid, "user", question)
+                sdb.append_message(sid, "assistant", answer)
+
         if save_qa and answer:
-            brain.remember(f"Q: {question}\nA: {answer}", source="ask",
-                           tags=["ask"], classify=False)
+            if _remote.is_remote():
+                _remote.remember_batch([{"content": f"Q: {question}\nA: {answer}",
+                                         "source": "ask", "tags": ["ask"]}])
+            else:
+                store = Store()
+                try:
+                    Brain(store).remember(f"Q: {question}\nA: {answer}",
+                                          source="ask", tags=["ask"], classify=False)
+                finally:
+                    store.close()
+
         if json_out:
             click.echo(json.dumps({
                 "answer": answer,
                 "session_id": sid,
+                "entities": list(entities.values()) if entities else [],
                 "sources": [{"source": m["source"], "timestamp": m["timestamp"],
                              "content": m["content"]} for m in memories],
             }))
             return
+
         if sid:
             click.echo(f"(session {sid})")
-        click.echo(answer)
+        click.echo(answer or "(no answer returned)")
         if memories:
             click.echo(f"\n-- grounded in {len(memories)} memory(-ies) --")
             seen = set()
@@ -875,8 +895,11 @@ def ask(question, n_results, source, model, json_out, session_id, save_qa):
                     continue
                 seen.add(key)
                 click.echo(f"  [{m['source']}] {m['timestamp']}  {m['content'][:120]}")
+        if show_entities and entities:
+            names = sorted({e["name"] for ents in entities.values() for e in ents})
+            if names:
+                click.echo(f"\n-- related entities: {', '.join(names)}")
     finally:
-        store.close()
         if sdb:
             sdb.close()
 

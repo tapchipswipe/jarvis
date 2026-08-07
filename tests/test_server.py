@@ -272,6 +272,30 @@ def test_admin_backup_endpoint_requires_token(client, monkeypatch):
     assert r.status_code == 403
 
 
+def test_api_query_returns_grounded_answer(client, monkeypatch):
+    """/api/query is the grounded ask endpoint (Brain.query) — it must return a
+    clean {answer, memories, entities} and NOT run the agentic loop."""
+    from unittest.mock import patch
+
+    shown = {}
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.embed.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.brain._ollama_chat",
+               lambda model, messages: shown.update(m=model) or {"message": {"content": "the grounded answer"}}):
+        r = client.post("/api/remember", json={"memories": [{"content": "Alice likes the jarvis project"}]})
+        assert r.status_code == 200
+        r2 = client.get("/api/query", params={"q": "what does alice like?", "n": 5})
+        assert r2.status_code == 200
+        body = r2.json()
+        assert body["answer"] == "the grounded answer"
+        assert "memories" in body and "entities" in body
+
+
+def test_api_query_requires_token(client, monkeypatch):
+    monkeypatch.setenv("JARVIS_TOKEN", "sekret")
+    assert client.get("/api/query", params={"q": "hi"}).status_code == 403
+
+
 # ── server.py shim ─────────────────────────────────────────────────────────────
 def test_server_shim_exposes_same_app():
     from jarvis import dashboard, server
