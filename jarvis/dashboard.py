@@ -878,8 +878,12 @@ def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL
     """Start the dashboard server with Mayor background loop."""
     import uvicorn
 
+    from jarvis.inbox_ingest import start_background_ingester
+
     # Start the Mayor background loop (task dispatch, mode switching)
     _start_mayor()
+    # Start the throttled box-inbox backlog ingester (same-process, embed-only)
+    start_background_ingester()
 
     print(f"Starting Jarvis Dashboard on http://0.0.0.0:{port}")
     print(f"Daemon URL: {daemon_url}")
