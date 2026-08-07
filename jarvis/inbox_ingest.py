@@ -231,12 +231,39 @@ def start_background_ingester() -> None:
     inbox_dir = Path(os.environ.get("JARVIS_INBOX", "C:/data/jarvis/inbox"))
     cursor_path = Path(os.environ.get("JARVIS_INBOX_CURSOR") or
                        str(_data_dir() / "inbox_ingest_cursor.txt"))
+    marker_path = Path(os.environ.get("JARVIS_INBOX_MARKER_FILE") or
+                       str(_data_dir() / "inbox_ingest_drained_marker.txt"))
+
+    def _load_persisted_marker() -> tuple[int, int] | None:
+        try:
+            txt = (marker_path.read_text(encoding="utf-8") or "").strip()
+            if txt:
+                count_s, mtime_s = txt.split(":", 1)
+                return (int(count_s), int(mtime_s))
+        except (OSError, ValueError):
+            pass
+        return None
+
+    def _save_persisted_marker(m: tuple[int, int]) -> None:
+        try:
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            marker_path.write_text(f"{m[0]}:{m[1]}", encoding="utf-8")
+        except OSError:
+            pass
 
     def _loop() -> None:
         logger.info("Inbox backlog ingester started on %s (batch=%d)", inbox_dir, batch)
         idle = float(os.environ.get("JARVIS_INBOX_IDLE", "30"))
-        last_marker: tuple[int, int] | None = None
+        last_marker = _load_persisted_marker()
         idle_state = False
+        # Bootstrap: if the inbox is unchanged since the last drain, start
+        # already-idle so a server restart does NOT trigger a wasteful full
+        # re-drain (and its Chroma lock contention that stalls concurrent queries).
+        current = _inbox_marker(inbox_dir)
+        if current is not None and current == last_marker:
+            idle_state = True
+            last_marker = current
+            logger.info("Inbox unchanged since last drain — starting idle (no re-drain)")
         while True:
             try:
                 marker = _inbox_marker(inbox_dir)
@@ -256,6 +283,8 @@ def start_background_ingester() -> None:
                 if res.get("done"):
                     logger.info("Inbox backlog drained: %s", res)
                     idle_state = True
+                    if marker is not None:
+                        _save_persisted_marker(marker)
                     try:  # reset cursor so a fresh scan picks up new files anywhere
                         cursor_path.unlink(missing_ok=True)
                     except OSError:

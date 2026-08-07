@@ -190,6 +190,45 @@ def test_inbox_marker_none_when_dir_absent(tmp_path):
     assert inbox_ingest._inbox_marker(tmp_path / "definitely-not-here") is None
 
 
+def test_loop_restart_skips_redrain_when_marker_persisted(tmp_path, monkeypatch):
+    """Regression: after a server restart, if the inbox is unchanged since the
+    last drain (persisted marker matches), the loop must start idle instead of
+    re-draining — this is what stalls concurrent queries with Chroma lock
+    contention (Round 9 ingest-fix)."""
+    import time
+
+    from jarvis import inbox_ingest
+
+    inbox = tmp_path / "inbox"
+    dev = inbox / "dev1"
+    dev.mkdir(parents=True)
+    (dev / "a.txt").write_text("some note", encoding="utf-8")
+
+    calls = {"n": 0}
+
+    def _pb(*_a, **_k):
+        calls["n"] += 1
+        return {"processed": 50, "added": 0, "errors": 0, "remaining": 0,
+                "total": 1, "done": True, "cursor": str(dev / "a.txt")}
+
+    marker = inbox_ingest._inbox_marker(inbox)
+    marker_file = tmp_path / "drained-marker.txt"
+    marker_file.write_text(f"{marker[0]}:{marker[1]}", encoding="utf-8")
+
+    monkeypatch.setattr(inbox_ingest, "process_batch", _pb)
+    monkeypatch.setattr(inbox_ingest, "_set_status", lambda *_a, **_k: None)
+    monkeypatch.setenv("JARVIS_INBOX_CYCLE", "0.02")
+    monkeypatch.setenv("JARVIS_INBOX_IDLE", "0.03")
+    monkeypatch.setenv("JARVIS_INBOX_MARKER_FILE", str(marker_file))
+    monkeypatch.setenv("JARVIS_INBOX", str(inbox))
+
+    inbox_ingest.start_background_ingester()
+
+    # with the persisted marker matching, it should idle WITHOUT any process_batch
+    time.sleep(0.4)
+    assert calls["n"] == 0  # no re-drain on restart when inbox unchanged
+
+
 def test_loop_idles_without_rescan_when_inbox_unchanged(tmp_path, monkeypatch):
     """Regression for Round 9 'idle optimization': a drained, unchanged inbox
     must NOT re-run process_batch every cycle (the cheap marker fast-path skips
