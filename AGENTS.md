@@ -9,16 +9,25 @@ You are Cline working on the **Jarvis** project (repo root = this directory).
 
 ## ⚡ RESUME / START HERE (a fresh session must read these first)
 If this is a new/continued session, reconstruct context from these, in order:
+0. **`docs/RESUME.md`** — self-contained pack: topology, config/secrets *locations*, how to
+   **query jarvis memory** (`python -m jarvis.cli search "<topic>" --json`), backup/restore
+   + age-key runbook, and current session state. Read this first on any machine.
 1. **`docs/STATUS.md`** — the canonical snapshot: topology, what's deployed+where, branches,
    services, known issues, and the concrete **next actions**.
 2. **`logs/round8-handoff.md`** (newest) then `logs/round7-handoff.md` — session narratives (what
    was done + decisions).
-3. **`docs/runtime-audit.md`** — verified "what runs where" on the server (incl. the inbox
-   ingester needs-restart note and the triggers/digests gap).
+3. **`docs/runtime-audit.md`** — verified "what runs where" on the server.
 4. **`docs/deployment-lightspeed.md`** — the Lightspeed server runbook (paths, restart, reverse).
 5. **`docs/topology.md`** — the agreed architecture (FULL-THIN: Lightspeed = brain, Mac = thin client).
 6. `docs/system-diagram.md` / `docs/architecture.md` — overall layout.
 7. `UPGRADES.md` — feature history / `[planned]` vs `[done]`.
+
+### Read the agent's memory (the jarvis brain)
+Jarvis's own memories ARE the long-term context. Query them (see docs/RESUME.md):
+- Box (local): `python -m jarvis.cli search "<topic>" --json`
+- Mac (client): `.venv/bin/python -m jarvis.cli search "<topic>" --json`
+Use `memories -n 30` / `timeline --days 7` for recent activity. Do this before proposing
+anything that depends on what Jarvis knows.
 
 To resume after a reboot (context was reset): read those files, check live state
 (`git status`, `launchctl list | grep jarvis`, `curl <server>/api/health` + `/api/health/deep`), then continue.
@@ -26,8 +35,10 @@ To resume after a reboot (context was reset): read those files, check live state
 ## Current architecture (top level) — cutover DONE (Round 7)
 - **Lightspeed (Dell G7, 16 GB, Tailscale 100.102.0.99) = single source of truth + single writer.**
   Runs `jarvis server` on `:8766` (branch `bot`) via scheduled task `JarvisServer`;
-  canonical store at `C:\Users\despo\jarvis\data\` (3,950 memories); Ollama local (`OLLAMA_HOST=127.0.0.1`).
-  See `docs/deployment-lightspeed.md`.
+  canonical store at `C:\Users\despo\jarvis\data\` (~4,120 memories); Ollama local (`OLLAMA_HOST=127.0.0.1`).
+  Env via `setx`: `JARVIS_TOKEN`, `JARVIS_TRIGGERS=1` (digests on), `OLLAMA_*`.
+  See `docs/deployment-lightspeed.md`. `AGENTS.md` + `docs/RESUME.md` below are read by
+  `cline` on Lightspeed too — so "resume the jarvis project" there has full context + memory.
 - **Mac = thin client (cut over).** CLI read/write the server over Tailscale via `jarvis/cache.py`
   (disposable outbox + rolling tail). Mac-local daemon/dashboard/watcher/sync are **retired** (plists in
   `~/jarvis/rollback-launchagents-*/`); the local `~/jarvis/data` store is kept only as a rollback copy.
