@@ -667,3 +667,48 @@ def test_is_recall_detects_memory_questions():
     assert _is_recall_question("hello sir how are you") is False
     assert _is_recall_question("thanks!") is False
 
+
+def test_chat_remote_routes_turns_through_box(monkeypatch):
+    """Thin-client `chat` must route every turn to the box (the single brain) and
+    must NOT open a local Store — otherwise chat is memory-less in client mode,
+    contradicting ask/digest which both go through the box."""
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    calls = []
+
+    def fake_chat(message, session_id=None, max_steps=8, model=None):
+        calls.append({"message": message, "session_id": session_id,
+                      "max_steps": max_steps, "model": model})
+        return {"answer": f"box reply to {message!r}",
+                "session_id": "box-sess-1",
+                "tool_log": [{"tool": "search", "args": {"q": "x"}}]}
+
+    store_calls = []
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.remote.chat", fake_chat)
+    monkeypatch.setattr(
+        "jarvis.cli.Store",
+        lambda *a, **k: (store_calls.append(1), MagicMock())[1],
+    )
+
+    # Two turns: the box creates the session on the first, and we thread the
+    # returned id into the second turn.
+    result = CliRunner().invoke(cli, ["chat", "--verbose"],
+                                input="hello\nagain\n/quit\n")
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 2
+    assert calls[0]["message"] == "hello"
+    assert calls[0]["session_id"] is None  # box creates session on first turn
+    assert calls[1]["message"] == "again"
+    assert calls[1]["session_id"] == "box-sess-1"  # threaded from box response
+    assert "jarvis: box reply to 'hello'" in result.output
+    assert "jarvis: box reply to 'again'" in result.output
+    assert "[tools: 1 calls]" in result.output
+    assert "search" in result.output
+    # Remote chat must never open a local store (that would make it memory-less).
+    assert store_calls == []
+    assert "Session saved on the box. Goodbye." in result.output
+

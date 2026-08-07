@@ -725,6 +725,56 @@ def backfill(batch, limit, dry_run):
     click.echo(f"Aggregate manifest {aggregate[:16]}… is the authoritative hash of what was sent.")
 
 
+def _chat_remote(model, verbose, is_new, resume, max_steps):
+    """Thin-client chat loop: every turn is routed to the box (the single brain).
+
+    The box owns the canonical session store, so here we never open a local
+    SessionDB/Store — that is what makes ``chat`` memory-less in client mode.
+    Session threading is carried by the box: the first turn (no session_id) lets
+    the box create a session and we thread the returned id on follow-ups.
+    """
+    from jarvis import remote
+
+    session_id = resume if (resume and not is_new) else None
+    if resume and not is_new:
+        click.echo(f"Resuming session {resume}")
+    else:
+        click.echo("Starting a new session on the box.")
+
+    click.echo("Commands: /quit  /clear  /sources")
+    try:
+        while True:
+            user_input = click.prompt("you")
+            if user_input.strip().lower() in ("/quit", "/exit", "/q"):
+                click.echo("Session saved on the box. Goodbye.")
+                break
+            if user_input.strip().lower() == "/clear":
+                session_id = None
+                click.echo("Session cleared (new session on next turn).")
+                continue
+            if user_input.strip().lower() == "/sources":
+                msgs = remote.session_messages(session_id).get("messages", []) if session_id else []
+                tool_msgs = [m for m in msgs if m.get("role") == "system"
+                             or ("tool" in (m.get("tool_calls") or "{}"))]
+                click.echo(f"Last {len(tool_msgs)} tool interactions:")
+                for m in tool_msgs[-10:]:
+                    click.echo(f"  {m['role']}: {json.dumps(m.get('tool_calls') or '{}')[:100]}")
+                continue
+
+            resp = remote.chat(user_input, session_id=session_id,
+                               max_steps=max_steps, model=model)
+            answer = resp.get("answer") or ""
+            session_id = resp.get("session_id") or session_id
+            tool_log = resp.get("tool_log") or []
+            click.echo(f"jarvis: {answer}")
+            if verbose and tool_log:
+                click.echo(f"  [tools: {len(tool_log)} calls]")
+                for entry in tool_log:
+                    click.echo(f"    → {entry['tool']}({json.dumps(entry['args'])[:80]})")
+    except click.Abort:
+        click.echo("\nGoodbye.")
+
+
 @cli.command()
 @click.option("--model", default=lambda: os.environ.get("JARVIS_CHAT_MODEL"), help="Chat model override (defaults to JARVIS_CHAT_MODEL env, then agent fallback list)")
 @click.option("--verbose", is_flag=True, help="Show tool calls and sources")
@@ -733,6 +783,12 @@ def backfill(batch, limit, dry_run):
 @click.option("--max-steps", default=8, type=int, help="Max agent steps per turn")
 def chat(model, verbose, is_new, resume, max_steps):
     """Chat with your Jarvis agent. Supports multi-turn dialogue with tool use."""
+    from jarvis import remote as _remote_chat
+
+    if _remote_chat.is_remote():
+        _chat_remote(model, verbose, is_new, resume, max_steps)
+        return
+
     session_db = SessionDB()
     store = Store()
 
