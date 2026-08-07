@@ -98,7 +98,6 @@ def test_save_session_requires_three_turns(store):
 # ── build_digest ────────────────────────────────────────────────────────────
 
 def test_build_digest_empty_window(store):
-    from datetime import datetime, timezone
     b = _brain(store)
     # No memories in the window (store is empty) and no tasks -> static message
     with patch("jarvis.task_queue.TaskQueue"):
@@ -135,6 +134,71 @@ def test_build_digest_static_fallback(store, monkeypatch):
     with patch("jarvis.task_queue.TaskQueue"):
         text = b.build_digest(kind="end_of_day", hours=24)
     assert "push queue" in text
+
+
+def test_digest_model_env_resolution(monkeypatch, caplog):
+    from jarvis.brain import DEFAULT_CHAT_MODEL, _digest_model
+    monkeypatch.delenv("JARVIS_DIGEST_MODEL", raising=False)
+    assert _digest_model() == DEFAULT_CHAT_MODEL
+    monkeypatch.setenv("JARVIS_DIGEST_MODEL", "qwen2.5:3b")
+    assert _digest_model() == "qwen2.5:3b"
+
+
+def test_digest_model_warns_on_large_tier(monkeypatch):
+    from jarvis.brain import _digest_model
+    monkeypatch.setenv("JARVIS_DIGEST_MODEL", "qwen2.5:7b-instruct")
+    caught = []
+
+    class _L:
+        def warning(self, *a, **k): caught.append(a)
+
+    monkeypatch.setattr("jarvis.brain.logger", _L())
+    _digest_model()
+    assert caught and "large tier" in caught[0][0]
+
+
+def test_build_digest_error_marker_falls_back(store, monkeypatch):
+    """An '[ollama ...]' error string must NOT be returned as the digest — it
+    must fall through to the static fallback (Round 9 digest RAM guard)."""
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b = _brain(store)
+        b.remember("Notes on the fallback behavior.", source="manual")
+
+    monkeypatch.setattr(
+        "jarvis.brain._ollama_chat",
+        lambda model, messages: {"message": {"content": "[ollama connection error: down]"}},
+    )
+    with patch("jarvis.task_queue.TaskQueue"):
+        text = b.build_digest(kind="morning_brief", hours=24)
+    assert "fallback behavior" in text
+    assert "[ollama" not in text
+
+
+def test_build_digest_small_model_then_chat_fallback(store, monkeypatch):
+    """With JARVIS_DIGEST_MODEL set, if the small model errors the digest must
+    fall back to the chat model before static (never silently digest the error)."""
+    calls = {"n": 0}
+    _chat_args: list[str] = []
+
+    def _chat(model, messages):
+        calls["n"] += 1
+        _chat_args.append(model)
+        if calls["n"] == 1:  # small model fails
+            return {"message": {"content": "[ollama connection error]"}}
+        return {"message": {"content": f"digest via {model}"}}  # chat model wins
+
+    monkeypatch.setenv("JARVIS_DIGEST_MODEL", "qwen2.5:3b")
+    monkeypatch.setattr("jarvis.brain._ollama_chat", _chat)
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b = _brain(store)
+        text = b.build_digest(kind="morning_brief", hours=24)
+    assert calls["n"] == 2
+    # first call used the small override, then fell back to the chat model
+    assert _chat_args[0] == "qwen2.5:3b"
+    assert _chat_args[1] == "test-model"
+    assert "digest via" in text
 
 def test_query_injects_related_entities(store):
     fid = "mem-q1"

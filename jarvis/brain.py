@@ -1,14 +1,34 @@
 import json
-import urllib.request
+import logging
+import os
 import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
-from jarvis.store import fingerprint
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 DEFAULT_CHAT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 _OLLAMA_HOST = "127.0.0.1"
 _OLLAMA_PORT = 11434
+
+logger = logging.getLogger("jarvis.brain")
+
+
+def _digest_model() -> str:
+    """Model used for morning/end-of-day digests.
+
+    Configurable via ``JARVIS_DIGEST_MODEL`` (defaults to the chat model). The
+    box is RAM-tight; for digests prefer a SMALL model (e.g. JARVIS_DIGEST_MODEL
+    =qwen2.5:3b) and never keep a large one resident alongside a running 7B.
+    """
+    digest_model = os.environ.get("JARVIS_DIGEST_MODEL", "").strip() or DEFAULT_CHAT_MODEL
+    if any(tok in digest_model.lower() for tok in ("7b", "8b", "13b", "70b")):
+        logger.warning(
+            "digest model '%s' is a large tier — set JARVIS_DIGEST_MODEL to a "
+            "small model for RAM discipline on the box", digest_model)
+    return digest_model
 
 
 def _ollama_chat(model: str, messages: list[dict]) -> dict:
@@ -144,16 +164,25 @@ class Brain:
             + "\n".join(f"- {t}" for t in task_titles[:5])
         )
 
-        try:
-            resp = _ollama_chat(self.model, messages=[
+        def _try(model: str) -> str:
+            resp = _ollama_chat(model, messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_text},
             ])
             text = (resp.get("message") or {}).get("content", "").strip()
-            if text:
+            # An "[ollama ...]" content means the call failed (e.g. model absent
+            # / ollama down) — treat as no answer rather than digesting the error.
+            if text and not text.startswith("[ollama"):
                 return text
-        except Exception:            # noqa: BLE001 - fall back to static
-            pass
+            return ""
+
+        digest_model = _digest_model()
+        text = _try(digest_model)
+        if not text and digest_model != self.model:
+            # Fall back to the chat model in case the small override is absent.
+            text = _try(self.model)
+        if text:
+            return text
 
         lines = [f"- [{m['source']}] {m['content'][:120]}" for m in mems[:8]]
         return "\n".join(lines) or "No new memories in this window."
