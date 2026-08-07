@@ -124,10 +124,13 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 24 (e9fbe7f):** inbox ingester now tracks per-batch `errors`
   (process_batch + `/api/ingest/status` + ingest_status) so a failing file isn't
   invisible; + error-accounting test. Suite 375 passed, 1 skipped.
-- [x] **Round 25 (pending commit):** corrected the "box is at HEAD" language everywhere
+- [x] **Round 25 (08f09a1):** corrected the "box is at HEAD" language everywhere
   (the box's git is actually at `966d7b2`, ~20 commits behind — it MUST `git pull`
   before restart); added `flush` CLI tests (success/offline/not-client). Also verified
   box HEAD = `966d7b2`. Suite 378 passed, 1 skipped.
+- [x] **Round 26 (pending commit):** rewrote `README.md` for the FULL-THIN topology
+  (box brain, Mac thin client), current thin-client + server commands, resume points,
+  and tests/lint + security notes.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the
