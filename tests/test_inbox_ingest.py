@@ -67,6 +67,33 @@ def test_ingest_idempotent_on_content(tmp_path):
         s.close()
 
 
+def test_ingest_id_stable_across_runs_from_sidecar_ts(tmp_path):
+    """Regression for Round 11: the memory id must be derived from the record's
+    own sidecar timestamp, NOT a fresh _iso() per run. Re-processing the same
+    inbox file (simulating a server re-run) must find the existing id and not
+    create a duplicate memory row."""
+    from unittest.mock import patch
+
+    from jarvis import inbox_ingest
+
+    txt = _make_inbox(tmp_path)
+    s = _store(tmp_path)
+    try:
+        with patch("jarvis.embed.get_embedding", lambda *a, **k: [0.1] * 8):
+            first = inbox_ingest.ingest_inbox_file(s, txt)
+            ids_after_first = [r[0] for r in s.conn.execute(
+                "SELECT id FROM memories ORDER BY id").fetchall()]
+            second = inbox_ingest.ingest_inbox_file(s, txt)
+            ids_after_second = [r[0] for r in s.conn.execute(
+                "SELECT id FROM memories ORDER BY id").fetchall()]
+        assert first >= 1
+        assert second == 0  # no duplicate added on the re-run
+        assert ids_after_first == ids_after_second  # id (and chunk ids) stable
+        assert len(ids_after_first) == first  # one row per chunk, no dupes
+    finally:
+        s.close()
+
+
 def test_blank_or_missing_ignored(tmp_path):
     d = tmp_path / "in" / "d"
     d.mkdir(parents=True, exist_ok=True)

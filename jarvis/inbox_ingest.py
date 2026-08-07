@@ -95,7 +95,12 @@ def ingest_inbox_file(store: Store, path: Path) -> int:
     if device_id not in tags:
         tags.append(device_id)
 
-    fid = fingerprint("device", source_id, text, _iso())
+    # Derive the memory id from the *resolved* sidecar timestamp (ts), not a
+    # fresh _iso() per run: _iso() changed every call, so store.exists(fid)
+    # never matched on a re-run and the id was nondeterministic. Anchoring on
+    # the record's own ts keeps the id (and the derived chunk ids) stable
+    # across runs for the same record, so marker/dedup and the cursor still work.
+    fid = fingerprint("device", source_id, text, ts)
     if store.exists(fid):
         return 0
 
