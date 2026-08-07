@@ -301,18 +301,27 @@ class Store:
         docs = results.get("documents", [[]])[0]
         ids = results.get("ids", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
+        distances = results.get("distances", [[]])[0]
+        # Keep each result paired with its vector distance so re-ranking can
+        # preserve Chroma's similarity order *within* a tier instead of
+        # discarding it. Smaller distance == more similar.
         rows = []
-        for doc_id, doc, meta in zip(ids, docs, metadatas):
+        for rank, (doc_id, doc, meta) in enumerate(zip(ids, docs, metadatas)):
+            dist = distances[rank] if rank < len(distances) else 0.0
             if source_filter:
                 row = self.conn.execute("SELECT * FROM memories WHERE id = ? AND superseded = 0 AND source = ?", (doc_id, source_filter)).fetchone()
             else:
                 row = self.conn.execute("SELECT * FROM memories WHERE id = ? AND superseded = 0", (doc_id,)).fetchone()
             if row:
-                rows.append(dict(row))
+                rows.append((dist, dict(row)))
         if re_rank and rows:
-            rows.sort(key=lambda r: r.get("weight", 0.3), reverse=True)
+            # Re-rank by tier weight (descending) then vector similarity
+            # (ascending distance == descending similarity). The stable sort
+            # keeps Chroma's returned order as the final tie-break, so within a
+            # tier the exact memory the user asked about is not dropped.
+            rows.sort(key=lambda pair: (-(pair[1].get("weight", 0.3)), pair[0]))
             rows = rows[:n_results]
-        return rows
+        return [row for _, row in rows]
 
     def get_by_tier(self, tier: str, limit: int = 100):
         cur = self.conn.execute("SELECT * FROM memories WHERE tier = ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?", (tier, limit))

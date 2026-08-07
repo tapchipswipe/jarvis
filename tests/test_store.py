@@ -155,6 +155,55 @@ def test_search_with_source_filter(store):
     assert results[0]["source"] == "email"
 
 
+def test_search_re_rank_keeps_similarity_within_tier(store):
+    """Re-rank must order by (tier weight desc, similarity desc) so that within
+    an equal-weight tier the most relevant (nearest) memory surfaces first
+    instead of being dropped by an arbitrary order."""
+    emb = [0.1] * 3
+    arc_fid = fingerprint("s", "arc", "the arc memory", "2025-06-01")
+    raw1_fid = fingerprint("s", "raw1", "close raw memory", "2025-06-01")
+    raw2_fid = fingerprint("s", "raw2", "distant raw memory", "2025-06-01")
+    store.add(arc_fid, "s", "arc", "2025-06-01T10:00:00", "the arc memory", [], {}, emb, tier="arc")
+    store.add(raw1_fid, "s", "raw1", "2025-06-01T10:00:00", "close raw memory", [], {}, emb, tier="raw")
+    store.add(raw2_fid, "s", "raw2", "2025-06-01T10:00:00", "distant raw memory", [], {}, emb, tier="raw")
+    # Chroma returns results in vector order (most similar first) along with
+    # distances. arc carries the highest tier weight; among the two raw
+    # memories raw1 is closer (more similar) than raw2.
+    store.collection.query.return_value = {
+        "documents": [["the arc memory", "close raw memory", "distant raw memory"]],
+        "ids": [[arc_fid, raw1_fid, raw2_fid]],
+        "metadatas": [[{"source": "s"}, {"source": "s"}, {"source": "s"}]],
+        "distances": [[0.05, 0.10, 0.30]],
+    }
+    results = store.search(emb, n_results=3)
+    ids = [r["id"] for r in results]
+    # Highest tier weight surfaces first.
+    assert ids[0] == arc_fid
+    # Within the raw tier (equal weight), similarity order is preserved:
+    # the closer memory must outrank the distant one, not an arbitrary order.
+    assert ids[1] == raw1_fid
+    assert ids[2] == raw2_fid
+
+
+def test_search_re_rank_tiebreak_falls_back_to_vector_order(store):
+    """When distances are unavailable, re-rank still keeps Chroma's returned
+    order as the tie-break for equal-weight rows (stable sort)."""
+    emb = [0.1] * 3
+    raw_a = fingerprint("s", "a", "memory a", "2025-06-01")
+    raw_b = fingerprint("s", "b", "memory b", "2025-06-01")
+    store.add(raw_a, "s", "a", "2025-06-01T10:00:00", "memory a", [], {}, emb, tier="raw")
+    store.add(raw_b, "s", "b", "2025-06-01T10:00:00", "memory b", [], {}, emb, tier="raw")
+    # No "distances" key in the query result (older mocks / some backends).
+    store.collection.query.return_value = {
+        "documents": [["memory a", "memory b"]],
+        "ids": [[raw_a, raw_b]],
+        "metadatas": [[{"source": "s"}, {"source": "s"}]],
+    }
+    results = store.search(emb, n_results=2)
+    ids = [r["id"] for r in results]
+    assert ids == [raw_a, raw_b]
+
+
 # ── Tier / route queries ──────────────────────────────────────────────────────
 
 def test_get_by_tier(store):
