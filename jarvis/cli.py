@@ -1120,17 +1120,36 @@ def stats():
 @cli.command()
 @click.option("--port", default=8766, help="Port to run the Jarvis server on")
 @click.option("--daemon-url", default="http://127.0.0.1:8765", help="Daemon base URL")
+@click.option("--tls-cert", default=None, help="PEM cert path (serve HTTPS; else JARVIS_TLS_CERT)")
+@click.option("--tls-key", default=None, help="PEM key path (else JARVIS_TLS_KEY)")
+@click.option("--gen-cert", "gen_cert", is_flag=True,
+              help="Generate a self-signed cert+key (data dir) and print its fingerprint")
 @click.option("--check", "do_check", is_flag=True, help="Validate server setup without starting it")
-def server(port, daemon_url, do_check):
+def server(port, daemon_url, tls_cert, tls_key, gen_cert, do_check):
     """Start the Jarvis server (FastAPI + Mayor) — the thin-client back end.
 
     Runs the same app as the dashboard but is the canonical store + API for
     the thin-client Mac (mode=client). Set JARVIS_TOKEN to require a token
-    (loopback is always allowed).
+    (loopback is always allowed). Serve HTTPS by passing --tls-cert/--tls-key
+    or setting JARVIS_TLS_CERT/JARVIS_TLS_KEY.
     """
-    from jarvis import server
+    from jarvis import server as _srv
+
+    if gen_cert:
+        from jarvis.paths import data_dir
+        from jarvis.tls import cert_fingerprint, ensure_self_signed
+        cert = Path(data_dir()) / "server-cert.pem"
+        key = Path(data_dir()) / "server-key.pem"
+        ensure_self_signed(cert, key)
+        fp = cert_fingerprint(cert)
+        click.echo(f"cert: {cert}")
+        click.echo(f"key : {key}")
+        click.echo(f"pin : JARVIS_TLS_FINGERPRINT={fp}")
+        click.echo("export JARVIS_TLS_CERT=... JARVIS_TLS_KEY=... on the server")
+        return
+
     if do_check:
-        ok = server.app is not None
+        ok = _srv.app is not None
         from jarvis import dashboard as _dash
         store = _dash._get_store()
         try:
@@ -1143,7 +1162,8 @@ def server(port, daemon_url, do_check):
         if not ok:
             raise click.ClickException("server app failed to load")
         return
-    server.run(port=port, daemon_url=daemon_url)
+    _srv.run(port=port, daemon_url=daemon_url,
+             ssl_cert=tls_cert, ssl_key=tls_key)
 
 
 @cli.command()

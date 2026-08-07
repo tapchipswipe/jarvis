@@ -251,7 +251,19 @@ def test_server_run_delegates_to_run_dashboard(monkeypatch):
     from jarvis import dashboard, server
     calls = {}
     monkeypatch.setattr(dashboard, "run_dashboard",
-                        lambda port, daemon_url: calls.update(port=port, daemon_url=daemon_url))
+                        lambda **kw: calls.update(kw))
     server.run(port=9876, daemon_url="http://daemon:8765")
-    assert calls == {"port": 9876, "daemon_url": "http://daemon:8765"}
+    assert calls == {"port": 9876, "daemon_url": "http://daemon:8765",
+                     "ssl_cert": None, "ssl_key": None}
+
+
+def test_server_run_forwards_tls_args(monkeypatch):
+    from jarvis import dashboard, server
+    calls = {}
+    monkeypatch.setattr(dashboard, "run_dashboard",
+                        lambda **kw: calls.update(kw))
+    server.run(port=9876, daemon_url="http://daemon:8765",
+               ssl_cert="/tmp/c.pem", ssl_key="/tmp/k.pem")
+    assert calls["ssl_cert"] == "/tmp/c.pem"
+    assert calls["ssl_key"] == "/tmp/k.pem"
 

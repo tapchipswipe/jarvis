@@ -17,6 +17,8 @@ DEFAULT_PORT = dashboard.DEFAULT_PORT
 DEFAULT_DAEMON_URL = dashboard.DEFAULT_DAEMON_URL
 
 
-def run(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL) -> None:
+def run(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL,
+        ssl_cert: str | None = None, ssl_key: str | None = None) -> None:
     """Start the canonical Jarvis server (FastAPI app + Mayor background loop)."""
-    dashboard.run_dashboard(port=port, daemon_url=daemon_url)
+    dashboard.run_dashboard(port=port, daemon_url=daemon_url,
+                           ssl_cert=ssl_cert, ssl_key=ssl_key)

@@ -58,6 +58,11 @@ htmlcov/
 service/*.plist
 Library/LaunchAgents/*.plist
 
+# TLS secrets (never commit certs/keys)
+*.pem
+*.crt
+*.key
+
 # Backups
 backups/
 rollback-launchagents-*/

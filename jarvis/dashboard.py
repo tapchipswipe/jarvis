@@ -24,6 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from jarvis import tls
 from jarvis.store import Store
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -938,8 +939,14 @@ def api_ingest_status(request: Request):
 _TRIGGER_LOOP = None  # keep a strong ref so the daemon thread isn't GC'd
 
 
-def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL):
-    """Start the dashboard server with Mayor + (opt-in) trigger background loops."""
+def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL,
+                  ssl_cert: str | None = None, ssl_key: str | None = None):
+    """Start the dashboard server with Mayor + (opt-in) trigger background loops.
+
+    TLS is config-gated: set the ``ssl_cert``/``ssl_key`` args or the
+    ``JARVIS_TLS_CERT``/``JARVIS_TLS_KEY`` env vars to serve HTTPS (default:
+    plain HTTP, unchanged).
+    """
     import uvicorn
 
     from jarvis.inbox_ingest import start_background_ingester
@@ -954,11 +961,28 @@ def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL
     # JARVIS_TRIGGERS=1 (default OFF; RAM/model-tier discipline).
     _TRIGGER_LOOP = start_trigger_loop()
 
-    print(f"Starting Jarvis Dashboard on http://0.0.0.0:{port}")
+    # Resolve TLS: explicit args win over the environment (both OFF by default).
+    cert = ssl_cert
+    key = ssl_key
+    if not (cert and key):
+        env_cert, env_key = tls.configured_cert_key()
+        cert = cert or env_cert
+        key = key or env_key
+
+    uvicorn_kwargs = {"host": "0.0.0.0", "port": port, "log_level": "info"}
+    if cert and key:
+        uvicorn_kwargs["ssl_certfile"] = cert
+        uvicorn_kwargs["ssl_keyfile"] = key
+        scheme = "https"
+        print(f"TLS enabled (cert={cert}, key={key})")
+    else:
+        scheme = "http"
+
+    print(f"Starting Jarvis Dashboard on {scheme}://0.0.0.0:{port}")
     print(f"Daemon URL: {daemon_url}")
     print(f"Submit ideas: POST /api/idea")
     print(f"Task queue:   GET  /api/tasks")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(app, **uvicorn_kwargs)
 
 
 if __name__ == "__main__":

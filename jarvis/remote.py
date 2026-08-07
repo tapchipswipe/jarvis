@@ -2,14 +2,26 @@
 
 Talks to the Lightspeed server API (same app as the dashboard). Used when
 JARVIS_MODE=client. Stdlib only.
+
+HTTPS: when JARVIS_REMOTE is an ``https://`` URL the client uses a custom
+loader that (a) skips CA verification (self-signed cert) but (b) *pins* the
+server cert's SHA256 fingerprint when JARVIS_TLS_FINGERPRINT (or the file
+``~/.config/jarvis/server-fingerprint``) is set — giving real MitM resistance
+without a CA. Without a pinned fingerprint an https URL still encrypts the
+token in transit but is not pinned.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import http.client
 import json
 import os
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 
 def server_url() -> str:
@@ -32,11 +44,69 @@ def _headers() -> dict:
     return h
 
 
+# ── HTTPS with optional cert-fingerprint pinning ──────────────────────────────
+
+def _pinned_fingerprint() -> str | None:
+    """Prefer the env var, then the ~/.config/jarvis/server-fingerprint file."""
+    fp = os.environ.get("JARVIS_TLS_FINGERPRINT", "").strip().lower()
+    if fp:
+        return fp
+    try:
+        f = Path.home() / ".config" / "jarvis" / "server-fingerprint"
+        if f.exists():
+            fp = (f.read_text(encoding="utf-8") or "").strip().lower()
+            return fp or None
+    except (OSError, UnicodeDecodeError):
+        pass
+    return None
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPSConnection that records and, when pinned, verifies the peer cert."""
+
+    def connect(self):
+        super().connect()
+        asked = _pinned_fingerprint()
+        if not asked:
+            return
+        try:
+            der = self.sock.getpeercert(binary_form=True)
+            actual = hashlib.sha256(der).hexdigest()
+        except Exception:  # noqa: BLE001 - missing cert => treat as mismatch
+            self.sock.close()
+            raise ssl.SSLError("unable to read peer certificate for pinning")
+        if not hmac.compare_digest(actual, asked):
+            self.sock.close()
+            raise ssl.SSLError(
+                f"server cert fingerprint mismatch (got {actual}, expected {asked})")
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        ctx = ssl.create_default_context()
+        # Self-signed, so we can't chain to a CA; pinning is the trust anchor.
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return self.do_open(_PinnedHTTPSConnection, req, context=ctx)
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    if "__opener" not in _opener.__dict__:
+        _opener.__opener = urllib.request.build_opener(_PinnedHTTPSHandler())
+    return _opener.__opener
+
+
+def _open(req: urllib.request.Request, timeout: int):
+    if server_url().startswith("https://"):
+        return _opener().open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def _request(method: str, path: str, payload=None, timeout: int = 60):
     url = server_url() + path
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, headers=_headers(), method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _open(req, timeout) as resp:
         return json.loads(resp.read().decode("utf-8") or "{}")
 
 
