@@ -92,7 +92,9 @@ def _push_entry(store: Store, entry: dict, device_id: str) -> bool:
     """Per-file SCP push of one queue entry."""
     content = entry["content"]
     sidecar = json.loads(entry["sidecar"] or "{}")
-    cid = hashlib.sha256(content.encode()).hexdigest()[:16]
+    # Full 64-hex digest (not a 16-hex prefix) so distinct memories never
+    # collide on the same per-file inbox filename.
+    cid = hashlib.sha256(content.encode()).hexdigest()
     base_name = f"{cid}_{sidecar.get('tier', 'raw')}_{sidecar.get('source', 'device')}"
     txt_name = f"{base_name}.txt"
     json_name = f"{base_name}.json"

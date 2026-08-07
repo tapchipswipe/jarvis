@@ -105,7 +105,10 @@ def stage_bundle(entries: list[dict], device_id: str | None = None) -> Path:
                 sidecar = json.loads(sidecar)
             except (ValueError, TypeError):
                 sidecar = {}
-        cid = hashlib.sha256(content.encode()).hexdigest()[:16]
+        # Full 64-hex digest as the bundle id so two distinct memories can never
+        # share a filename (a 16-hex prefix would be a latent collision that
+        # could overwrite a peer file and drop a memory).
+        cid = hashlib.sha256(content.encode()).hexdigest()
         base = f"{cid}_{sidecar.get('tier', 'raw')}_{sidecar.get('source', 'device')}"
         (devdir / f"{base}.txt").write_text(content, encoding="utf-8")
         (devdir / f"{base}.json").write_text(

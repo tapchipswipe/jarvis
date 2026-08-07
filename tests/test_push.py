@@ -136,6 +136,49 @@ def test_stage_bundle_creates_txt_json_and_tar(tmp_path):
         bundle.unlink(missing_ok=True)
 
 
+def test_stage_bundle_full_hash_avoids_16hex_collision(monkeypatch):
+    """Two distinct contents sharing a 16-hex cid prefix must not collide.
+
+    Under the old `[:16]` truncation, two contents whose digests share the
+    first 16 hex chars produced the same on-disk filename, so the second
+    entry silently overwrote the first (a dropped memory in the bundle).
+    With the full digest as the cid, they must produce two distinct files.
+    """
+    from jarvis.sync import push as push_mod
+
+    def _fake_sha256(data=b""):
+        class _F:
+            def __init__(self, data=b""):
+                self._data = data
+
+            def hexdigest(self):
+                s = self._data.decode()
+                # Two contents share the first 16 hex chars ("a"*16) but
+                # differ in the 17th, mirroring a real 16-hex-prefix collision.
+                tail = "1" if s == "content-one" else "2"
+                return "a" * 16 + tail + "0" * 47
+
+        return _F(data)
+
+    monkeypatch.setattr(push_mod.hashlib, "sha256", _fake_sha256)
+    entries = [
+        {"content": "content-one", "sidecar": {"tier": "raw", "source": "s"}},
+        {"content": "content-two", "sidecar": {"tier": "raw", "source": "s"}},
+    ]
+    bundle = stage_bundle(entries, device_id="dev1")
+    try:
+        with tarfile.open(bundle, "r:gz") as tf:
+            names = tf.getnames()
+        txts = sorted(n for n in names if n.endswith(".txt"))
+        # Both distinct contents present -> two distinct txt files (no overwrite).
+        assert len(txts) == 2
+        # The full digest (not a 16-char prefix) is used in the filename.
+        assert any("a" * 16 + "1" in n for n in txts)
+        assert any("a" * 16 + "2" in n for n in txts)
+    finally:
+        bundle.unlink(missing_ok=True)
+
+
 def test_push_bundle_success():
     with patch("jarvis.sync.push.scp_put") as m_scp, \
          patch("jarvis.sync.push.ssh_run") as m_ssh:
