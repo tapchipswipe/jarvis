@@ -712,3 +712,96 @@ def test_chat_remote_routes_turns_through_box(monkeypatch):
     assert store_calls == []
     assert "Session saved on the box. Goodbye." in result.output
 
+
+def test_chat_sources_lists_tool_messages_local(monkeypatch):
+    """Regression: ``/sources`` in local ``chat`` must list messages whose
+    ``role == 'tool'`` (the stored tool-result rows).
+
+    The old filter ``"tool" in (m.get("tool_calls") or "{}")`` was always False
+    because ``tool_calls`` is a *list of dicts* on the assistant row, so only
+    ``role == 'system'`` rows ever matched and tool interactions never showed.
+    """
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    messages = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "let me check",
+         "tool_calls": [{"name": "remember", "arguments": {}}]},
+        {"role": "tool", "content": "{\"ok\": true}"},
+        {"role": "system", "content": "big prompt"},
+    ]
+
+    class FakeSessionDB:
+        def __init__(self):
+            self.sid = "sess-1"
+
+        def get_session(self, sid):
+            return {"id": sid, "title": "t"}
+
+        def create_session(self, title="", tier="raw"):
+            self.sid = "sess-1"
+            return self.sid
+
+        def get_messages(self, sid, limit=100):
+            return messages
+
+        def append_message(self, *a, **k):
+            pass
+
+        def update_session(self, *a, **k):
+            pass
+
+        def close(self):
+            pass
+
+    fake_store = MagicMock()
+    fake_store.close = MagicMock()
+    monkeypatch.setattr("jarvis.cli.SessionDB", lambda *a, **k: FakeSessionDB())
+    monkeypatch.setattr("jarvis.cli.Store", lambda *a, **k: fake_store)
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
+
+    # Only drive command lines (/sources, /quit); a real prompt turn would hit
+    # the (pre-existing, unrelated) undefined ``run_turn`` in the local chat body.
+    result = CliRunner().invoke(
+        cli, ["chat"], input="My Chat\n/sources\n/quit\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    # Only the single role=='tool' row is counted as a tool interaction.
+    assert "Last 1 tool interactions:" in result.output
+    assert "tool: {\"ok\": true}" in result.output
+    # The system/prompt row must NOT be reported as a tool interaction.
+    assert "  system:" not in result.output
+
+
+def test_chat_sources_lists_tool_messages_remote(monkeypatch):
+    """The thin-client (remote) ``/sources`` path must behave the same way."""
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    messages = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "ok",
+         "tool_calls": [{"name": "remember", "arguments": {}}]},
+        {"role": "tool", "content": "{\"ok\": true}"},
+        {"role": "system", "content": "prompt"},
+    ]
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.remote.session_messages", lambda sid: {"messages": messages})
+    monkeypatch.setattr(
+        "jarvis.remote.chat",
+        lambda *a, **k: {"answer": "hi", "session_id": "sess-1", "tool_log": []},
+    )
+
+    result = CliRunner().invoke(
+        cli, ["chat", "--resume", "sess-1"], input="/sources\n/quit\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Last 1 tool interactions:" in result.output
+    assert "tool: {\"ok\": true}" in result.output
+    assert "  system:" not in result.output
+

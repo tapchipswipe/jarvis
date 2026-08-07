@@ -754,11 +754,13 @@ def _chat_remote(model, verbose, is_new, resume, max_steps):
                 continue
             if user_input.strip().lower() == "/sources":
                 msgs = remote.session_messages(session_id).get("messages", []) if session_id else []
-                tool_msgs = [m for m in msgs if m.get("role") == "system"
-                             or ("tool" in (m.get("tool_calls") or "{}"))]
+                # Tool messages are stored with role == "tool" and content = json.dumps(result).
+                # (tool_calls is a list of dicts on the assistant row, so "tool" in it is never True.)
+                tool_msgs = [m for m in msgs if m.get("role") == "tool"]
                 click.echo(f"Last {len(tool_msgs)} tool interactions:")
                 for m in tool_msgs[-10:]:
-                    click.echo(f"  {m['role']}: {json.dumps(m.get('tool_calls') or '{}')[:100]}")
+                    body = m.get("content") or json.dumps(m.get("tool_calls") or {})
+                    click.echo(f"  tool: {body[:100]}")
                 continue
 
             resp = remote.chat(user_input, session_id=session_id,
@@ -829,11 +831,12 @@ def chat(model, verbose, is_new, resume, max_steps):
                 continue
             if user_input.strip().lower() == "/sources":
                 msgs = session_db.get_messages(session_id, limit=100)
-                tool_msgs = [m for m in msgs if m["role"] == "system" or ("tool" in (m.get("tool_calls") or "{}"))]
+                # Tool messages are stored with role == "tool" and content = json.dumps(result).
+                tool_msgs = [m for m in msgs if m.get("role") == "tool"]
                 click.echo(f"Last {len(tool_msgs)} tool interactions:")
                 for m in tool_msgs[-10:]:
-                    tc = m.get("tool_calls") or "{}"
-                    click.echo(f"  {m['role']}: {json.dumps(tc)[:100]}")
+                    body = m.get("content") or json.dumps(m.get("tool_calls") or {})
+                    click.echo(f"  tool: {body[:100]}")
                 continue
 
             answer, tool_log = run_turn(
