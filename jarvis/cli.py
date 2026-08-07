@@ -834,6 +834,51 @@ def digest(do_now, kind, json_out):
     click.echo(text)
 
 
+def _ask_grounded(question, n_results=8, source=None, model=None, history=None):
+    """Return (answer, memories, entities) for a grounded question.
+
+    Uses the box's /api/query in client mode, else the local Brain.query."""
+    from jarvis import remote as _remote
+
+    if _remote.is_remote():
+        resp = _remote.query(question, n=n_results, source=source, history=history)
+        return ((resp.get("answer") or "").strip(),
+                resp.get("memories") or [], resp.get("entities") or {})
+    store = Store()
+    try:
+        brain = Brain(store, model=model) if model else Brain(store)
+        answer, memories = brain.query(question, n_results=n_results,
+                                       source_filter=source, history=history)
+        entities = {}
+        if memories:
+            links = store.lookup_entities([m.get("id") for m in memories])
+            entities = {mid: [{"name": e["name"], "entity_type": e["entity_type"]}
+                              for e in ents] for mid, ents in links.items()}
+        return answer, memories, entities
+    finally:
+        store.close()
+
+
+def _render_grounded(answer, memories, entities, show_entities=True, session_id=None):
+    """Shared human-readable output for ask/console."""
+    if session_id:
+        click.echo(f"(session {session_id})")
+    click.echo(answer or "(no answer returned)")
+    if memories:
+        click.echo(f"\n-- grounded in {len(memories)} memory(-ies) --")
+        seen = set()
+        for m in memories:
+            key = (m["source"], m["timestamp"])
+            if key in seen:
+                continue
+            seen.add(key)
+            click.echo(f"  [{m['source']}] {m['timestamp']}  {m['content'][:120]}")
+    if show_entities and entities:
+        names = sorted({e["name"] for ents in entities.values() for e in ents})
+        if names:
+            click.echo(f"\n-- related entities: {', '.join(names)}")
+
+
 @cli.command()
 @click.option("--n", "n_results", default=8, type=int, help="Memories to ground on")
 @click.option("--source", default=None, help="Restrict grounding to a source (deep/manual/device/...)")
@@ -875,23 +920,8 @@ def ask(question, n_results, source, model, json_out, session_id, save_qa, show_
                 history = [m for m in sdb.get_messages(sid, limit=20)
                            if m.get("role") in ("user", "assistant") and m.get("content")]
 
-        if _remote.is_remote():
-            resp = _remote.query(question, n=n_results, source=source, history=history)
-            answer = (resp.get("answer") or "").strip()
-            memories = resp.get("memories") or []
-            entities = resp.get("entities") or {}
-        else:
-            store = Store()
-            try:
-                brain = Brain(store, model=model) if model else Brain(store)
-                answer, memories = brain.query(question, n_results=n_results,
-                                               source_filter=source, history=history)
-                if memories:
-                    links = store.lookup_entities([m.get("id") for m in memories])
-                    entities = {mid: [{"name": e["name"], "entity_type": e["entity_type"]}
-                                      for e in ents] for mid, ents in links.items()}
-            finally:
-                store.close()
+        answer, memories, entities = _ask_grounded(
+            question, n_results=n_results, source=source, model=model, history=history)
 
         if sdb:
             if not sid:
@@ -922,25 +952,151 @@ def ask(question, n_results, source, model, json_out, session_id, save_qa, show_
             }))
             return
 
-        if sid:
-            click.echo(f"(session {sid})")
-        click.echo(answer or "(no answer returned)")
-        if memories:
-            click.echo(f"\n-- grounded in {len(memories)} memory(-ies) --")
-            seen = set()
-            for m in memories:
-                key = (m["source"], m["timestamp"])
-                if key in seen:
-                    continue
-                seen.add(key)
-                click.echo(f"  [{m['source']}] {m['timestamp']}  {m['content'][:120]}")
-        if show_entities and entities:
-            names = sorted({e["name"] for ents in entities.values() for e in ents})
-            if names:
-                click.echo(f"\n-- related entities: {', '.join(names)}")
+        _render_grounded(answer, memories, entities,
+                         show_entities=show_entities, session_id=sid)
     finally:
         if sdb:
             sdb.close()
+
+
+@cli.command()
+@click.option("--session", "session_id", default=None,
+              help="Resume an existing console session by ID (else start a new one)")
+@click.option("--no-entities", "show_entities", is_flag=True, default=False,
+              help="Hide related-knowledge-graph entities")
+@click.option("--no-save", "save_qa", is_flag=True, default=False,
+              help="Do not save console Q&A back to memory (default: save)")
+def console(session_id, show_entities, save_qa):
+    """Open an interactive Jarvis terminal — Iron-Man style.
+
+    Type a question and Jarvis answers, grounded on the brain, with a persistent
+    conversational thread (each follow-up sees prior turns). Slash commands:
+
+      /help           list commands
+      /session <id>   switch to another session
+      /clear          start a fresh session
+      /save           write the last Q&A back to memory (tag 'ask')
+      /digest         generate a digest now
+      /status         show box/brain status
+      /quit           exit
+    """
+    from jarvis.sessions import SessionDB
+
+    sdb = SessionDB()
+    sid = session_id or sdb.create_session(title="console")
+
+    click.echo("")
+    click.echo("  ╔══════════════════════════════════════════════════╗")
+    click.echo("  ║   J A R V I S   —   your personal Jarvis          ║")
+    click.echo("  ╚══════════════════════════════════════════════════╝")
+    click.echo(f"(session {sid})  type /help for commands, /quit to exit.\n")
+
+    last_qa = {"q": "", "a": ""}
+
+    def ask_line(text):
+        nonlocal last_qa
+        history = [m for m in sdb.get_messages(sid, limit=20)
+                   if m.get("role") in ("user", "assistant") and m.get("content")]
+        answer, memories, entities = _ask_grounded(text, history=history)
+        sdb.append_message(sid, "user", text)
+        sdb.append_message(sid, "assistant", answer)
+        last_qa = {"q": text, "a": answer}
+        _render_grounded(answer, memories, entities, show_entities=show_entities)
+        if not save_qa and answer:
+            _save_ask(text, answer)
+
+    try:
+        while True:
+            try:
+                line = input("Jarvis> ")
+            except EOFError:
+                break
+            text = line.strip()
+            if not text:
+                continue
+            low = text.lower()
+            if low in ("/quit", "/exit", "/q"):
+                click.echo("Goodbye.")
+                break
+            if low == "/help":
+                click.echo("/help /session <id> /clear /save /digest /status /quit")
+                continue
+            if low == "/clear":
+                sdb.close()
+                sdb = SessionDB()
+                sid = sdb.create_session(title="console")
+                click.echo(f"(new session {sid})")
+                continue
+            if low.startswith("/session"):
+                parts = text.split()
+                if len(parts) > 1 and parts[1]:
+                    sid = parts[1]
+                    click.echo(f"(switched to session {sid})")
+                else:
+                    click.echo(f"(current session {sid})")
+                continue
+            if low == "/save":
+                if last_qa["a"]:
+                    _save_ask(last_qa["q"], last_qa["a"])
+                    click.echo("(saved last Q&A to memory)")
+                else:
+                    click.echo("(nothing to save yet)")
+                continue
+            if low == "/digest":
+                _run_digest_now()
+                continue
+            if low == "/status":
+                _run_status_snippet()
+                continue
+            if low.startswith("/"):
+                click.echo(f"unknown command: {text}  (try /help)")
+                continue
+            ask_line(text)
+    finally:
+        sdb.close()
+
+
+def _save_ask(question, answer):
+    """Persist a Q&A back to memory (tag 'ask') — remote or local."""
+    from jarvis import remote as _remote
+
+    content = f"Q: {question}\nA: {answer}"
+    if _remote.is_remote():
+        _remote.remember_batch([{"content": content, "source": "ask", "tags": ["ask"]}])
+    else:
+        store = Store()
+        try:
+            Brain(store).remember(content, source="ask", tags=["ask"], classify=False)
+        finally:
+            store.close()
+
+
+def _run_digest_now():
+    from jarvis import remote as _remote
+
+    text = ""
+    if _remote.is_remote():
+        text = (_remote.digest(kind="morning_brief").get("text") or "").strip()
+    else:
+        store = Store()
+        try:
+            text = Brain(store).build_digest(kind="morning_brief")
+        finally:
+            store.close()
+    click.echo(f"\n=== Jarvis morning brief ===\n{text}\n")
+
+
+def _run_status_snippet():
+    from jarvis import remote as _remote
+
+    if _remote.is_remote():
+        try:
+            d = _remote.health_deep()
+            click.echo(f"(box: memories={d.get('memories')} mode={d.get('mode')})")
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"(box unreachable: {e})")
+    else:
+        click.echo("(local mode)")
 
 
 def _show_alerts(brain: Brain):

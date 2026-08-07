@@ -582,3 +582,39 @@ def test_digest_report_without_now(monkeypatch):
     assert result.exit_code == 0
     assert "08:00" in result.output and "--now" in result.output
 
+
+def test_console_interactive_loop(monkeypatch):
+    """`jarvis console` must answer a piped question and honor /quit (idea: an
+    interactive Iron-Man-style terminal)."""
+    from click.testing import CliRunner
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    class _FakeSDB:
+        def __init__(self): self.msgs = []
+        def close(self): pass
+        def get_messages(self, sid, limit=100): return []
+        def create_session(self, title=""): return "c1"
+        def append_message(self, sid, role, content, tool_calls=None):
+            self.msgs.append((role, content))
+
+    seen = {}
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: _FakeSDB())
+    monkeypatch.setattr(remote, "query",
+                        lambda question, n=8, source=None, history=None:
+                        seen.update(q=question) or {"answer": "console says hello",
+                                                    "memories": [], "entities": {}})
+    monkeypatch.setattr(remote, "remember_batch", lambda items: {"added": 1})
+    monkeypatch.setattr(remote, "health_deep", lambda: {"memories": 5, "mode": "local"})
+
+    result = CliRunner().invoke(cli, ["console", "--no-save"],
+                                input="hello jarvis\n/status\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert "J A R V I S" in result.output
+    assert "console says hello" in result.output
+    assert "memories=5" in result.output
+    assert "Goodbye." in result.output
+    assert seen.get("q") == "hello jarvis"
+
