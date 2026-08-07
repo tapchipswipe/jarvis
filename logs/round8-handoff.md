@@ -83,9 +83,22 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 18 (5285165):** end-to-end `process_batch` cursor-advancement test
   (drains the whole backlog across calls via the persisted cursor + dedupes re-runs),
   locking the Round 7 'advances via cursor' fix. Suite 369 passed, 1 skipped.
-- [x] **Round 19 (pending commit):** `jarvis collect --root <dir>` (repeatable) so the
+- [x] **Round 19 (ecd2c3e):** `jarvis collect --root <dir>` (repeatable) so the
   thin-client collector can target arbitrary directories (defaults unchanged).
   1 new test. Suite 370 passed, 1 skipped.
+- [x] **Round 20 (828770b):** corrected + completed the `UPGRADES.md` Round 8 section
+  (inbox ingester is in git but needs a box restart to run; added the observability,
+  thin-client correctness, doctor, utcnow, and runtime-audit entries).
+- [x] **Round 21 (pending commit):** more `remote` transport contract tests — `memories`
+  query-string (incl. since), None-arg omission, `export` payload, and `remote_ok()` false
+  on unreachable. Suite 374 passed, 1 skipped.
+
+### Note — box restart gating (2026-08-07, live check)
+`jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the
+endpoints as 404/not-present: the running `jarvis server` predates `/api/memories` +
+`/api/ingest/status`. They all become live the moment the box is restarted onto the
+pushed commit (git is current at `bot`==`main`). This is the single gating action;
+everything else is built, tested, and documented.
 
 ### Live thin-client validation (2026-08-07, read-only)
 `jarvis status` → live box (memories=3954); `jarvis search 'tailscale' -n 3` → real box

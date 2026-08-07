@@ -40,7 +40,6 @@ def _fake_urlopen(monkeypatch, payload=None):
     monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
     return captured
 
-
 def _client_env(monkeypatch):
     monkeypatch.setenv("JARVIS_MODE", "client")
     monkeypatch.setenv("JARVIS_REMOTE", "http://100.102.0.99:8766")
@@ -102,3 +101,39 @@ def test_is_remote_requires_mode_and_url(monkeypatch):
     monkeypatch.setenv("JARVIS_MODE", "client")
     monkeypatch.setenv("JARVIS_REMOTE", "http://box:8766")
     assert remote.is_remote() is True
+
+
+def test_memories_query_string(monkeypatch):
+    _client_env(monkeypatch)
+    c = _fake_urlopen(monkeypatch)
+    remote.memories(limit=25, source="deep", tier="raw", since="2026-01-01T00:00:00Z")
+    assert c["url"].startswith("http://100.102.0.99:8766/api/memories?")
+    for piece in ("limit=25", "source=deep", "tier=raw", "since="):
+        assert piece in c["url"]
+
+
+def test_memories_omits_none_options(monkeypatch):
+    _client_env(monkeypatch)
+    c = _fake_urlopen(monkeypatch)
+    remote.memories(limit=10)
+    assert "limit=10" in c["url"]
+    assert "source=" not in c["url"]
+    assert "tier=" not in c["url"]
+
+
+def test_export_json(monkeypatch):
+    _client_env(monkeypatch)
+    c = _fake_urlopen(monkeypatch, {"count": 2, "memories": []})
+    data = remote.export("json")
+    assert data["count"] == 2
+    assert c["url"].endswith("fmt=json")
+
+
+def test_remote_ok_false_when_unreachable(monkeypatch):
+    import urllib.error
+
+    def _boom(req, timeout=None):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    assert remote.remote_ok() is False
