@@ -149,8 +149,13 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 32 (7189ed6):** new `tests/test_ingest.py` — chunking primitives
   (empty/short, overlap chunk boundaries, de-overlapped reconstruction, metadata attach).
   Suite 389 passed, 1 skipped.
-- [x] **Round 33 (pending commit):** `jarvis memories --json` + `jarvis timeline --json` —
+- [x] **Round 33 (e797f52):** `jarvis memories --json` + `jarvis timeline --json` —
   scriptable structured output, consistent with `search --json`. 1 new test.
+  Suite 390 passed, 1 skipped.
+- [x] **Round 34 (61c6fe7):** refreshed `docs/deployment-lightspeed.md` runbook — box git
+  is ~33 commits behind; restart now includes `git pull` + new verify steps.
+- [x] **Round 35 (pending commit):** `jarvis doctor` now also verifies git sync
+  (`bot`==`main`==`origin/bot`) — all 6 checks PASS live. 1 test update.
   Suite 390 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)

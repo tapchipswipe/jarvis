@@ -1280,6 +1280,23 @@ def doctor():
 
     ofl = platform.system()
     check("os", True, f"{ofl} / python {platform.python_version()}")
+
+    # git sync (bot == main == origin/bot) — local, best-effort
+    git = {"HEAD": None, "main": None, "origin/bot": None}
+    import subprocess
+    root = Path(__file__).resolve().parent.parent
+    for ref in git:
+        try:
+            r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", ref],
+                               capture_output=True, text=True, timeout=10, check=False)
+            if r.returncode == 0:
+                git[ref] = r.stdout.strip()
+        except Exception:  # noqa: BLE001 - git check is best-effort
+            git[ref] = None
+    synced = git["HEAD"] == git["main"] == git["origin/bot"] is not None
+    check("git", synced,
+          f"HEAD={git['HEAD']} main={git['main']} origin/bot={git['origin/bot']}")
+
     click.echo(f"Jarvis doctor — {len(checks)} checks\n" + "-" * 40)
     bad = 0
     for name, ok, detail in checks:

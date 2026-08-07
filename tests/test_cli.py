@@ -225,6 +225,7 @@ def test_doctor_reports_checks(monkeypatch):
     assert "[PASS] box" in result.output
     assert "memories=3954" in result.output
     assert "ingest" in result.output
+    assert "git" in result.output  # bot/main/origin sync line is present
 
 
 def test_doctor_local_mode_no_box(monkeypatch):
