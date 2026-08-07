@@ -24,6 +24,21 @@
   `docs/STATUS.md`.
 
 ---
+## Final night state (bottom-line)
+- **34+ build/test/doc rounds** landed on `bot`==`main` (pushed; HEAD = `git log`),
+  suite **390 passed / 1 skipped**, ruff clean in all changed code, import-smoke +
+  `jarvis server --check` green.
+- **New/changed surfaces (all thin-client + deploy-observable):** token-guarded API;
+  `/api/ingest/status` + `ingest_status()` (+ per-batch `errors`); `/api/memories`;
+  `jarvis collect [--root][--max-files][--flush]`, `flush`, `ingest-status`, `doctor`
+  (incl. git-sync check), `search|memories|timeline --json`; `status`/`export`/`memories`/
+  `timeline` report the LIVE box in client mode; ambient-collection shell + LaunchAgent
+  (opt-in); 22 source files de-deprecated (utcnow → naive-UTC-identical).
+- **Docs:** `docs/STATUS.md`, `docs/runtime-audit.md`, `docs/deployment-lightspeed.md`,
+  `README.md`, `UPGRADES.md`, `logs/round8-handoff.md` (this file) all current.
+- **The single morning action:** on the box `git pull` then restart `JarvisServer` /
+  `server-start.bat` to load the inbox ingester + new endpoints; watch
+  `jarvis ingest-status` → `remaining` 0 (see TL;DR at top + `docs/STATUS.md`).
 
 This session runs while the user is away. All work is agent-driven, committed to
 `bot`, kept in sync with `main`, and the pytest suite is kept green after every change.
