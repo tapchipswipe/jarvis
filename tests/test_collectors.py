@@ -147,6 +147,36 @@ class TestSystemCollector:
         count = sync_system(mock_store)
         assert isinstance(count, int)
 
+    @patch("jarvis.collectors.system.subprocess.run")
+    def test_sync_system_idempotent_stable_ts(self, mock_run):
+        """A fixed snapshot ts keeps the fingerprint stable: the first run adds
+        memories, the second run (same snapshot content) is skipped entirely."""
+        from jarvis.collectors import system
+
+        payload = '{"_items": [{"_name": "Safari", "version": "17.0", "path": "/Applications/Safari.app"}]}'
+        mock_run.return_value.stdout = payload
+        mock_run.return_value.returncode = 0
+
+        added = set()
+
+        def fake_add(fid, source, source_id, timestamp, content, tags, metadata, embedding, **kwargs):
+            added.add(fid)
+            return True
+
+        def fake_exists(fid):
+            return fid in added
+
+        store = MagicMock()
+        store.add.side_effect = fake_add
+        store.exists.side_effect = fake_exists
+
+        with patch("jarvis.collectors.system.get_embedding", return_value=[0.1, 0.2]):
+            first = system.sync_system(store)
+            second = system.sync_system(store)
+
+        assert first > 0, "first run should add system snapshot memories"
+        assert second == 0, "second run with unchanged snapshot must be skipped"
+
 
 # ---------------------------------------------------------------------------
 # deep collector
@@ -228,6 +258,60 @@ class TestShellCollector:
         from jarvis.collectors.shell import sync_shell
         count = sync_shell(mock_store)
         assert count == 0
+
+    def test_sync_shell_idempotent_uses_file_mtime(self, tmp_path):
+        """First run with a history file adds memories; a second run against the
+        same file (unchanged mtime) produces the same fingerprint so the skip
+        fires and no new memories are added."""
+        from jarvis.collectors import shell
+
+        history_file = tmp_path / ".zsh_history"
+        history_file.write_text(": 1712345678:0;ls -la\n: 1712345679:0;git status\n", encoding="utf-8")
+
+        # Track added fids so store.exists() reflects prior inserts.
+        added = set()
+
+        def fake_add(fid, source, source_id, timestamp, content, tags, metadata, embedding, **kwargs):
+            added.add(fid)
+            return True
+
+        def fake_exists(fid):
+            return fid in added
+
+        store = MagicMock()
+        store.add.side_effect = fake_add
+        store.exists.side_effect = fake_exists
+
+        with patch("jarvis.collectors.shell.HISTORY_PATHS", [(history_file, "zsh")]), \
+             patch("jarvis.collectors.shell.get_embedding", return_value=[0.1, 0.2]), \
+             patch("jarvis.collectors.shell.extract_metadata", return_value={"tags": [], "entities": []}):
+            first = shell.sync_shell(store)
+            second = shell.sync_shell(store)
+
+        assert first > 0, "first run should add history memories"
+        assert second == 0, "second run with unchanged mtime must not re-add memories"
+
+    def test_sync_shell_ts_stable_across_runs(self, tmp_path):
+        """The per-file mtime yields a stable batch ts so the fingerprint is not
+        recomputed from datetime.now() on every run."""
+        import os
+
+        history_file = tmp_path / ".zsh_history"
+        history_file.write_text(": 1712345678:0;echo hi\n", encoding="utf-8")
+
+        from jarvis.collectors import shell
+        from jarvis.store import fingerprint
+
+        with patch("jarvis.collectors.shell.HISTORY_PATHS", [(history_file, "zsh")]):
+            lines = history_file.read_text(errors="ignore").splitlines()
+            cmd = shell._parse_zsh_line(lines[0])
+            mtime_ts = os.path.getmtime(history_file)
+            from datetime import datetime, timezone
+            stable_ts = datetime.fromtimestamp(mtime_ts, tz=timezone.utc).replace(tzinfo=None).isoformat()
+            fid = fingerprint("shell", cmd[:64], cmd, stable_ts)
+            # Same mtime -> identical ts -> identical fingerprint across runs.
+            assert shell._file_mtime_ts(history_file) == stable_ts
+            assert fingerprint("shell", cmd[:64], cmd, shell._file_mtime_ts(history_file)) == fid
 
 
 # ---------------------------------------------------------------------------

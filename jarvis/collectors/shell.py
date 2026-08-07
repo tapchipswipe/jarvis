@@ -42,6 +42,17 @@ _PARSERS = {
 }
 
 
+def _file_mtime_ts(path: Path) -> str:
+    """Stable ISO timestamp for a history file based on its mtime.
+
+    Using the file's mtime (not datetime.now()) keeps the batch fingerprint
+    unchanged between runs, so store.exists() fires and unchanged history is
+    not re-embedded on every sync.
+    """
+    mtime = path.stat().st_mtime
+    return datetime.fromtimestamp(mtime, tz=timezone.utc).replace(tzinfo=None).isoformat()
+
+
 def sync_shell(store):
     count = 0
     seen_commands = set()
@@ -52,6 +63,10 @@ def sync_shell(store):
         if not parser:
             continue
         try:
+            # Stable batch ts: use the history file's mtime so the fingerprint is
+            # unchanged when the file hasn't changed. A per-command now() made the
+            # fingerprint differ every run and the skip (store.exists) never fired.
+            ts = _file_mtime_ts(history_path)
             lines = history_path.read_text(errors="ignore").splitlines()
             for line in lines:
                 cmd = parser(line)
@@ -62,7 +77,6 @@ def sync_shell(store):
                 seen_commands.add(cmd)
                 source = "shell"
                 source_id = cmd[:64]
-                ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                 fid = fingerprint(source, source_id, cmd, ts)
                 if store.exists(fid):
                     continue
@@ -70,7 +84,9 @@ def sync_shell(store):
                 base_tags = ["shell", shell_type] + extraction.get("tags", [])[:5]
                 chunks = chunk_document(cmd, metadata={"shell": cmd[:100], "shell_type": shell_type, "entities": extraction.get("entities", [])})
                 for i, chunk in enumerate(chunks):
-                    cid = f"{fid}-{i}"
+                    # First chunk keeps the base fid so store.exists(fid) matches
+                    # and the whole (stable-ts) command is skipped on re-sync.
+                    cid = fid if i == 0 else f"{fid}-{i}"
                     emb = get_embedding(chunk["text"])
                     store.add(cid, source, source_id, ts, chunk["text"], base_tags, {"command": cmd[:200], "shell_type": shell_type, "entities": extraction.get("entities", [])}, emb)
                     count += 1
