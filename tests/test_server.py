@@ -181,3 +181,28 @@ def test_health_ok_from_loopback(client, monkeypatch):
     monkeypatch.setenv("JARVIS_TOKEN", "sekret")
     r = client.get("/api/health")
     assert r.status_code == 200
+
+
+# every mutating + sensitive-read route must be guarded by _host_ok; TestClient's
+# host is "testclient" (non-loopback), so with a token configured an unauthenticated
+# request must be rejected with 403 — and with the right token must pass.
+def test_mutating_routes_reject_without_token_when_configured(client, monkeypatch):
+    monkeypatch.setenv("JARVIS_TOKEN", "sekret")
+    assert client.get("/api/export").status_code == 403
+    assert client.post("/api/idea", json={"idea": "x", "source": "t"}).status_code == 403
+    assert client.post("/api/sessions", json={"title": "x"}).status_code == 403
+    assert client.post("/api/tasks/approve", params={"all": "true"}).status_code == 403
+    assert client.post("/api/tasks/reject", params={"id": "nope"}).status_code == 403
+    # previously-guarded routes stay guarded too
+    assert client.post("/api/remember", json={"memories": [{"content": "x"}]}).status_code == 403
+    assert client.get("/api/search", params={"q": "x"}).status_code == 403
+    assert client.post("/api/chat", json={"message": "x"}).status_code == 403
+    # health stays open (pure liveness for the Mac health checker)
+    assert client.get("/api/health").status_code == 200
+
+
+def test_mutating_routes_pass_with_valid_token(client, monkeypatch):
+    monkeypatch.setenv("JARVIS_TOKEN", "sekret")
+    h = {"X-Jarvis-Token": "sekret"}
+    assert client.get("/api/export", headers=h).status_code == 200
+    assert client.get("/api/search", params={"q": "hello", "n": 5}, headers=h).status_code == 200

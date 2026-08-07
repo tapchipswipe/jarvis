@@ -19,3 +19,15 @@ This session runs while the user is away. All work is agent-driven, committed to
 3. Server token-enforcement consistency (`_host_ok` on currently-open mutating routes).
 4. Restore thin-client ambient collection (Mac `JARVIS_MODE=client` collector job).
 5. Hygiene/polish (datetime.utcnow deprecations, offline-read banner, etc.).
+
+## Progress log
+- [x] **Round 1 (2a6dca8):** Fixed the CLI remember regression test (deterministic
+  `remote.is_remote()` pinning for the local vs thin-client paths) + new remote path
+  test. Suite green.
+- [x] **Round 2 (73e0a1f):** Synced `docs/STATUS.md` + `UPGRADES.md` with the real
+  state (inbox ingester deployed + running at `966d7b2`); resequenced next actions.
+- [x] **Round 3 (pending commit):** Added `_host_ok` token guards to the previously-open
+  mutating/sensitive routes — `/api/idea`, `/api/tasks/approve`, `/api/tasks/reject`,
+  `/api/sessions`, and `/api/export`. `/api/health` stays open (Mac health checker).
+  2 new server tests. Suite 334 passed, 1 skipped.
+

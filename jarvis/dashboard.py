@@ -477,6 +477,8 @@ def _start_mayor():
 @app.post("/api/idea")
 def api_submit_idea(request: Request, payload: dict):
     """Submit an idea to the Mayor."""
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
     from jarvis.task_queue import TaskQueue
     from jarvis.mayor import parse_idea
     try:
@@ -514,6 +516,8 @@ def api_tasks(status: str | None = None, limit: int = 50):
 @app.post("/api/tasks/approve")
 def api_approve_task(request: Request):
     """Approve a task (or all pending)."""
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
     from jarvis.task_queue import TaskQueue
     q = dict(request.query_params)
     tq = TaskQueue()
@@ -531,6 +535,8 @@ def api_approve_task(request: Request):
 @app.post("/api/tasks/reject")
 def api_reject_task(request: Request):
     """Reject a pending task."""
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
     from jarvis.task_queue import TaskQueue
     task_id = request.query_params.get("id")
     if not task_id:
@@ -810,6 +816,8 @@ def api_sessions():
 
 @app.post("/api/sessions")
 def api_create_session(request: Request, payload: dict | None = None):
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
     from jarvis.sessions import SessionDB
     payload = payload or {}
     sdb = SessionDB()
@@ -831,7 +839,9 @@ def api_session_messages(sid: str):
 
 
 @app.get("/api/export")
-def api_export(fmt: str = "json"):
+def api_export(request: Request, fmt: str = "json"):
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
     store = _get_store()
     try:
         rows = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 ORDER BY timestamp DESC").fetchall()
