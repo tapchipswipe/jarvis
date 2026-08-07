@@ -42,6 +42,31 @@ def test_send_notification_never_raises(tmp_path, monkeypatch):
         notify.send_notification("title", "body")  # must not raise
 
 
+def test_send_notification_short_circuits_on_success(tmp_path, monkeypatch):
+    """When terminal-notifier succeeds, osascript must NOT be invoked."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    with (
+        patch.object(notify, "_send_terminal_notifier", return_value=True) as tn,
+        patch.object(notify, "_send_osascript") as osa,
+    ):
+        notify.send_notification("title", "body", category="test")
+    tn.assert_called_once_with("title", "body", "test")
+    osa.assert_not_called()
+
+
+def test_send_notification_falls_through_on_failure(tmp_path, monkeypatch):
+    """When terminal-notifier fails, osascript must be tried as a fallback."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    with (
+        patch.object(notify, "_send_terminal_notifier", return_value=False),
+        patch.object(notify, "_send_osascript") as osa,
+    ):
+        notify.send_notification("title", "body")
+    osa.assert_called_once_with("title", "body")
+
+
 def test_write_briefing_creates_file(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
     path = notify.write_briefing("Morning", "Lots of content")

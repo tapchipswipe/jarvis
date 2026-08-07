@@ -64,6 +64,7 @@ def _run(cmd: list[str], timeout: int = 8) -> bool:
             capture_output=True,
             text=True,
             timeout=timeout,
+            check=False,
         )
         return result.returncode == 0
     except Exception as exc:         # noqa: BLE001
@@ -121,9 +122,12 @@ def send_notification(
 
     Tries terminal-notifier → osascript → always writes the notifications
     log as a persistent audit trail regardless of channel outcome.
+
+    Backends are short-circuited: the first one that returns True wins and
+    the rest are skipped, so only a single desktop popup is shown.
     """
-    _send_terminal_notifier(title, body, category)
-    _send_osascript(title, body)      # best-effort; exit code ignored on purpose
+    if not _send_terminal_notifier(title, body, category):
+        _send_osascript(title, body)  # fall back to macOS built-in
     _log_notification(title, body)    # durable record, always written
 
 
