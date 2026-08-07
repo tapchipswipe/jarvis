@@ -67,12 +67,14 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 10. **Crash-consistent backups:** `jarvis backup` + token-gated `POST /api/admin/backup`
     (SQLite online-backup); `scripts/jarvis-backup.sh` uses it; `JARVIS_BACKUP_STRICT=1`
     pauses/restarts the scheduled task for a consistent HNSW snapshot.
-11. **`jarvis ask "<q>"`** (always grounded), **`jarvis delegate "<task>"`** (offload → cline
-    JSON), **`jarvis backup [dst]`**, digest model guard (`JARVIS_DIGEST_MODEL`), per-user
-    isolation chain locked 0700, desktop+webhook alerting (rate-limited), coverage 54%,
-    ruff debt 344→~220.
-12. **`jarvis delegate` caveat:** the box's cline reports **Cline Credits balance $0** — the
-    SSH/cline/JSON mechanism works, but offload needs credits funded (or another provider).
+11. **`jarvis ask "<q>"`** (always grounded), **`jarvis backup [dst]`**, digest model guard
+    (`JARVIS_DIGEST_MODEL`), per-user isolation chain locked 0700, desktop+webhook alerting
+    (rate-limited), coverage 54%, ruff debt 344→~220.
+12. **`jarvis delegate` RETIRED (2026-08-07):** removed — the box's `cline` hosted provider
+    requires **Cline Credits** (`$0` balance; the Cline Pass doesn't clear it for Muse Spark),
+    and delegate-on-Ollama is pointless (same box). Jarvis is now **zero external
+    dependencies**; tasks go through the Mayor's local agents. (Note: offload could come back
+    later if credits/Pass-covered model are supplied — a documented future option.)
 
 ## How to resume after a reboot
 1. `cd /Users/lucasdespot/jarvis` (venv `.venv/bin/python`).

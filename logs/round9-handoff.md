@@ -26,9 +26,12 @@ activates all of this** (every change is backward-compatible; token stays enforc
    a real bug where a dead model's error text became the digest.
 5. **`jarvis ask "<question>"`** — one-shot, always grounded on the brain; prints answer +
    grounding sources; `--json-out`; works in client mode (asks the box).
-6. **`jarvis delegate "<task>"`** — offload to Lightspeed `cline` via SSH, returns JSON.
-   ⚠️ The box's cline currently reports **Cline Credits balance $0** — mechanism validated,
-   but real offloads need credits funded.
+6. **`jarvis delegate` RETIRED (2026-08-07).** The offload pilot ran on box `cline`, which
+   uses Cline's **hosted provider** — verified it requires **Cline Credits** (`$0` balance; the
+   Cline Pass does not clear it for the Muse Spark model on this box), and pointing cline at
+   the same-box Ollama would be pointless (same machine/RAM/model). **Removed the command.**
+   Jarvis is now **zero external dependencies**; task dispatch stays on the Mayor's local
+   `jarvis/agents/*` (Ollama-Lightspeed).
 7. **Multi-user isolation hardening** — `ensure_private_dir` locks 0700 on every directory
    Jarvis creates (whole `~/jarvis/users/<user>` chain), not just the leaf.
 8. **Coverage 50 → 54%** (extract_entities 0→96%, mayor 37→57%; 24 new tests) and
@@ -51,7 +54,9 @@ Optional TLS: on the box run `python -m jarvis.cli server --gen-cert`, then set
 `JARVIS_TLS_FINGERPRINT` on the Mac (see docs/STATUS.md item 8).
 
 ## Manual / external (still open)
-- Fund **Cline Credits** on the box (or configure another provider) to use `jarvis delegate`.
+- **Nothing requires an external provider** — Jarvis runs fully on Lightspeed/Ollama. `jarvis
+  delegate` was retired (box `cline` needs Cline Credits; Pass didn't clear it; same-box
+  offload is pointless).
 - Tailscale admin-console ACL to scope `:8766` (optional; HTTPS + token make plain-HTTP moot).
 - TrueNAS / 3rd backup copy (age-encrypted archive is the off-box copy).
 - Ruff debt reduction beyond the mechanical pass (BLE001 etc.) if desired.

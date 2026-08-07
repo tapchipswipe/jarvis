@@ -1220,76 +1220,6 @@ def server(port, daemon_url, tls_cert, tls_key, gen_cert, do_check):
 
 
 @cli.command()
-@click.option("--host", default=lambda: os.environ.get("JARVIS_BOX_HOST", "100.102.0.99"),
-              help="Lightspeed box host (JARVIS_BOX_HOST)")
-@click.option("--user", default="despo", help="SSH user on the box")
-@click.option("--cwd", default="C:/Users/despo/jarvis",
-              help="Working directory on the box for the cline session")
-@click.option("--timeout", default=900, type=int, help="Offload timeout (seconds)")
-@click.option("--json-out", is_flag=True, help="Emit the raw cline JSON result")
-@click.argument("task")
-def delegate(task, host, user, cwd, timeout, json_out):
-    """Send a task to the Lightspeed ``cline`` agent and get its structured result.
-
-    Productizes the validated offload pilot: the heavy reasoning runs on the
-    box's ``cline`` (a Cline-hosted model → zero load on the box's RAM, unlike
-    loading a 7B locally). The task is passed verbatim; the response is cline's
-    JSON (or a summary of it). Good for long-running research/review that you
-    don't want blocking your terminal or using local model memory.
-    """
-    import shlex
-    import subprocess
-
-    remote_cmd = f"cline --cwd {shlex.quote(cwd)} --json {shlex.quote(task)}"
-    ssh_args = [
-        "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
-        "-o", "ServerAliveInterval=30", f"{user}@{host}", remote_cmd,
-    ]
-    try:
-        proc = subprocess.run(ssh_args, capture_output=True, text=True,
-                              timeout=timeout, check=False)
-    except subprocess.TimeoutExpired:
-        click.echo(json.dumps({"ok": False, "error": f"timed out after {timeout}s"}))
-        return
-
-    if proc.returncode != 0:
-        click.echo(json.dumps({"ok": False, "returncode": proc.returncode,
-                               "stderr": (proc.stderr or "")[-500:]}))
-        return
-
-    # cline may wrap the result in logs — take the last JSON object on stdout.
-    data = None
-    text = proc.stdout or ""
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end > start:
-        try:
-            data = json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
-            data = None
-    if data is None:
-        for line in reversed(text.splitlines()):
-            line = line.strip()
-            if line.startswith("{") and line.endswith("}"):
-                try:
-                    data = json.loads(line)
-                    break
-                except json.JSONDecodeError:
-                    continue
-    if data is None:
-        click.echo(json.dumps({"ok": True, "raw": (proc.stdout or "")[:1000]}))
-        return
-
-    if json_out:
-        click.echo(json.dumps(data))
-        return
-    done = data.get("done", data.get("completed"))
-    message = data.get("message") or data.get("response") or data.get("result") or ""
-    click.echo(f"[delegate] {'done' if done else 'submitted'} :: {message[:400]}")
-    click.echo(f"[delegate] status: {data.get('status', 'n/a')}")
-
-
-@cli.command()
 @click.argument("dst", type=click.Path(file_okay=False), required=False)
 @click.option("--strict", is_flag=True,
               help="Advisory: mark snapshot as strict (shell wrapper pauses the server)")
@@ -1309,7 +1239,7 @@ def backup(dst, strict, data_dir):
 
     root = Path(data_dir) if data_dir else _data_root("data")
     if dst is None:
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        ts = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d-%H%M%S")
         dst = str(_data_root("backups", f"snapshot-{ts}"))
     dst_path = Path(dst)
     res = snapshot_store(Path(root), dst_path, strict=strict)

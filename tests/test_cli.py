@@ -439,29 +439,3 @@ def test_ask_client_mode_delegates_to_box(monkeypatch):
     assert data["answer"] == "box answer"
     assert data["remote"] is True
 
-
-def test_delegate_command_offloads_to_cline(monkeypatch):
-    import json as _json
-    import subprocess
-
-    from click.testing import CliRunner
-
-    from jarvis.cli import cli
-
-    class _FakeProc:
-        returncode = 0
-        stdout = "some log\nthe final {\"done\":true,\"message\":\"task complete\",\"status\":\"done\"}\n"
-        stderr = ""
-
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeProc())
-    result = CliRunner().invoke(cli, ["delegate", "review the notes"])
-    assert result.exit_code == 0, result.output
-    assert "[delegate] done :: task complete" in result.output
-
-    # --json-out emits the raw cline response
-    result2 = CliRunner().invoke(cli, ["delegate", "review the notes", "--json-out"])
-    assert result2.exit_code == 0
-    data = _json.loads(result2.output)
-    assert data["done"] is True
-    assert data["message"] == "task complete"
-

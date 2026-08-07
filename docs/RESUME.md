@@ -61,7 +61,8 @@ The whole "next-up" backlog is done:
 - **`JARVIS_TOKEN` enabled end-to-end** (box + Mac; no-token → 403, with-token → 200).
 - **Ambient collection registered** (`com.user.jarvis-collect` LaunchAgent, 30-min flush).
 - **Digests/triggers enabled** on the box (`JARVIS_TRIGGERS=1`): loop live (60s, 3 triggers).
-- **Offload pilot validated** (box `cline` → JSON via a cline-hosted model, no box RAM).
+- **`jarvis delegate` RETIRED** (offload tested; box `cline` needs Cline Credits, Pass didn't
+  clear it → removed so Jarvis stays zero external dependencies).
 - **Hardened backup active** (`age` + key; encrypted archives validated).
 - Suite **398 passed / 1 skipped**; git `bot` == `main` == origin.
 
@@ -73,8 +74,9 @@ The whole "next-up" backlog is done:
   (token-gated) runs in-process; `scripts/jarvis-backup.sh` uses it (`JARVIS_BACKUP_STRICT=1`
   pauses the scheduled task for a consistent HNSW snapshot, always restarts).
 - **`jarvis ask "<q>"`** — one-shot answer ALWAYS grounded on the brain (local or box).
-- **`jarvis delegate "<task>"`** — offload to box `cline`; ⚠️ box cline needs **Cline Credits**
-  (currently $0) to actually run.
+- **`jarvis delegate` RETIRED** — removed (the box's `cline` needs Cline Credits; the Pass
+  didn't clear it for Muse Spark, and Ollama-on-same-box offload is pointless). Jarvis is
+  **zero external dependencies**: tasks run through the Mayor's local `jarvis/agents/*`.
 - **Digest model guard** (`JARVIS_DIGEST_MODEL`), **ingester idle fast-path**, **per-user
   isolation 0700 chain**, **desktop+webhook alerting** (`JARVIS_ALERT_WEBHOOK`, rate-limited).
 - Coverage **54%** (extract_entities 96%, mayor 57%); ruff 344 → ~220; suite **450 passed**.
