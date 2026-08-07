@@ -43,17 +43,19 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 4. **Ambient collection REGISTERED (2026-08-07):** `com.user.jarvis-collect` LaunchAgent
    loaded (30-min `collect --flush`; validated end-to-end with the token — 45 memories
    pushed, 0 failed). Box brain now ~4,120+ and growing.
-5. **Server-side digests/triggers BUILT (Round 9):** config-gated `start_trigger_loop()` in
-   `jarvis/triggers.py` (per-tick Store open/close, no persistent second Chroma handle) wired
-   into `run_dashboard`, deployed to the box (OFF by default). **Enable on the box with
-   `JARVIS_TRIGGERS=1`** in `server-start.bat` + env, then restart — digests at 08:00/18:00
-   (weekdays) + 30-min calendar poll. Keep model-tier discipline.
+5. **Server-side digests/triggers ENABLED on the box (2026-08-07):** `start_trigger_loop()` in
+   `jarvis/triggers.py` (per-tick Store open/close, no persistent second Chroma handle) is
+   live — set `JARVIS_TRIGGERS=1` in the box user env + restarted; log confirms
+   `Trigger loop started in-process (interval=60s, 3 trigger(s))` and the 30-min
+   `upcoming-events-poll` fired a notify on startup. Digests at 08:00/18:00 (weekdays) +
+   calendar poll. Keep model-tier discipline (small models / not while a 7B is resident).
 6. **Offload pilot DONE (2026-08-07):** `ssh … 'cline --cwd C:\Users\despo\jarvis --json "…"'`
    returned structured JSON (`done/completed, text: "pong"`) in 4.2s using a
    **Cline-hosted model (muse-spark-1.2)** — zero local box RAM. Mechanism validated.
-7. **Hardened backup OPT-IN ready (2026-08-07):** `scripts/jarvis-backup.sh` now produces an
-   **age-encrypted archive** when `age` + `~/.config/jarvis/backup-key.age.pub` exist
-   (`age-keygen -o ~/.config/jarvis/backup-key.age` once). TrueNAS/3rd copy still optional.
+7. **Hardened backup ACTIVE (2026-08-07):** installed `age` (v1.3.1) and generated the key
+   at `~/.config/jarvis/backup-key.age` (+ `.pub` recipient); `jarvis-backup.sh` produced a
+   **validated age-encrypted archive** (`~/jarvis/backups/store-<date>.tar.gz.age`, decrypt +
+   tar-list OK). TrueNAS / 3rd copy still optional.
 
 ## How to resume after a reboot
 1. `cd /Users/lucasdespot/jarvis` (venv `.venv/bin/python`).

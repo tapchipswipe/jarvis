@@ -239,3 +239,14 @@ memories (round-trip OK); `jarvis ingest-status` → correctly surfaces the expe
   `age` + pubkey exist (`age-keygen -o ~/.config/jarvis/backup-key.age` once).
 - Ingester (after reset) idempotently re-scanning the ~2,730-file inbox as duplicates; it
   settles to `remaining: 0` again — harmless, all content-hash deduped.
+
+## Digests ENABLED + age key (2026-08-07)
+- **Digests enabled on the box**: set `JARVIS_TRIGGERS=1` in the box user env (`setx`),
+  restarted the server (killed PID 576 explicitly -> port freed -> schtasks). Live: server
+  log shows `Trigger loop started in-process (60s, 3 triggers)`; `upcoming-events-poll`
+  fired a notify on startup.
+- **age installed (v1.3.1, via Homebrew)** and key generated:
+  `~/.config/jarvis/backup-key.age` (private, 0600) + `.pub`. Encryption round-trip
+  validated; `jarvis-backup.sh` produced a real encrypted archive
+  `~/jarvis/backups/store-20260807.tar.gz.age` (decrypt + tar-list OK).
+- Keys/token are user-local (`~/.config/jarvis/*`) — NOT in the repo.
