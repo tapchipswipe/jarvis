@@ -28,6 +28,7 @@ from pathlib import Path
 
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.paths import data_dir as _data_dir
 from jarvis.store import Store, fingerprint
 
 logger = logging.getLogger("jarvis.inbox_ingest")
@@ -101,19 +102,42 @@ def inbox_files(inbox_dir: Path | None = None) -> list[Path]:
 
 
 def process_batch(inbox_dir: Path | None = None, batch: int = 50,
-                  cooldown: float = 0.2) -> dict:
+                  cooldown: float = 0.2,
+                  cursor_path: Path | None = None) -> dict:
     """Process up to *batch* inbox files through one in-process Store.
 
-    Returns {processed, added, remaining, done}.
+    Advances past previously-seen files via a persisted *cursor_path* (the last
+    fully-processed file), so repeated calls drain the *whole* backlog instead
+    of always re-processing the same first batch. Returns
+    {processed, added, remaining, done, cursor}.
     """
-    files = inbox_files(inbox_dir)
+    files = sorted(inbox_files(inbox_dir), key=lambda p: str(p))
     if not files:
-        return {"processed": 0, "added": 0, "remaining": 0, "done": True}
+        return {"processed": 0, "added": 0, "remaining": 0,
+                "done": True, "cursor": None}
+
+    start_idx = 0
+    if cursor_path is not None:
+        try:
+            last = (cursor_path.read_text(encoding="utf-8") or "").strip()
+        except OSError:
+            last = ""
+        if last:
+            for i, p in enumerate(files):
+                if str(p) == last:
+                    start_idx = i + 1
+                    break
+
+    todo = files[start_idx:start_idx + batch]
+    if not todo:
+        return {"processed": 0, "added": 0, "remaining": 0,
+                "done": True, "cursor": str(files[-1])}
+
     store = Store()
     processed = 0
     added = 0
     try:
-        for path in files[:batch]:
+        for path in todo:
             try:
                 added += ingest_inbox_file(store, path)
             except Exception:
@@ -123,9 +147,10 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
                 time.sleep(cooldown)
     finally:
         store.close()
-    remaining = len(files) - processed
-    return {"processed": processed, "added": added,
-            "remaining": remaining, "done": remaining <= 0}
+    remaining = len(files) - (start_idx + processed)
+    return {"processed": processed, "added": added, "remaining": remaining,
+            "done": remaining <= 0, "cursor": str(todo[-1])}
+
 
 
 def start_background_ingester() -> None:
@@ -147,16 +172,29 @@ def start_background_ingester() -> None:
     cooldown = float(os.environ.get("JARVIS_INBOX_COOLDOWN", "0.2"))
     cycle = float(os.environ.get("JARVIS_INBOX_CYCLE", "15"))
     inbox_dir = Path(os.environ.get("JARVIS_INBOX", "C:/data/jarvis/inbox"))
+    cursor_path = Path(os.environ.get("JARVIS_INBOX_CURSOR") or
+                       str(_data_dir() / "inbox_ingest_cursor.txt"))
 
     def _loop() -> None:
         logger.info("Inbox backlog ingester started on %s (batch=%d)", inbox_dir, batch)
         while True:
             try:
-                res = process_batch(inbox_dir, batch=batch, cooldown=cooldown)
+                res = process_batch(inbox_dir, batch=batch, cooldown=cooldown,
+                                    cursor_path=cursor_path)
                 if res.get("done"):
                     logger.info("Inbox backlog drained: %s", res)
+                    try:  # reset cursor so a fresh scan picks up new files anywhere
+                        cursor_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                     time.sleep(30.0)  # idle-poll for new arrivals
-                elif res.get("remaining", 0) > 0:
+                else:
+                    if res.get("cursor"):
+                        try:
+                            cursor_path.parent.mkdir(parents=True, exist_ok=True)
+                            cursor_path.write_text(res["cursor"], encoding="utf-8")
+                        except OSError:
+                            pass
                     logger.info("Inbox ingester progress: %s", res)
             except Exception:
                 logger.exception("inbox ingester cycle error")
