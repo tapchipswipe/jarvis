@@ -38,6 +38,7 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2026-08-06 — Offline read fallback in CLI search (rolling tail + substring glance + "offline — cached subset" banner); Round 8 hardening: a reachable server that rejects us (e.g. HTTP 403 from the token guards) is now surfaced as "Server error (<code>)" instead of being mislabelled as offline
 - `[done]` 2026-08-06 — `jarvis status` is thin-client aware: in client mode it reports the live box (`/api/health/deep` memories/mode/uptime) + local outbox backlog instead of the stale local (rollback) store snapshot
 - `[done]` 2026-08-06 — `jarvis doctor` — one-shot local+box diagnostics (env mode, outbox backlog, box health/memories, ingest status, os info) for quick operational triage
+- `[done]` 2026-08-06 — `jarvis collect --root <dir>` (repeatable) to point the thin-client collector at arbitrary directories; defaults to Documents/notes/obsidian
 - `[done]` 2026-08-06 — `jarvis export` is thin-client aware: in client mode it pulls from the live box (`/api/export` JSON, fields normalized + filtered client-side); only local mode reads the local store
 - `[done]` 2026-08-06 — Modernized every `datetime.utcnow()` call (naive-UTC) to `datetime.now(timezone.utc).replace(tzinfo=None)` across all source files — same naive-UTC strings, no behavior change; pytest warnings fell from ~370 to 2 (both 3rd-party)
 

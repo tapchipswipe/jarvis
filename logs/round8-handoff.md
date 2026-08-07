@@ -80,9 +80,12 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 17 (c84d95e):** `/api/memories` (token-guarded, limit/source/tier/since,
   pre-decoded tags) + `remote.memories()` + remote-aware `memories`/`timeline` CLI.
   Suite 368 passed, 1 skipped.
-- [x] **Round 18 (pending commit):** end-to-end `process_batch` cursor-advancement test
+- [x] **Round 18 (5285165):** end-to-end `process_batch` cursor-advancement test
   (drains the whole backlog across calls via the persisted cursor + dedupes re-runs),
   locking the Round 7 'advances via cursor' fix. Suite 369 passed, 1 skipped.
+- [x] **Round 19 (pending commit):** `jarvis collect --root <dir>` (repeatable) so the
+  thin-client collector can target arbitrary directories (defaults unchanged).
+  1 new test. Suite 370 passed, 1 skipped.
 
 ### Live thin-client validation (2026-08-07, read-only)
 `jarvis status` → live box (memories=3954); `jarvis search 'tailscale' -n 3` → real box

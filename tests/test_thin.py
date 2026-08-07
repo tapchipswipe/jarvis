@@ -96,3 +96,17 @@ def test_collect_cli_runs_in_client_mode(monkeypatch):
         assert "pushed=2" in result.output
         scan.assert_called_once()
         fl.assert_called_once()
+
+
+def test_collect_cli_passes_custom_roots(monkeypatch):
+    """--root <dir> is forwarded to scan_once so it can target arbitrary dirs."""
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    stats = {"files": 1, "enqueued": 1, "dups": 0, "blank": 0, "skipped_seen": 0, "errors": 0}
+    with patch("jarvis.collectors.thin.scan_once", return_value=stats) as scan:
+        result = CliRunner().invoke(cli, ["collect", "--root", "/tmp/one", "--root", "/tmp/two"])
+        assert result.exit_code == 0
+        scan.assert_called_once()
+        kw = scan.call_args.kwargs
+        assert kw.get("roots") == ["/tmp/one", "/tmp/two"]

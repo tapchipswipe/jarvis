@@ -1162,8 +1162,10 @@ def flush():
 
 @cli.command()
 @click.option("--max-files", default=2000, help="Cap on files walked per run")
+@click.option("--root", "roots", multiple=True, type=click.Path(),
+              help="Additional directory to collect from (repeatable); defaults to Documents/notes/obsidian")
 @click.option("--flush", "do_flush", is_flag=True, help="Flush the outbox to the server after scanning")
-def collect(max_files, do_flush):
+def collect(max_files, do_flush, roots):
     """Thin-client ambient collection: queue new file text to the outbox -> server.
 
     Refuses to run outside JARVIS_MODE=client (the box is the single writer in
@@ -1179,7 +1181,7 @@ def collect(max_files, do_flush):
             "the Mac never writes a local brain in FULL-THIN."
         )
         raise SystemExit(2)
-    stats = thin.scan_once(max_files=max_files)
+    stats = thin.scan_once(roots=list(roots) or None, max_files=max_files)
     line = (
         f"Scanned {stats['files']} file(s): enqueued {stats['enqueued']}, "
         f"dup {stats['dups']}, blank {stats['blank']}, "
