@@ -50,3 +50,15 @@ kept current with `docs/STATUS.md` and `docs/topology.md`.
   when `JARVIS_TOKEN` is configured on the box. It is NOT configured yet, so the API is
   effectively open on Tailscale. Enable by setting the same `JARVIS_TOKEN` in the box
   env (and `server-start.bat`) and in `~/.zshrc` on the Mac.
+
+## Operational cautions (FULL-THIN single-writer)
+- **`jarvis graph build`** extracts entities and writes to the *local* store. On the Mac
+  that is the disposable rollback copy, not the canonical box store — so it is misleading
+  (and wasted) to run it on the Mac. Graph building is a single-writer (box) operation.
+- **`jarvis reindex` / `promote`** already run automatically inside the box's `jarvis
+  server` via Mayor's idle maintenance (`_maybe_idle_maintenance`, reindex ~5 min,
+  promote ~6 h). No need to run them manually on the Mac.
+- **`jarvis backfill`** is the one-time hash-verified migration path (Mac local store → box
+  with fields preserved). Not a routine op.
+- Thin-client writes always go through the disposable outbox → server; they never touch a
+  local Chroma handle.
