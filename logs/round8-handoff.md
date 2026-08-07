@@ -194,3 +194,16 @@ memories (round-trip OK); `jarvis ingest-status` → correctly surfaces the expe
 404 on the pre-restart server; `jarvis doctor` → all PASS.
 
 
+
+## Morning deploy — EXECUTED (2026-08-07)
+- Box: stopped old server, `git pull` (966d7b2 → d82145b, 40 commits), restarted `JarvisServer`
+  via Task Scheduler. Server up: `/api/health` OK, `memory 4,090+` and climbing.
+- **Inbox ingester is draining** the 5,458-file backlog in-process (throttled, embed-only,
+  idempotent). `remaining` was ~2730 txt → 630 in ~25 min, `errors: 0`.
+- New **progress monitor**: `scripts/monitor-ingest.py` (ASCII bar + remaining + errors +
+  ETA; TTY-aware; __total__ field from the server). Running as LaunchAgent
+  `com.user.jarvis-ingest-monitor` writing `logs/ingest-monitor.log`.
+- **Tailscale port-8766 anomaly:** over Tailscale the Mac reaches the box (ICMP + SSH 22)
+  but TCP 8766 times out; LAN `192.168.1.94` works. Monitor + follow-up use the LAN URL
+  via `--url`; flagged in `docs/STATUS.md` (resolve tailnet/box tailscale, or adopt LAN
+  `JARVIS_REMOTE`).

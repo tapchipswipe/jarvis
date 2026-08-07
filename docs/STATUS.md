@@ -18,19 +18,20 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 - Work on `bot`; `main` is ff-mirrored to `bot`; both pushed to `tapchipswipe/jarvis`. HEAD `f8cede5`. Tests: **374 passed, 1 skipped**, 2 warnings (3rd-party). All thin-client work is on `bot`==`main` (pushed).
 
 ## Known issues
-- **Box-restart gating:** the running `jarvis server` predates everything pushed tonight and the box's **git working tree is at `966d7b2` (~20 commits behind `bot`/`main` = `e9fbe7f`)**. Inbox `C:\data\jarvis\inbox` is untouched (5,458 files); `/api/memories` + `/api/ingest/status` return 404 (graceful CLI handling). **One action gates everything: on the box `cd C:\Users\despo\jarvis && git pull`, then restart task `JarvisServer` (or re-run `C:\data\jarvis\server-start.bat`).**
+- **DEPLOYED (2026-08-07 morning):** the box now runs `bot`@`d82145b`+ (`git pull` fast-forwarded 40 commits; `JarvisServer` restarted). The in-process inbox ingester is **live and draining** — watch `scripts/monitor-ingest.py` (or `jarvis ingest-status`) until `remaining` → 0; reconcile counts.
+- **⚠ Tailscale port-8766 anomaly:** the Mac can reach the box over Tailscale for ICMP/SSH(22), but **TCP 8766 over Tailscale times out** even though the box listens on `0.0.0.0:8766` and a firewall allow rule exists. LAN (`192.168.1.94:8766`) works. Until this is resolved, use the LAN IP for `JARVIS_REMOTE` (`export JARVIS_REMOTE=http://192.168.1.94:8766`) or investigate the tailnet ACL / box Tailscale state.
 - `/api/health` on the box is instant (async-pure).
-- Duplicate-content memories collapse on migration (content-hash dedupe) — the Mac's one dup error-string is intentionally absent on the box.
-- Token auth is config-gated: no `JARVIS_TOKEN` is set on the box yet, so the network API is effectively open on Tailscale (loopback rules only). See Round 8 notes to enable consistently.
+- Duplicate-content memories collapse on migration (content-hash dedupe).
+- Token auth is config-gated: no `JARVIS_TOKEN` is set yet, so the API is open on the network.
 
 ## Immediate next actions (priority order)
-1. **Restart the box server** to load tonight's pushed work. On the box: `cd C:\Users\despo\jarvis && git pull` (it is at `966d7b2`, ~20 commits behind `bot`==`main`) then restart task `JarvisServer` / re-run `C:\data\jarvis\server-start.bat`.
-2. **Let the ingester drain** `C:\data\jarvis\inbox` and watch `/api/ingest/status` (via `jarvis ingest-status`) until `remaining` → 0; then reconcile counts (ingested == files, no orphans).
-3. **Restore server-side digests/triggers**: `docs/runtime-audit.md` confirms Mayor idle-maintenance (reindex/promote) runs in the server, but `TriggerLoop` (morning/end-of-day digests) is NOT started by `run_dashboard` — add a config-gated `TriggerLoop` (default OFF; model-tier discipline), OR run on a maintenance window.
-4. **Enable `JARVIS_TOKEN`** end-to-end (same value in the box env + `server-start.bat` and `~/.zshrc` on the Mac) now that all mutating/sensitive routes are guarded.
-5. **Register thin-client ambient collection**: `launchctl load ~/Library/LaunchAgents/com.user.jarvis-collect.plist` (30-min `jarvis collect --flush`).
-6. **Offload pilot:** delegate ONE heavy task to the Lightspeed Cline CLI and confirm its JSON result returns to the Mac.
-7. **Hardened backup:** consider a strict consistent snapshot (stop server during copy) or TrueNAS age-encrypted archive for the 3-2-1 (current `jarvis-backup.sh` is a warm copy).
+1. **Finish/verify the inbox drain** (`scripts/monitor-ingest.py` or `jarvis ingest-status` → `remaining: 0`), then reconcile counts (ingested == files, no orphans).
+2. **Resolve the Tailscale-8766 anomaly** (or adopt the LAN `JARVIS_REMOTE` explicitly).
+3. **Enable `JARVIS_TOKEN`** end-to-end (same value in the box env + `server-start.bat` and `~/.zshrc` on the Mac) now that all mutating/sensitive routes are guarded.
+4. **Register thin-client ambient collection**: `launchctl load ~/Library/LaunchAgents/com.user.jarvis-collect.plist` (30-min `collect --flush`).
+5. **Restore server-side digests/triggers**: add a config-gated `TriggerLoop` inside `run_dashboard` (default OFF; RAM discipline) — Mayor idle-maintenance already runs.
+6. **Offload pilot:** delegate ONE heavy task to the Lightspeed Cline CLI and confirm the JSON round-trip.
+7. **Hardened backup:** strict-consistent snapshot or TrueNAS/age-encrypted archive (current backup is a warm copy).
 
 ## How to resume after a reboot
 1. `cd /Users/lucasdespot/jarvis` (venv `.venv/bin/python`).

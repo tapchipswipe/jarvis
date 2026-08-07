@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.user.jarvis-ingest-monitor</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/lucasdespot/jarvis/.venv/bin/python</string>
+		<string>/Users/lucasdespot/jarvis/scripts/monitor-ingest.py</string>
+		<string>--url</string>
+		<string>http://192.168.1.94:8766</string>
+		<string>--interval</string>
+		<string>15</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/lucasdespot/jarvis/logs/ingest-monitor.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/lucasdespot/jarvis/logs/ingest-monitor.log</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>
