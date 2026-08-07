@@ -23,13 +23,10 @@ write_briefing(title, content)                     -> Path
 from __future__ import annotations
 
 import logging
-import os
 import platform
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("jarvis.notify")
 
@@ -76,7 +73,7 @@ def _run(cmd: list[str], timeout: int = 8) -> bool:
 
 # ── Desktop notification backends ────────────────────────────────────────────
 
-def _send_terminal_notifier(title: str, body: str, category: Optional[str]) -> bool:
+def _send_terminal_notifier(title: str, body: str, category: str | None) -> bool:
     if SYSTEM != "Darwin":
         return False
     cmd = ["terminal-notifier", "-title", title, "-message", body]
@@ -118,7 +115,7 @@ def send_notification(
     title: str,
     body: str,
     *,
-    category: Optional[str] = None,
+    category: str | None = None,
 ) -> None:
     """Send a desktop notification.
 

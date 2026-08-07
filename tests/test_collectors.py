@@ -189,7 +189,7 @@ class TestMessagesCollector:
     @patch("jarvis.collectors.messages.sqlite3.connect")
     @patch("jarvis.collectors.messages._copy_locked_db")
     def test_sync_messages_no_data(self, mock_copy, mock_conn, mock_store):
-        from jarvis.collectors.messages import sync_messages
+        pass
 # ---------------------------------------------------------------------------
 # notes collector
 # ---------------------------------------------------------------------------
@@ -470,7 +470,7 @@ class TestBookmarksCollector:
 
 class TestSyncRunner:
     def test_import(self):
-        from jarvis.collectors.sync_runner import run_sync, ingest_gemini_takeout
+        from jarvis.collectors.sync_runner import ingest_gemini_takeout, run_sync
         assert callable(run_sync)
         assert callable(ingest_gemini_takeout)
 

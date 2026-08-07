@@ -11,29 +11,25 @@ Covers:
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from jarvis.triggers import (
-    Trigger,
-    TriggerContext,
-    TriggerError,
-    TriggerCooldown,
-    TimeTrigger,
+    CLASS_MAP,
     EventTrigger,
     PollTrigger,
+    TimeTrigger,
+    TriggerContext,
     TriggerEngine,
+    TriggerError,
     TriggerLoop,
     _dispatch_action,
     _instantiate,
     load_triggers,
-    CLASS_MAP,
-    HARDCODED_TRIGGERS,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

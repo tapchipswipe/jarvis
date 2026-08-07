@@ -16,6 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+
 def _default_path() -> Path:
     """Default cache DB, resolved from env at call time (not import time) so tests
     can override JARVIS_CACHE after the module is imported."""

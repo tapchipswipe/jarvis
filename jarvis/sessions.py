@@ -1,9 +1,9 @@
 """
 jarvis/sessions.py — SQLite-backed session database for multi-turn agent chat.
 """
+import json
 import sqlite3
 import uuid
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 

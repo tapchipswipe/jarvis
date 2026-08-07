@@ -64,7 +64,7 @@ def _cache_path() -> Path:
 
 
 def _cache_key(text: str, model: str) -> str:
-    return hashlib.sha256(f"{model}\x00{text}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{model}\x00{text}".encode()).hexdigest()
 
 
 def _cache_conn() -> sqlite3.Connection:

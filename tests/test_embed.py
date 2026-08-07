@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jarvis.embed import get_embedding, get_embeddings, _OLLAMA_HOST, _OLLAMA_PORT
+from jarvis.embed import get_embedding, get_embeddings
 
 
 @pytest.fixture(autouse=True)
@@ -186,7 +186,6 @@ def test_embedding_cache_key_includes_model():
 
 def test_embedding_cache_write_errors_are_graceful(monkeypatch):
     """A broken cache (bad path) must never raise from get_embeddings."""
-    import urllib.error
     monkeypatch.setenv("JARVIS_EMBED_CACHE", "/nonexistent-dir-xyz/embed_cache.db")
     cm = _make_fake_urlopen({"embedding": [0.1]})
     with patch("jarvis.embed.urllib.request.urlopen", return_value=cm):

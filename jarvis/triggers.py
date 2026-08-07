@@ -25,16 +25,15 @@ Hardcoded defaults are merged in when keys are absent from the file.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import platform
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from jarvis.notify import send_notification, write_briefing
 
@@ -54,14 +53,14 @@ class TriggerContext:
     """Snapshot of current state available to trigger conditions."""
     now: datetime
     # DaemonState fields (decoupled from the actual class to avoid circular imports)
-    last_ingest_ts: Optional[str]   = None
+    last_ingest_ts: str | None   = None
     activity_log: list = field(default_factory=list)
     pending_queue: list = field(default_factory=list)
     retry_queue: list = field(default_factory=list)
     trigger_events: dict = field(default_factory=dict)  # event_name -> last_fired_ts
     # Store fields
     memory_count: int = 0
-    last_memory_ts: Optional[str] = None
+    last_memory_ts: str | None = None
     store: Any = None  # the Store instance (set by TriggerEngine.evaluate)
     # Mayor task-queue counts (populated by evaluate when available)
     task_pending: int = 0
@@ -79,7 +78,7 @@ class Trigger:
         self.actions = actions
         self.enabled: bool = kwargs.get("enabled", True)
         self.cooldown: int = int(kwargs.get("cooldown", 0))  # seconds
-        self._last_fired: Optional[datetime] = None
+        self._last_fired: datetime | None = None
 
     # ── abstract interface ──────────────────────────────────────────────────
 
@@ -109,7 +108,7 @@ class Trigger:
             try:
                 res = _dispatch_action(action_spec, ctx, trigger_name=self.name)
                 results.append(res)
-            except Exception as exc:   # noqa: BLE001
+            except Exception as exc:
                 logger.error("[%s] action %r failed: %s", self.name, action_spec, exc, exc_info=True)
         self._last_fired = ctx.now
         return results
@@ -134,7 +133,7 @@ class TimeTrigger(Trigger):
     def __init__(self, name: str, actions: list[dict], cron_expr: str, **kwargs: Any):
         super().__init__(name, actions, **kwargs)
         self.cron_expr = cron_expr
-        self._last_eval_minute: Optional[tuple[int, int, int, int, int]] = None
+        self._last_eval_minute: tuple[int, int, int, int, int] | None = None
         self._parse_expr(cron_expr)
 
     def _parse_expr(self, expr: str) -> None:
@@ -349,8 +348,8 @@ def _action_digest(
 
         # Durable session-tier memory so the digest is searchable later.
         try:
-            from jarvis.store import fingerprint
             from jarvis.embed import get_embedding
+            from jarvis.store import fingerprint
             now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint("brief", title, text, now_iso)
             if not store.exists(fid):
@@ -420,7 +419,7 @@ class TriggerEngine:
         self._events_lock = threading.Lock()
         self.logger = logging.getLogger("jarvis.triggers.engine")
 
-    def raise_event(self, event_name: str, payload: Optional[dict] = None) -> None:
+    def raise_event(self, event_name: str, payload: dict | None = None) -> None:
         """Mark an event as fired. Thread-safe."""
         with self._events_lock:
             entry = self._events.setdefault(event_name, {})
@@ -502,7 +501,7 @@ class TriggerEngine:
                             ev["fired_at"] = now.isoformat()
             except TriggerCooldown:
                 pass  # expected; not an error
-            except Exception as exc:         # noqa: BLE001
+            except Exception as exc:
                 self.logger.error(
                     "[%s] evaluate failed: %s", trigger.name, exc, exc_info=True
                 )
@@ -565,7 +564,7 @@ HARDCODED_TRIGGERS: list[dict[str, Any]] = [
 ]
 
 
-def load_triggers(config_path: Optional[Path] = None) -> list[Trigger]:
+def load_triggers(config_path: Path | None = None) -> list[Trigger]:
     """Load triggers from a TOML file, merge with hardcoded defaults.
 
     User-defined triggers take precedence (same name → user wins).

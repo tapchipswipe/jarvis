@@ -1,27 +1,25 @@
-import os
-import sys
-import json
-import time
-import signal
 import hashlib
+import json
 import logging
-import threading
+import os
 import platform
+import signal
+import threading
+import time
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 import watchdog.observers
 from watchdog.events import FileSystemEventHandler
 
-from jarvis.store import Store, fingerprint
+from jarvis.classifier import apply_envelope, classify, validate_envelope
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
-from jarvis.classifier import classify, validate_envelope, apply_envelope
-from jarvis.routes import ROUTE_TAG_MAP
-from jarvis.device_id import get_device_id
 from jarvis.paths import config_dir, config_file
+from jarvis.routes import ROUTE_TAG_MAP
+from jarvis.store import Store, fingerprint
 
 try:
     from jarvis.triggers import TriggerEngine, load_triggers

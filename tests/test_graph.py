@@ -14,17 +14,15 @@ from __future__ import annotations
 import pytest
 
 from jarvis.graph import (
+    _best_match,
     _normalise,
     _similarity,
-    _best_match,
-    FUZZY_THRESHOLD,
-    upsert_entity,
-    resolve_entity,
-    get_related,
     get_entity_timeline,
+    get_related,
     infer_relationships,
+    resolve_entity,
+    upsert_entity,
 )
-
 
 # ── Normalisation ─────────────────────────────────────────────────────────────
 
@@ -217,6 +215,7 @@ def api_client(tmp_path, monkeypatch, mock_chroma_client):
     call store.close() in a finally block are exercised exactly as in prod.
     """
     from fastapi.testclient import TestClient
+
     from jarvis import dashboard
     from jarvis.store import Store
 

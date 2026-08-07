@@ -1,14 +1,16 @@
 import json
-from pathlib import Path
 from datetime import datetime, timezone
-from jarvis.store import Store, fingerprint
+from pathlib import Path
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import Store, fingerprint
 
 
 def ingest_gemini_takeout(zip_path: Path, store: Store):
     count = 0
-    import zipfile, tempfile
+    import tempfile
+    import zipfile
     if not zip_path.exists():
         return 0
     extract_dir = Path(tempfile.mkdtemp()) / "gemini_takeout"
@@ -45,7 +47,7 @@ def run_sync(target: str = "all", progress_callback=None):
     results = {}
     if target in ("all", "files"):
         try:
-            from jarvis.collectors import files, shell, browser, kilo
+            from jarvis.collectors import browser, kilo, shell
             from jarvis.collectors.files import start_watcher
             observer = start_watcher(store)
             observer.join(timeout=5)

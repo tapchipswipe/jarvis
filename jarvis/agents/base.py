@@ -12,15 +12,13 @@ Each agent:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Optional
-
-import logging
 
 logger = logging.getLogger("jarvis.agents")
 

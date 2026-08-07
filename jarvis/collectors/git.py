@@ -1,10 +1,9 @@
 import subprocess
-import sqlite3
 from pathlib import Path
-from datetime import datetime
-from jarvis.store import fingerprint
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 GIT_DIRS = [
     Path.home() / "code",

@@ -7,8 +7,6 @@ and writes the generated code back to the codebase.
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 
 from jarvis.agents.base import BaseAgent
 

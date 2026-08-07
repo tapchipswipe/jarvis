@@ -8,21 +8,16 @@ Covers:
 """
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from jarvis.consolidation import (
-    cluster_by_topic,
-    summarize_cluster,
-    run_daily,
-    run_weekly,
-    run_monthly,
     PROMPT_DAILY,
-    PROMPT_WEEKLY,
-    PROMPT_MONTHLY,
+    cluster_by_topic,
+    run_daily,
+    run_monthly,
+    run_weekly,
+    summarize_cluster,
 )
-
 
 # ── cluster_by_topic ─────────────────────────────────────────────────────────
 

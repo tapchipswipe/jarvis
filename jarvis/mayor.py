@@ -21,16 +21,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import subprocess
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from jarvis.task_queue import TaskQueue
 
@@ -178,8 +177,8 @@ def get_agent(agent_name: str, project_root: Path):
     """Get an agent instance by name."""
     from jarvis.agents.code import CodeAgent
     from jarvis.agents.design import DesignAgent
-    from jarvis.agents.research import ResearchAgent
     from jarvis.agents.qa import QAAgent
+    from jarvis.agents.research import ResearchAgent
     from jarvis.agents.security import SecurityAgent
 
     agents = {

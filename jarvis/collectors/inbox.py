@@ -2,12 +2,13 @@ import json
 import os
 import platform
 from pathlib import Path
-from watchdog.observers import Observer
+
 from watchdog.events import FileSystemEventHandler
-from jarvis.store import Store, fingerprint
+from watchdog.observers import Observer
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
-from jarvis.device_id import get_device_id
+from jarvis.store import fingerprint
 
 
 def _get_inbox_root() -> Path:

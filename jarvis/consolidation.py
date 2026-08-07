@@ -1,9 +1,9 @@
-from jarvis.store import Store, fingerprint
-from jarvis.embed import get_embedding
-from jarvis.ingest import chunk_document
-from jarvis.brain import Brain
-from datetime import datetime, timedelta, timezone
 import json
+from datetime import datetime, timedelta, timezone
+
+from jarvis.brain import Brain
+from jarvis.embed import get_embedding
+from jarvis.store import Store, fingerprint
 
 PROMPT_DAILY = """You are a memory consolidation engine. Read the raw memories below and write a concise session summary (200-400 words). Group by topic. Focus on key events, decisions, and insights. Write in first-person plural (we/our). Do not invent facts. End with 1-2 sentence "takeaway" block."""
 

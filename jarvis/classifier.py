@@ -1,7 +1,7 @@
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 
 
 def _ollama_generate(prompt: str, model: str = None, host: str = None, port: int = None) -> str:
@@ -92,7 +92,7 @@ def _parse_envelope(raw: str) -> dict | None:
 
 
 def validate_envelope(env: dict) -> bool:
-    from jarvis.routes import ROUTES, ESCALATE_REASON_MAX
+    from jarvis.routes import ESCALATE_REASON_MAX, ROUTES
     required = {"route"}
     if not all(k in env for k in required):
         return False

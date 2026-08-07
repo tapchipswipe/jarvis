@@ -1,9 +1,10 @@
 import plistlib
-from pathlib import Path
 from datetime import datetime, timezone
-from jarvis.store import fingerprint
+from pathlib import Path
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 BOOKMARK_PATHS = [
     Path.home() / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Bookmarks",

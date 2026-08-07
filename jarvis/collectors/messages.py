@@ -1,10 +1,11 @@
-import sqlite3
 import shutil
-from pathlib import Path
+import sqlite3
 from datetime import datetime, timezone
-from jarvis.store import fingerprint
+from pathlib import Path
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 CHAT_DB = Path.home() / "Library" / "Messages" / "chat.db"
 

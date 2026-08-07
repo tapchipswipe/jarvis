@@ -1,10 +1,12 @@
-from pathlib import Path
 from datetime import datetime
-from watchdog.observers import Observer
+from pathlib import Path
+
 from watchdog.events import FileSystemEventHandler
-from jarvis.store import fingerprint
+from watchdog.observers import Observer
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 WATCH_DIRS = [
     Path.home() / "Documents",

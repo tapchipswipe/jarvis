@@ -1,8 +1,8 @@
 import os
-import sys
-import time
 import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 PID_FILE = Path("/tmp/jarvis-daemon.pid")
@@ -42,8 +42,8 @@ def start_trigger_loop():
     keeps running either way; failures are logged).
     """
     try:
-        from jarvis.triggers import TriggerLoop
         from jarvis.store import Store
+        from jarvis.triggers import TriggerLoop
 
         loop = TriggerLoop(store=Store(), interval=TRIGGER_INTERVAL)
         loop.start()

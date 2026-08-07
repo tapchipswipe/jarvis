@@ -7,7 +7,6 @@ Uses deepseek-r1:14b for reasoning.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from jarvis.agents.base import BaseAgent
 

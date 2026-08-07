@@ -1,10 +1,11 @@
-import sqlite3
 import hashlib
 import json
-import chromadb
-from chromadb.config import Settings
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import chromadb
+from chromadb.config import Settings
 
 from jarvis.paths import data_dir, ensure_private_dir
 

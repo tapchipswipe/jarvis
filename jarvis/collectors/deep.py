@@ -1,8 +1,9 @@
-from pathlib import Path
 from datetime import datetime
-from jarvis.store import fingerprint
+from pathlib import Path
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 # Scaled-back deep-scan roots. The mac Library dirs contain tens of thousands of
 # app-sandbox files and repeatedly hit Errno 11 (EAGAIN) during a live walk, so

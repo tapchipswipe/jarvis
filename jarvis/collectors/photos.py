@@ -1,10 +1,11 @@
-import subprocess
 import json
-from pathlib import Path
+import subprocess
 from datetime import datetime
-from jarvis.store import fingerprint
+from pathlib import Path
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 PHOTO_DIRS = [
     Path.home() / "Pictures",

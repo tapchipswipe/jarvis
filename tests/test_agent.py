@@ -14,22 +14,21 @@ from __future__ import annotations
 
 import json
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from jarvis.agent import (
-    run_turn,
-    _ollama_chat,
-    _extract_text,
-    _parse_tool_call,
-    _inject_rag_context,
-    SYSTEM_PROMPT,
     MAX_STEPS,
+    SYSTEM_PROMPT,
+    _extract_text,
+    _inject_rag_context,
+    _ollama_chat,
+    _parse_tool_call,
+    run_turn,
 )
 from jarvis.sessions import SessionDB
 from jarvis.tools import TOOLS, TOOLS_SCHEMA, execute_tool
-
 
 # ── Import / constants ────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
-import warnings
 import logging
+import warnings
 
 warnings.warn(
     "jarvis.sync.pusher is deprecated; use jarvis.sync.daemon for ingestion.",
@@ -9,9 +9,11 @@ warnings.warn(
 logging.getLogger(__name__).warning("pusher module is deprecated; use the sync daemon instead")
 
 from pathlib import Path
-from watchdog.observers import Observer
+
 from watchdog.events import FileSystemEventHandler
-from jarvis.sync.push import push_file, ensure_remote_dir
+from watchdog.observers import Observer
+
+from jarvis.sync.push import ensure_remote_dir, push_file
 
 WATCH_DIRS = [
     Path.home() / "Documents",

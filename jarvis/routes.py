@@ -1,4 +1,3 @@
-import re
 
 ROUTES = {"idea_capture", "reference_note", "context_list_update", "escalate"}
 ROUTE_TAG_MAP = {
@@ -13,7 +12,7 @@ ESCALATE_REASON_MAX = 200
 
 
 def classify_existing(store, memory: dict, model: str = None) -> dict:
-    from jarvis.classifier import classify, validate_envelope, apply_envelope
+    from jarvis.classifier import apply_envelope, classify, validate_envelope
     content = memory.get("content", "")
     source_id = memory.get("source_id", memory.get("id", "unknown"))
     envelope = classify(content, source_id=source_id, model=model)

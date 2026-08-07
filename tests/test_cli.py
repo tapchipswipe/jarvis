@@ -444,8 +444,9 @@ def test_delegate_command_offloads_to_cline(monkeypatch):
     import json as _json
     import subprocess
 
-    from jarvis.cli import cli
     from click.testing import CliRunner
+
+    from jarvis.cli import cli
 
     class _FakeProc:
         returncode = 0

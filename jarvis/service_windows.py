@@ -1,8 +1,8 @@
 import os
-import sys
-import time
 import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 PID_FILE = Path("C:/data/jarvis/logs/daemon.pid")

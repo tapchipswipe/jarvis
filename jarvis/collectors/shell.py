@@ -1,9 +1,10 @@
-from pathlib import Path
 from datetime import datetime, timezone
-from jarvis.store import fingerprint
+from pathlib import Path
+
 from jarvis.embed import get_embedding
-from jarvis.ingest import chunk_document
 from jarvis.extract import extract_metadata
+from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 HISTORY_PATHS = [
     (Path.home() / ".zsh_history", "zsh"),

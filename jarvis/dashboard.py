@@ -16,8 +16,8 @@ Or via CLI:
 from __future__ import annotations
 
 import json
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -369,7 +369,6 @@ def dashboard_consolidation(request: Request):
 @app.get("/dashboard/thoughts", response_class=HTMLResponse)
 def dashboard_thoughts(request: Request):
     """Submit ideas to the Mayor and see recent submissions."""
-    import urllib.request, json
     tasks = []
     try:
         from jarvis.task_queue import TaskQueue
@@ -421,7 +420,8 @@ def dashboard_thoughts(request: Request):
 @app.get("/dashboard/queue", response_class=HTMLResponse)
 def dashboard_queue(request: Request):
     """Task queue with approve/reject buttons."""
-    import urllib.request, json
+    import json
+    import urllib.request
     tasks = []
     try:
         req = urllib.request.Request("/api/tasks?limit=50")
@@ -457,7 +457,7 @@ def dashboard_queue(request: Request):
 
 # ── Mayor API Routes ─────────────────────────────────────────────────────────
 
-_mayor_instance: "Mayor" | None = None
+_mayor_instance: Mayor | None = None
 
 
 def _start_mayor():
@@ -466,8 +466,9 @@ def _start_mayor():
     if _mayor_instance is not None:
         return
     try:
-        from jarvis.mayor import Mayor
         import threading
+
+        from jarvis.mayor import Mayor
         _mayor_instance = Mayor()
         t = threading.Thread(target=_mayor_instance.run_loop, daemon=True)
         t.start()
@@ -480,8 +481,8 @@ def api_submit_idea(request: Request, payload: dict):
     """Submit an idea to the Mayor."""
     if not _host_ok(request):
         return JSONResponse({"error": "forbidden"}, status_code=403)
-    from jarvis.task_queue import TaskQueue
     from jarvis.mayor import parse_idea
+    from jarvis.task_queue import TaskQueue
     try:
         idea = payload.get("idea", "")
         source = payload.get("source", "dashboard")
@@ -574,10 +575,8 @@ def api_entities(q: str | None = None, type: str | None = None, limit: int = 50)
       ?type=   — filter by entity_type (e.g. person, organization, place)
       ?limit=  — max results (clamped to 1..500, default 50)
     """
-    if limit < 1:
-        limit = 1
-    if limit > 500:
-        limit = 500
+    limit = max(limit, 1)
+    limit = min(limit, 500)
     store = _get_store()
     try:
         where = []
@@ -638,6 +637,7 @@ def api_entity_relationships(entity_id: str):
 # connection resets on /api/health while the loop was busy).
 import os as _os
 import time as _time
+
 _SERVER_START = _time.time()
 
 
@@ -1012,8 +1012,8 @@ def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL
 
     print(f"Starting Jarvis Dashboard on {scheme}://0.0.0.0:{port}")
     print(f"Daemon URL: {daemon_url}")
-    print(f"Submit ideas: POST /api/idea")
-    print(f"Task queue:   GET  /api/tasks")
+    print("Submit ideas: POST /api/idea")
+    print("Task queue:   GET  /api/tasks")
     uvicorn.run(app, **uvicorn_kwargs)
 
 

@@ -11,12 +11,11 @@ Public API:
 """
 from __future__ import annotations
 
-import logging
 import hashlib
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, _normalise(a), _normalise(b)).ratio()
 
 
-def _best_match(name: str, candidates: list[dict]) -> Optional[str]:
+def _best_match(name: str, candidates: list[dict]) -> str | None:
     """Return the entity_id of the closest candidate, or None.
 
     Candidates is a list of dicts with at least `id` and `canonical_name`.

@@ -4,12 +4,12 @@ Communicates with Ollama via urllib only (no requests library).
 """
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 
 from jarvis.embed import get_embedding
-from jarvis.store import Store
 from jarvis.sessions import SessionDB
+from jarvis.store import Store
 from jarvis.tools import TOOLS_SCHEMA, execute_tool
 
 _OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "100.102.0.99")
@@ -203,7 +203,7 @@ def _inject_rag_context(session_db, user_message, model: str | None = None) -> s
         parts = ["RELEVANT MEMORIES:"]
         for r in rows:
             parts.append(
-                f"[" + r.get("source", "") + "] " + "\n" +
+                "[" + r.get("source", "") + "] " + "\n" +
                 r.get("timestamp", "") + "\n" + r.get("content", "")
             )
         # Surface linked entities so the agent can reason over the graph.

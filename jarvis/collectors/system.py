@@ -1,10 +1,10 @@
-import subprocess
 import json
-from pathlib import Path
+import subprocess
 from datetime import datetime, timezone
-from jarvis.store import fingerprint
+
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.store import fingerprint
 
 
 def sync_system(store):

@@ -2,21 +2,17 @@
 jarvis/tools.py — Registered tools for the Jarvis agent loop.
 Each tool is wrapped to never raise; errors are returned as dicts.
 """
-import os
 import json
 import re
-import uuid
+import urllib.error
 import urllib.parse
 import urllib.request
-import urllib.error
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+import uuid
+from datetime import datetime, timezone
 
-from jarvis.store import Store
 from jarvis.embed import get_embedding
-from jarvis.graph import resolve_entity, get_entity_timeline
-from jarvis.consolidation import run_daily, run_weekly, run_monthly
-
+from jarvis.graph import get_entity_timeline, resolve_entity
+from jarvis.store import Store
 
 # ---------------------------------------------------------------------------
 # Safety wrapper

@@ -1,14 +1,14 @@
 import argparse
-import time
 import platform
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console
 from rich.layout import Layout
+from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
-from rich.live import Live
 from rich.text import Text
 
 from jarvis.monitor_client import MonitorClient, MonitorClientError
