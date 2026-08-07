@@ -213,6 +213,49 @@ def test_doctor_local_mode_no_box(monkeypatch):
     assert "local mode (no box to probe)" in result.output
 
 
+def test_flush_client_mode(monkeypatch):
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.pending_count.return_value = 3
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr("jarvis.cache.flush_outbox",
+                        lambda cache, limit=200: {"pushed": 3, "failed": 0, "offline": False})
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["flush"])
+    assert result.exit_code == 0
+    assert "Pushed 3 memory(-ies)" in result.output
+
+
+def test_flush_offline(monkeypatch):
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.pending_count.return_value = 5
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr("jarvis.cache.flush_outbox",
+                        lambda cache, limit=200: {"pushed": 0, "failed": 0, "offline": True})
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["flush"])
+    assert result.exit_code == 0
+    assert "Server unreachable" in result.output
+    assert "5 item(s) stay queued" in result.output
+
+
+def test_flush_needs_client_mode(monkeypatch):
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["flush"])
+    assert result.exit_code == 0
+    assert "Not in client mode" in result.output
+
+
 def test_memories_client_mode(monkeypatch):
     from jarvis import remote
     from jarvis.cli import cli

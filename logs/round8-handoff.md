@@ -2,11 +2,10 @@
 
 ## ☕ TL;DR — what happened overnight (read this first)
 - **The box is the only thing that needs your hands.** The running `jarvis server`
-  predates the inbox ingester + `/api/memories` + `/api/ingest/status`. On the box:
-  `cd C:\Users\despo\jarvis && git pull` (should be a no-op — it's at HEAD) then
-  **restart task `JarvisServer`** (or re-run `C:\data\jarvis\server-start.bat`).
-  That activates the ~2,730-file inbox backlog ingester (in-process, throttled,
-  idempotent) + the new API.
+  predates all of tonight's work and the box's git is at `966d7b2` (behind `bot`/`main`).
+  On the box: `cd C:\Users\despo\jarvis && git pull` then **restart task `JarvisServer`**
+  (or re-run `C:\data\jarvis\server-start.bat`). That loads the inbox ingester
+  (in-process, throttled, idempotent) + `/api/memories` + `/api/ingest/status`.
 - **Watch it drain:** `jarvis ingest-status` until `remaining` → 0, then
   `jarvis doctor` and reconcile counts (`docs/STATUS.md` action #1/#2).
 - **Nothing else is broken or half-done.** 21 feature/build/test rounds landed on
@@ -122,9 +121,13 @@ This session runs while the user is away. All work is agent-driven, committed to
   gating, 374 tests, updated action list).
 - [x] **Round 23 (7ab6472):** added the "morning TL;DR" summary to the top of
   `logs/round8-handoff.md` for a fast resume.
-- [x] **Round 24 (pending commit):** inbox ingester now tracks per-batch `errors`
+- [x] **Round 24 (e9fbe7f):** inbox ingester now tracks per-batch `errors`
   (process_batch + `/api/ingest/status` + ingest_status) so a failing file isn't
   invisible; + error-accounting test. Suite 375 passed, 1 skipped.
+- [x] **Round 25 (pending commit):** corrected the "box is at HEAD" language everywhere
+  (the box's git is actually at `966d7b2`, ~20 commits behind — it MUST `git pull`
+  before restart); added `flush` CLI tests (success/offline/not-client). Also verified
+  box HEAD = `966d7b2`. Suite 378 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the

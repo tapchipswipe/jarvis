@@ -18,13 +18,13 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 - Work on `bot`; `main` is ff-mirrored to `bot`; both pushed to `tapchipswipe/jarvis`. HEAD `f8cede5`. Tests: **374 passed, 1 skipped**, 2 warnings (3rd-party). All thin-client work is on `bot`==`main` (pushed).
 
 ## Known issues
-- **Box-restart gating:** the running `jarvis server` predates the inbox ingester + `/api/memories` + `/api/ingest/status`. Inbox `C:\data\jarvis\inbox` is untouched (5,458 files) until the server is restarted onto the pushed commit. Until then the new endpoints return 404 and the CLI (memories/timeline/ingest-status) gracefully reports "not present / Could not reach the box". **One action gates everything: restart task `JarvisServer` (or re-run `server-start.bat`) after `git pull` (or just pull — it's already at HEAD).**
+- **Box-restart gating:** the running `jarvis server` predates everything pushed tonight and the box's **git working tree is at `966d7b2` (~20 commits behind `bot`/`main` = `e9fbe7f`)**. Inbox `C:\data\jarvis\inbox` is untouched (5,458 files); `/api/memories` + `/api/ingest/status` return 404 (graceful CLI handling). **One action gates everything: on the box `cd C:\Users\despo\jarvis && git pull`, then restart task `JarvisServer` (or re-run `C:\data\jarvis\server-start.bat`).**
 - `/api/health` on the box is instant (async-pure).
 - Duplicate-content memories collapse on migration (content-hash dedupe) — the Mac's one dup error-string is intentionally absent on the box.
 - Token auth is config-gated: no `JARVIS_TOKEN` is set on the box yet, so the network API is effectively open on Tailscale (loopback rules only). See Round 8 notes to enable consistently.
 
 ## Immediate next actions (priority order)
-1. **Restart the box server** to load the pushed commit (inbox ingester + `/api/memories` + `/api/ingest/status`). On the box: `git pull` (already at HEAD → no-op) then restart task `JarvisServer` / re-run `C:\data\jarvis\server-start.bat`.
+1. **Restart the box server** to load tonight's pushed work. On the box: `cd C:\Users\despo\jarvis && git pull` (it is at `966d7b2`, ~20 commits behind `bot`==`main`) then restart task `JarvisServer` / re-run `C:\data\jarvis\server-start.bat`.
 2. **Let the ingester drain** `C:\data\jarvis\inbox` and watch `/api/ingest/status` (via `jarvis ingest-status`) until `remaining` → 0; then reconcile counts (ingested == files, no orphans).
 3. **Restore server-side digests/triggers**: `docs/runtime-audit.md` confirms Mayor idle-maintenance (reindex/promote) runs in the server, but `TriggerLoop` (morning/end-of-day digests) is NOT started by `run_dashboard` — add a config-gated `TriggerLoop` (default OFF; model-tier discipline), OR run on a maintenance window.
 4. **Enable `JARVIS_TOKEN`** end-to-end (same value in the box env + `server-start.bat` and `~/.zshrc` on the Mac) now that all mutating/sensitive routes are guarded.
