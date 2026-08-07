@@ -795,6 +795,59 @@ def chat(model, verbose, is_new, resume, max_steps):
         session_db.close()
 
 
+@cli.command()
+@click.option("--n", "n_results", default=8, type=int, help="Memories to ground on")
+@click.option("--source", default=None, help="Restrict grounding to a source (deep/manual/device/...)")
+@click.option("--model", default=None, help="LLM model override")
+@click.option("--json-out", is_flag=True, help="Emit the result as JSON")
+@click.argument("question")
+def ask(question, n_results, source, model, json_out):
+    """Ask Jarvis a one-shot question, ALWAYS grounded on the brain.
+
+    Retrieves the most relevant memories, sends them alongside the question to
+    the LLM, and prints the answer plus the grounding sources — so it never
+    fabricates: if the brain has nothing relevant it will say so. In client mode
+    it asks the box (the shared single brain) rather than the local store.
+    """
+    from jarvis import remote as _remote
+
+    if _remote.is_remote():
+        resp = _remote.chat(question, max_steps=1, model=model)
+        answer = (resp.get("response") or resp.get("answer") or "").strip()
+        if not answer and isinstance(resp.get("message"), str):
+            answer = resp["message"].strip()
+        if json_out:
+            click.echo(json.dumps({"answer": answer, "remote": True}))
+        else:
+            click.echo(answer or "(no answer returned)")
+        return
+
+    store = Store()
+    try:
+        brain = Brain(store, model=model) if model else Brain(store)
+        answer, memories = brain.query(question, n_results=n_results,
+                                       source_filter=source)
+        if json_out:
+            click.echo(json.dumps({
+                "answer": answer,
+                "sources": [{"source": m["source"], "timestamp": m["timestamp"],
+                             "content": m["content"]} for m in memories],
+            }))
+            return
+        click.echo(answer)
+        if memories:
+            click.echo(f"\n-- grounded in {len(memories)} memory(-ies) --")
+            seen = set()
+            for m in memories:
+                key = (m["source"], m["timestamp"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                click.echo(f"  [{m['source']}] {m['timestamp']}  {m['content'][:120]}")
+    finally:
+        store.close()
+
+
 def _show_alerts(brain: Brain):
     click.echo("--- Recent Brain Activity (last 24h) ---")
     activities = brain.get_recent_activity(hours=24, limit=20)

@@ -380,3 +380,62 @@ def test_task_list_command_still_registered():
 
     assert "list" in cli.commands["task"].commands
 
+
+def test_ask_grounds_on_local_brain(monkeypatch):
+    """`ask` in local mode must answer AND show the grounding sources."""
+    import json as _json
+
+    from click.testing import CliRunner
+
+    from jarvis.brain import Brain
+    from jarvis.cli import cli
+
+    class _FakeStore:
+        def close(self): pass
+
+    sentinel = _FakeStore()
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
+    monkeypatch.setattr("jarvis.cli.Store", lambda *a, **k: sentinel)
+
+    # never call the (potentially unmocked) local store/LLM — stub the query
+    monkeypatch.setattr(
+        Brain, "query",
+        lambda self, question, n_results=8, source_filter=None: (
+            "The fence post is solid.",
+            [{"source": "deep", "timestamp": "2026-01-01T00:00:00",
+              "content": "installed the fence post"}]),
+    )
+
+    result = CliRunner().invoke(cli, ["ask", "how is the fence?"])
+    assert result.exit_code == 0, result.output
+    assert "The fence post is solid." in result.output
+    assert "grounded in 1 memory" in result.output
+    assert "installed the fence post" in result.output
+
+    # json mode returns a structured {answer, sources}
+    result2 = CliRunner().invoke(cli, ["ask", "how is the fence?", "--json-out"])
+    assert result2.exit_code == 0
+    data = _json.loads(result2.output)
+    assert data["answer"] == "The fence post is solid."
+    assert data["sources"][0]["source"] == "deep"
+
+
+def test_ask_client_mode_delegates_to_box(monkeypatch):
+    """`ask` in client mode must call the box's brain (not the local store)."""
+    import json as _json
+
+    from click.testing import CliRunner
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "chat",
+                        lambda message, max_steps=8, model=None: {"response": "box answer"})
+
+    result = CliRunner().invoke(cli, ["ask", "hello", "--json-out"])
+    assert result.exit_code == 0, result.output
+    data = _json.loads(result.output)
+    assert data["answer"] == "box answer"
+    assert data["remote"] is True
+
