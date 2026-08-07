@@ -19,7 +19,12 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 
 ## Known issues
 - **DEPLOYED (2026-08-07 morning):** the box now runs `bot`@`d82145b`+ (`git pull` fast-forwarded 40 commits; `JarvisServer` restarted). The in-process inbox ingester is **live and draining** — watch `scripts/monitor-ingest.py` (or `jarvis ingest-status`) until `remaining` → 0; reconcile counts.
-- **⚠ Tailscale port-8766 anomaly:** the Mac can reach the box over Tailscale for ICMP/SSH(22), but **TCP 8766 over Tailscale times out** even though the box listens on `0.0.0.0:8766` and a firewall allow rule exists. LAN (`192.168.1.94:8766`) works. Until this is resolved, use the LAN IP for `JARVIS_REMOTE` (`export JARVIS_REMOTE=http://192.168.1.94:8766`) or investigate the tailnet ACL / box Tailscale state.
+- **✅ Connectivity RESOLVED (2026-08-07):** the box had two `Python — Action: Block`
+  Windows Firewall rules (Private profile, shared by both the LAN + Tailscale interfaces)
+  that silently dropped inbound TCP 8766 to the python server (SYN timeout on both LAN and
+  Tailscale, while ICMP/SSH worked). Deleted those block rules; **LAN + Tailscale `8766` both
+  return 200 now** and `jarvis status`/`search` work over Tailscale. (Consider re-adding a
+  narrower block for other ports if hardening needed.)
 - `/api/health` on the box is instant (async-pure).
 - Duplicate-content memories collapse on migration (content-hash dedupe).
 - Token auth is config-gated: no `JARVIS_TOKEN` is set yet, so the API is open on the network.

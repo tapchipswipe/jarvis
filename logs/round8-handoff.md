@@ -215,3 +215,12 @@ memories (round-trip OK); `jarvis ingest-status` → correctly surfaces the expe
   0 errors). This is the intended idempotent reconcile.
 - Monitor (`scripts/monitor-ingest.py`) reported `DONE ✓ 100.0%`; one-shot LaunchAgent
   `com.user.jarvis-ingest-monitor` unloaded after completion.
+
+## Connectivity — RESOLVED (2026-08-07)
+- Root cause of the earlier "Tailscale 8766 timeout": the box had **two `Python`
+  `Action: Block` Windows Firewall rules** on the Private profile (used by BOTH the LAN
+  and Tailscale interfaces). Block rules override the port allow, so inbound TCP 8766 to
+  the python server was silently dropped (SYN timeout) while ICMP + SSH(22) still worked.
+- Fix: `netsh advfirewall firewall delete rule name=Python` (deleted 2 rules).
+- Verified: LAN 8766 = 200, **Tailscale 8766 = 200**, `jarvis status` over Tailscale OK.
+  `JARVIS_REMOTE` stays on the Tailscale IP (the designed path).
