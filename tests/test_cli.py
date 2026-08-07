@@ -176,6 +176,43 @@ def test_ingest_status_needs_client_mode(monkeypatch):
     assert "requires thin-client mode" in result.output
 
 
+def test_doctor_reports_checks(monkeypatch):
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.pending_count.return_value = 0
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr(remote, "is_remote", lambda: True)
+    monkeypatch.setattr(remote, "health_deep",
+                        lambda: {"ok": True, "memories": 3954, "mode": "local", "uptime": 100})
+    monkeypatch.setattr(remote, "ingest_status",
+                        lambda: {"active": True, "remaining": 5208})
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["doctor"])
+    assert result.exit_code == 0
+    assert "PASS] mode" in result.output or "WARN] mode" in result.output
+    assert "[PASS] box" in result.output
+    assert "memories=3954" in result.output
+    assert "ingest" in result.output
+
+
+def test_doctor_local_mode_no_box(monkeypatch):
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.pending_count.return_value = 0
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr(remote, "is_remote", lambda: False)
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["doctor"])
+    assert result.exit_code == 0
+    assert "local mode (no box to probe)" in result.output
+
+
 def test_task_list_command_still_registered():
     """The CLI command remains ``task list`` after the rename."""
     from jarvis.cli import cli

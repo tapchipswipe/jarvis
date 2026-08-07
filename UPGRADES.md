@@ -37,6 +37,7 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[planned]` 2026-08-06 — Full server relocation: run triggers/Mayor/digests in the Lightspeed `jarvis server` process; retire Mac-local store/push (thin-client cutover)
 - `[done]` 2026-08-06 — Offline read fallback in CLI search (rolling tail + substring glance + "offline — cached subset" banner); Round 8 hardening: a reachable server that rejects us (e.g. HTTP 403 from the token guards) is now surfaced as "Server error (<code>)" instead of being mislabelled as offline
 - `[done]` 2026-08-06 — `jarvis status` is thin-client aware: in client mode it reports the live box (`/api/health/deep` memories/mode/uptime) + local outbox backlog instead of the stale local (rollback) store snapshot
+- `[done]` 2026-08-06 — `jarvis doctor` — one-shot local+box diagnostics (env mode, outbox backlog, box health/memories, ingest status, os info) for quick operational triage
 - `[done]` 2026-08-06 — Modernized every `datetime.utcnow()` call (naive-UTC) to `datetime.now(timezone.utc).replace(tzinfo=None)` across all source files — same naive-UTC strings, no behavior change; pytest warnings fell from ~370 to 2 (both 3rd-party)
 
 - `[done]` 2026-08-06 — Pure-liveness `/api/health` (no store access, never stalls under inference load) + store-aware `/api/health/deep`; **all** API handlers converted to sync `def` so blocking Store/LLM work runs in the threadpool and never blocks the uvicorn event loop (Round 5b — fixes intermittent 000s on every endpoint, root cause of earlier health blips)

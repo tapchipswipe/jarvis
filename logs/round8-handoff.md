@@ -64,9 +64,19 @@ This session runs while the user is away. All work is agent-driven, committed to
   Suite 348 passed, 1 skipped.
 - [x] **Round 12 (c978ebe):** health-check now also reports `box ingest:` progress
   (read-only; n/a on the pre-restart server). Verified syntax + live run.
-- [x] **Round 13 (pending commit):** test-coverage round — new `tests/test_remote.py`
+- [x] **Round 13 (86c1754):** test-coverage round — new `tests/test_remote.py`
   (transport wrappers + token header, no network), `tests/test_decision_log.py`,
   and server.py shim tests (app identity + `run` delegation). Added coverage for the
   client API surface. Suite 358 passed, 1 skipped.
+- [x] **Round 14 (9ba03b1):** AGENTS.md start-here now references round8-handoff +
+  runtime-audit; documents the thin-client CLI commands.
+- [x] **Round 15 (pending commit):** `jarvis doctor` — consolidated local+box diagnostics
+  (mode, outbox backlog, box health+memories, ingest status, os). Verified live against
+  the real box (all PASS). 2 new tests. Suite 360 passed, 1 skipped.
+
+### Live thin-client validation (2026-08-07, read-only)
+`jarvis status` → live box (memories=3954); `jarvis search 'tailscale' -n 3` → real box
+memories (round-trip OK); `jarvis ingest-status` → correctly surfaces the expected HTTP
+404 on the pre-restart server; `jarvis doctor` → all PASS.
 
 

@@ -1162,6 +1162,61 @@ def ingest_status():
     click.echo(f"  inbox: {st.get('inbox')}")
 
 
+@cli.command()
+def doctor():
+    """Run a quick local + box diagnostics report (thin-client friendly)."""
+    import platform
+
+    from jarvis import remote
+    from jarvis.cache import Cache
+
+    checks = []
+
+    def check(name, ok, detail=""):
+        checks.append((name, bool(ok), detail))
+
+    mode = os.environ.get("JARVIS_MODE", "local")
+    url = remote.server_url()
+    check("mode", mode in ("client", "local"),
+          f"JARVIS_MODE={mode} remote_url={'set' if url else 'none'}")
+
+    try:
+        cache = Cache()
+        try:
+            pending = cache.pending_count()
+        finally:
+            cache.close()
+        check("outbox", True, f"{pending} pending write(s)")
+    except Exception as e:  # noqa: BLE001 - diagnostic should never hard-fail CLI
+        check("outbox", False, str(e))
+
+    if remote.is_remote():
+        try:
+            d = remote.health_deep()
+            check("box", d.get("ok") is True,
+                  f"memories={d.get('memories')} mode={d.get('mode')} uptime={int(d.get('uptime', 0))}s")
+        except Exception as e:  # noqa: BLE001
+            check("box", False, f"unreachable: {e}")
+        try:
+            st = remote.ingest_status()
+            check("ingest", True,
+                  f"active={st.get('active')} remaining={st.get('remaining')}")
+        except Exception as e:  # noqa: BLE001 - 404 expected pre-box-restart
+            check("ingest", True, f"endpoint not on running server yet ({e.__class__.__name__})")
+    else:
+        check("box", True, "local mode (no box to probe)")
+
+    ofl = platform.system()
+    check("os", True, f"{ofl} / python {platform.python_version()}")
+    click.echo(f"Jarvis doctor — {len(checks)} checks\n" + "-" * 40)
+    bad = 0
+    for name, ok, detail in checks:
+        bad += 0 if ok else 1
+        click.echo(f"[{'PASS' if ok else 'WARN'}] {name:<10} {detail}")
+
+
 if __name__ == "__main__":
     cli()
+
+
 
