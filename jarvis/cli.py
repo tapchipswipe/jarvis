@@ -1167,6 +1167,38 @@ def server(port, daemon_url, tls_cert, tls_key, gen_cert, do_check):
 
 
 @cli.command()
+@click.argument("dst", type=click.Path(file_okay=False), required=False)
+@click.option("--strict", is_flag=True,
+              help="Advisory: mark snapshot as strict (shell wrapper pauses the server)")
+@click.option("--data-dir", default=None, help="Data root override (default: jarvis data dir)")
+def backup(dst, strict, data_dir):
+    """Crash-consistent snapshot of the store to a directory.
+
+    SQLite files (meta.db, embed_cache.db, chroma.sqlite3) use the online-backup
+    API so they are consistent even while the server is live; Chroma's HNSW
+    index binaries are copied best-effort (moment-in-time). For a fully strict
+    HNSW snapshot, pause the server during the maintenance window (see scripts/
+    jarvis-backup.sh --strict). Output mirrors the store layout so restore is a
+    plain directory copy.
+    """
+    from jarvis.backup import snapshot_store
+    from jarvis.paths import data_dir as _data_root
+
+    root = Path(data_dir) if data_dir else _data_root("data")
+    if dst is None:
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dst = str(_data_root("backups", f"snapshot-{ts}"))
+    dst_path = Path(dst)
+    res = snapshot_store(Path(root), dst_path, strict=strict)
+    click.echo(f"snapshot -> {dst_path}")
+    click.echo(f"  sqlite online-backed : {res['sqlite_backed']}")
+    click.echo(f"  chroma index files   : {res['hnsv_copied']} (best-effort)")
+    click.echo(f"  total bytes          : {res['bytes']}")
+    click.echo(f"  strict               : {res['strict']}")
+    click.echo(f"  took (sec)           : {res['duration_sec']}")
+
+
+@cli.command()
 @click.option("--port", default=8767, help="Port for the Mayor HTTP API")
 @click.option("--root", default=None, help="Project root directory")
 def mayor(port, root):

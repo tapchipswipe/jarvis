@@ -934,6 +934,38 @@ def api_ingest_status(request: Request):
     return st
 
 
+@app.post("/api/admin/backup")
+def api_admin_backup(request: Request, payload: dict):
+    """Crash-consistent store snapshot, run IN-PROCESS.
+
+    This runs in the already-running server so no second Python process needs to
+    be invoked on the box (the box's Windows Store-Python alias refuses non-
+    interactive execution). SQLite files (meta.db, embed_cache.db,
+    chroma.sqlite3) use the online-backup API — consistent even while the live
+    brain is being written. Optional body {"dst": "<dir>"}; defaults to a
+    timestamped dir under the data root's backups/. Token-gated like other
+    mutating endpoints.
+    """
+    if not _host_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    import datetime as _dt
+
+    from jarvis.backup import snapshot_store
+    from jarvis.paths import data_dir as _dd
+
+    payload = payload or {}
+    dst = payload.get("dst")
+    if not dst:
+        ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        dst = str(_dd("backups", f"snapshot-{ts}"))
+    try:
+        res = snapshot_store(_dd("data"), Path(dst))
+        res["dst"] = dst
+        return res
+    except Exception as exc:  # noqa: BLE001 - return a clean error to the caller
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
 _TRIGGER_LOOP = None  # keep a strong ref so the daemon thread isn't GC'd

@@ -5,6 +5,7 @@ real data is touched.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -239,12 +240,79 @@ def test_ingest_status_endpoint(client):
     assert "active" in body and "enabled" in body and "uptime" in body
 
 
+def test_admin_backup_endpoint_success(client, tmp_path, monkeypatch):
+    """POST /api/admin/backup must produce a valid snapshot via the in-process
+    backup endpoint, reading the store from the (patched) data dir."""
+    import sqlite3
+
+    root = tmp_path / "root"
+    (root / "data" / "chroma" / "col").mkdir(parents=True)
+    con = sqlite3.connect(root / "data" / "meta.db")
+    con.execute("CREATE TABLE memories (id TEXT PRIMARY KEY, content TEXT)")
+    con.execute("INSERT INTO memories VALUES ('m', 'text')")
+    con.commit()
+    con.close()
+    (root / "data" / "chroma" / "col" / "data_level0.bin").write_bytes(b"\x01")
+
+    monkeypatch.setattr("jarvis.paths.data_dir", lambda *p: Path(root, *p))
+    snap = tmp_path / "snap"
+    r = client.post("/api/admin/backup", json={"dst": str(snap)})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dst"] == str(snap)
+    assert (snap / "meta.db").exists()
+    assert body["strict"] is False
+
+
+def test_admin_backup_endpoint_requires_token(client, monkeypatch):
+    """When JARVIS_TOKEN is set, the backup endpoint must reject a request
+    without a token (non-loopback → 403)."""
+    monkeypatch.setenv("JARVIS_TOKEN", "sekret")
+    r = client.post("/api/admin/backup", json={"dst": "/tmp/nope"})
+    assert r.status_code == 403
+
+
 # ── server.py shim ─────────────────────────────────────────────────────────────
 def test_server_shim_exposes_same_app():
     from jarvis import dashboard, server
     assert server.app is dashboard.app
     assert server.DEFAULT_PORT == dashboard.DEFAULT_PORT
     assert server.DEFAULT_DAEMON_URL == dashboard.DEFAULT_DAEMON_URL
+
+
+def test_backup_command_snapshots_given_data_dir(tmp_path):
+    """`jarvis backup <dst> --data-dir <root>` produces a crash-consistent
+    snapshot dir with the SQLite files online-backed."""
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    data = _store_fixture(tmp_path)
+    dst = tmp_path / "snap"
+    result = CliRunner().invoke(cli, ["backup", str(dst), "--data-dir", str(data)])
+    assert result.exit_code == 0, result.output
+    assert (dst / "meta.db").exists()
+    assert (dst / "chroma" / "chroma.sqlite3").exists()
+    assert "sqlite online-backed" in result.output
+    assert "snapshot ->" in result.output
+
+
+def _store_fixture(root) -> Path:
+    import sqlite3
+
+    data = root / "data"
+    (data / "chroma" / "col").mkdir(parents=True)
+    con = sqlite3.connect(data / "meta.db")
+    con.execute("CREATE TABLE memories (id TEXT PRIMARY KEY, content TEXT)")
+    con.execute("INSERT INTO memories VALUES ('m', 'text')")
+    con.commit()
+    con.close()
+    con = sqlite3.connect(data / "chroma" / "chroma.sqlite3")
+    con.execute("CREATE TABLE embeddings (id TEXT PRIMARY KEY)")
+    con.commit()
+    con.close()
+    (data / "chroma" / "col" / "data_level0.bin").write_bytes(b"\x00")
+    return data
 
 
 def test_server_run_delegates_to_run_dashboard(monkeypatch):
