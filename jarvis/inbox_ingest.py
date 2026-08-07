@@ -22,6 +22,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +37,23 @@ logger = logging.getLogger("jarvis.inbox_ingest")
 # Box default (Windows) inbox; override with JARVIS_INBOX.
 DEFAULT_INBOX = Path(os.environ.get("JARVIS_INBOX", "C:/data/jarvis/inbox"))
 _SUFFIXES = {".md", ".txt", ".csv"}
+
+# Thread-safe progress registry for /api/ingest/status observability.
+_status_lock = threading.Lock()
+_status: dict = {"active": False, "enabled": False, "inbox": str(DEFAULT_INBOX)}
+
+
+def ingest_status() -> dict:
+    """Return an immutable snapshot of ingester progress (fine to read across threads)."""
+    with _status_lock:
+        return dict(_status)
+
+
+def _set_status(active: bool, **updates) -> None:
+    with _status_lock:
+        _status["active"] = bool(active)
+        _status.update(updates)
+        _status["ts"] = _iso()
 
 
 def _iso() -> str:
@@ -113,6 +131,8 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     """
     files = sorted(inbox_files(inbox_dir), key=lambda p: str(p))
     if not files:
+        _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), remaining=0,
+                    processed=0, added=0, done=True, cursor=None)
         return {"processed": 0, "added": 0, "remaining": 0,
                 "done": True, "cursor": None}
 
@@ -130,6 +150,8 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
 
     todo = files[start_idx:start_idx + batch]
     if not todo:
+        _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), remaining=0,
+                    processed=0, added=0, done=True, cursor=str(files[-1]))
         return {"processed": 0, "added": 0, "remaining": 0,
                 "done": True, "cursor": str(files[-1])}
 
@@ -148,6 +170,9 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     finally:
         store.close()
     remaining = len(files) - (start_idx + processed)
+    _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), processed=processed,
+                added=added, remaining=remaining, done=remaining <= 0,
+                cursor=str(todo[-1]))
     return {"processed": processed, "added": added, "remaining": remaining,
             "done": remaining <= 0, "cursor": str(todo[-1])}
 
@@ -167,7 +192,9 @@ def start_background_ingester() -> None:
 
     if os.environ.get("JARVIS_INBOX_DISABLE") == "1":
         logger.info("Inbox ingester disabled via JARVIS_INBOX_DISABLE=1")
+        _set_status(False, enabled=False)
         return
+    _set_status(True, enabled=True)
     batch = int(os.environ.get("JARVIS_INBOX_BATCH", "50"))
     cooldown = float(os.environ.get("JARVIS_INBOX_COOLDOWN", "0.2"))
     cycle = float(os.environ.get("JARVIS_INBOX_CYCLE", "15"))

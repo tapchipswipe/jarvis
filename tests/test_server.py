@@ -206,3 +206,12 @@ def test_mutating_routes_pass_with_valid_token(client, monkeypatch):
     h = {"X-Jarvis-Token": "sekret"}
     assert client.get("/api/export", headers=h).status_code == 200
     assert client.get("/api/search", params={"q": "hello", "n": 5}, headers=h).status_code == 200
+
+
+def test_ingest_status_endpoint(client):
+    """Inbox-ingester telemetry is open (liveness-grade) and returns the shape."""
+    r = client.get("/api/ingest/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert "active" in body and "enabled" in body and "uptime" in body
+

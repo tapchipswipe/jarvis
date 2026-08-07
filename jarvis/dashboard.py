@@ -882,6 +882,20 @@ def api_health_deep(request: Request):
             store.close()
     return {"ok": True, "mode": _os.environ.get("JARVIS_MODE", "local"), "memories": n,
             "uptime": round(_time.time() - _SERVER_START, 1)}
+
+
+@app.get("/api/ingest/status")
+def api_ingest_status(request: Request):
+    """Inbox-backlog ingester progress (in-process; no store access)."""
+    try:
+        from jarvis.inbox_ingest import ingest_status
+        st = ingest_status()
+    except Exception:  # noqa: BLE001 - never let telemetry break liveness
+        st = {"active": False, "enabled": False, "error": "ingester not importable"}
+    st["uptime"] = round(_time.time() - _SERVER_START, 1)
+    return st
+
+
 # ── CLI entry point ────────────────────────────────────────────────────────────
 
 def run_dashboard(port: int = DEFAULT_PORT, daemon_url: str = DEFAULT_DAEMON_URL):

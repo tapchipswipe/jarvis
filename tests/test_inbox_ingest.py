@@ -78,3 +78,27 @@ def test_blank_or_missing_ignored(tmp_path):
             assert mod.ingest_inbox_file(s, blank) == 0
     finally:
         s.close()
+
+
+def test_ingest_status_exposes_snapshot():
+    """ingest_status() returns a thread-safe dict with the expected keys."""
+    mod = __import__("jarvis.inbox_ingest", fromlist=["ingest_status"])
+    st = mod.ingest_status()
+    for key in ("active", "enabled", "inbox"):
+        assert key in st
+
+
+def test_process_batch_empty_dir_updates_status(tmp_path):
+    """An empty/absent inbox records a cleared (done, remaining=0) status without
+    ever opening a real Store — pure telemetry, no DB handle."""
+    mod = __import__("jarvis.inbox_ingest", fromlist=["process_batch", "ingest_status"])
+    empty = tmp_path / "no-inbox-here"
+    empty.mkdir()
+    res = mod.process_batch(inbox_dir=empty, batch=5, cursor_path=None)
+    assert res["processed"] == 0
+    assert res["done"] is True
+    st = mod.ingest_status()
+    assert st["active"] is True
+    assert st["done"] is True
+    assert st["remaining"] == 0
+
