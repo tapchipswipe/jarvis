@@ -168,8 +168,33 @@ class Store:
     def _content_hash(self, content: str) -> str:
         return hashlib.sha256(content.encode()).hexdigest()
 
+    def _delete_vectors(self, ids: list[str]):
+        """Best-effort removal of stale vectors from Chroma.
+
+        Chroma is a cache of the authoritative SQLite store, so a failure to
+        delete here must never break the caller (expire/supersede have already
+        committed their SQLite change) and must never open a second handle to
+        the collection. Uses the same memory/chunk ids used at insert.
+        """
+        if not ids:
+            return
+        try:
+            self.collection.delete(ids=list(ids))
+        except Exception:  # noqa: S110, BLE001
+            # Vector cleanup is best-effort; SQLite remains authoritative.
+            pass
+
     def _expire_old(self):
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        # Collect the ids we are about to expire so their vectors can be pruned
+        # from Chroma too; otherwise stale vectors keep crowding the search
+        # pre-filter and Chroma grows unbounded.
+        rows = self.conn.execute(
+            "SELECT id FROM memories WHERE expires_at IS NOT NULL AND expires_at < ?", (now,)
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            self._delete_vectors(ids)
         self.conn.execute("DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < ?", (now,))
         self.conn.commit()
 
@@ -468,6 +493,10 @@ class Store:
     def mark_superseded(self, fid: str):
         self.conn.execute("UPDATE memories SET superseded = 1 WHERE id = ?", (fid,))
         self.conn.commit()
+        # Prune the superseded memory's vector(s) from Chroma so they no longer
+        # crowd the search pre-filter (which filters out superseded rows from
+        # SQLite but left the vectors behind).
+        self._delete_vectors([fid])
 
     def log_decision(self, memory_id: str, route: str, confidence: str, envelope: dict, applied: int = 0):
         self.conn.execute(

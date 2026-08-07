@@ -295,6 +295,59 @@ def test_mark_superseded(store):
     assert row["superseded"] == 1
 
 
+def test_mark_superseded_deletes_vector_from_chroma(store):
+    """Superseding a memory must also prune its vector from Chroma so stale
+    vectors stop crowding the search pre-filter and Chroma stops growing."""
+    emb = [0.1] * 768
+    fid = fingerprint("s", "1", "c1", "2025-06-01")
+    store.add(fid, "s", "1", "2025-06-01T10:00:00", "c1", [], {}, emb, tier="raw")
+    store.collection.delete.reset_mock()
+    store.mark_superseded(fid)
+    row = store.conn.execute("SELECT superseded FROM memories WHERE id = ?", (fid,)).fetchone()
+    assert row["superseded"] == 1
+    # The vector is removed by the same id used at insert.
+    store.collection.delete.assert_called_once_with(ids=[fid])
+
+
+def test_mark_superseded_best_effort_chroma_delete(store):
+    """A failing Chroma delete must never break supersede (SQLite is
+    authoritative and the commit already happened)."""
+    emb = [0.1] * 768
+    fid = fingerprint("s", "1", "c1", "2025-06-01")
+    store.add(fid, "s", "1", "2025-06-01T10:00:00", "c1", [], {}, emb, tier="raw")
+    store.collection.delete.side_effect = Exception("chroma unavailable")
+    store.mark_superseded(fid)  # must not raise
+    row = store.conn.execute("SELECT superseded FROM memories WHERE id = ?", (fid,)).fetchone()
+    assert row["superseded"] == 1
+
+
+def test_expire_old_deletes_vectors_from_chroma(store):
+    """Expiring a memory must also prune its vector(s) from Chroma."""
+    emb = [0.1] * 768
+    fid = fingerprint("s", "1", "expiring content", "2025-06-01")
+    store.add(
+        fid, "s", "1", "2025-06-01T10:00:00", "expiring content", [], {}, emb,
+        tier="raw", expires_at="2000-01-01T00:00:00",
+    )
+    assert store.exists(fid)
+    store.collection.delete.reset_mock()
+    store._expire_old()
+    # SQLite row is gone.
+    assert not store.exists(fid)
+    # Its vector was pruned by the same id used at insert.
+    store.collection.delete.assert_called_once_with(ids=[fid])
+
+
+def test_expire_old_with_nothing_to_expire_skips_chroma_delete(store):
+    """No expired rows -> no Chroma delete call."""
+    emb = [0.1] * 768
+    store.add(fingerprint("s", "1", "c1", "2025-06-01"), "s", "1",
+              "2025-06-01T10:00:00", "c1", [], {}, emb, tier="raw")
+    store.collection.delete.reset_mock()
+    store._expire_old()
+    store.collection.delete.assert_not_called()
+
+
 def test_stats(store):
     emb = [0.1] * 768
     store.add(fingerprint("s", "1", "c1", "2025-06-01"), "s", "1", "2025-06-01T10:00:00", "c1", [], {}, emb, tier="raw", route="unclassified")
