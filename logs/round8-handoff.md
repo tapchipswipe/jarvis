@@ -173,8 +173,11 @@ This session runs while the user is away. All work is agent-driven, committed to
   (`bot`==`main`==`origin/bot`) — all 6 checks PASS live. 1 test update.
   Suite 390 passed, 1 skipped.
 - [x] **Round 36 (73ffe16):** final night-state bottom-line added to the handoff log.
-- [x] **Round 37 (pending commit):** `jarvis export --since <iso>` — client-side timestamp
+- [x] **Round 37 (cb3569f):** `jarvis export --since <iso>` — client-side timestamp
   filter (works in local + thin-client modes). 1 new test. Suite 391 passed, 1 skipped.
+- [x] **Round 38 (pending commit):** `tests/test_device_id.py` — persisted device-id is
+  deterministic + reads back its file (used for the `device` tag in ingest/collect).
+  Suite 393 passed, 1 skipped.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the
