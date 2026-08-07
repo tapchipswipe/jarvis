@@ -62,6 +62,55 @@ def test_remember_remote_path_does_not_invoke_task_list(monkeypatch):
     assert "Status" not in result.output
 
 
+def test_search_offline_falls_back_to_cached_tail(monkeypatch):
+    import urllib.error
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    fake_cache.store_tail.return_value = None
+    fake_cache.tail_search.return_value = [
+        {"id": "c1", "source": "file", "timestamp": "2026-01-01T00:00:00",
+         "content": "cached snippet about offline search", "tags": []},
+    ]
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    monkeypatch.setattr(remote, "search", lambda *a, **k: (_ for _ in ()).throw(
+        urllib.error.URLError("host down")))
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["search", "offline"])
+    assert result.exit_code == 0
+    assert "Offline (cached subset)" in result.output
+    assert "[stale]" in result.output
+    fake_cache.tail_search.assert_called_once()
+
+
+def test_search_surfaces_server_error_not_offline(monkeypatch):
+    import io
+    import urllib.error
+
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    fake_cache = MagicMock()
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr("jarvis.cache.Cache", lambda *a, **k: fake_cache)
+    # a reachable server that rejects us (e.g. bad token after Round 3 guards)
+    body = io.BytesIO(b'{"error": "forbidden"}')
+    err = urllib.error.HTTPError("http://box/api/search", 403, "Forbidden",
+                                 {}, body)
+    monkeypatch.setattr(remote, "search", lambda *a, **k: (_ for _ in ()).throw(err))
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["search", "hello"])
+    assert result.exit_code == 0
+    assert "Server error (403)" in result.output
+    assert "forbidden" in result.output
+    assert "Offline" not in result.output
+
+
 def test_task_list_command_still_registered():
     """The CLI command remains ``task list`` after the rename."""
     from jarvis.cli import cli

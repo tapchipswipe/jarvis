@@ -30,10 +30,18 @@ This session runs while the user is away. All work is agent-driven, committed to
   mutating/sensitive routes — `/api/idea`, `/api/tasks/approve`, `/api/tasks/reject`,
   `/api/sessions`, and `/api/export`. `/api/health` stays open (Mac health checker).
   2 new server tests. Suite 334 passed, 1 skipped.
-- [x] **Round 4 (pending commit):** Restored thin-client ambient collection —
+- [x] **Round 4 (561345e):** Restored thin-client ambient collection —
   `jarvis/collectors/thin.py` (files→outbox→server, content-hash + fingerprint
   idempotent, bounded) + `jarvis collect` CLI (refuses outside client mode) + 5
   hermetic tests + opt-in `scripts/jarvis-collect.sh` + LaunchAgent plist (NOT
   auto-started). Live isolated smoke test OK. Suite 339 passed, 1 skipped.
+- [x] **Round 5 (708ee65):** `/api/ingest/status` endpoint + thread-safe ingester
+  progress registry so the box inbox drain is observable once the server restarts
+  (verified the running box server predates the ingester — inbox still 5,458 files,
+  no cursor). Suite 342 passed, 1 skipped.
+- [x] **Round 6 (pending commit):** CLI search offline-read hardening — a real HTTP
+  error (e.g. 403 from the new token guards) is now reported as "Server error (code)"
+  instead of being mislabelled "Offline (cached subset)". 2 new tests. Suite 344
+  passed, 1 skipped. Confirmed the offline fallback itself was already implemented.
 
 

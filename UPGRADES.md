@@ -35,7 +35,7 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[done]` 2026-08-06 — Disposable client cache (`jarvis/cache.py`): durable idempotent write-outbox + rolling read-tail; `JARVIS_CACHE` resolved lazily so tests/modes can override it (Round 5)
 - `[done]` 2026-08-06 — Thin remote client (`jarvis/remote.py`) + `collectors.capture()`; CLI remember/search/export honor `JARVIS_MODE=client` (`JARVIS_REMOTE`) (Round 5)
 - `[planned]` 2026-08-06 — Full server relocation: run triggers/Mayor/digests in the Lightspeed `jarvis server` process; retire Mac-local store/push (thin-client cutover)
-- `[planned]` 2026-08-06 — Offline read fallback wired into CLI search (rolling tail + substring glance + "offline — cached subset" banner)
+- `[done]` 2026-08-06 — Offline read fallback in CLI search (rolling tail + substring glance + "offline — cached subset" banner); Round 8 hardening: a reachable server that rejects us (e.g. HTTP 403 from the token guards) is now surfaced as "Server error (<code>)" instead of being mislabelled as offline
 
 - `[done]` 2026-08-06 — Pure-liveness `/api/health` (no store access, never stalls under inference load) + store-aware `/api/health/deep`; **all** API handlers converted to sync `def` so blocking Store/LLM work runs in the threadpool and never blocks the uvicorn event loop (Round 5b — fixes intermittent 000s on every endpoint, root cause of earlier health blips)
 - `[done]` 2026-08-06 — Phase 0 topology decision documented (`docs/topology.md`): Lightspeed = single source of truth + single writer (FULL-THIN); probe shows ~8 GB free RAM steady-idle, ~259 GB disk free, Ollama running nomic-embed on CPU

@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -189,7 +190,18 @@ def search(query, source, n, verbose):
                 ents = (result.get("entities") or {}).get(m.get("id"))
                 if ents:
                     click.echo(f"  entities: {', '.join(e['name'] for e in ents)}")
-        except Exception:
+        except urllib.error.HTTPError as e:
+            # Server reached but returned an HTTP error (e.g. 403 bad token after
+            # Round 3 guards) — that's NOT an offline situation, so surface it.
+            detail = ""
+            if e.fp:
+                try:
+                    detail = json.loads(e.fp.read().decode("utf-8") or "{}").get("error", "")
+                except (json.JSONDecodeError, ValueError, UnicodeDecodeError, OSError):
+                    detail = ""
+            click.echo(f"--- Server error ({e.code}) ---")
+            click.echo(f"  {detail or e.reason}")
+        except Exception:  # noqa: BLE001 - connectivity fallback; the server was unreachable
             hits = cache.tail_search(query, limit=n)
             click.echo("--- Offline (cached subset) ---")
             for m in hits:
