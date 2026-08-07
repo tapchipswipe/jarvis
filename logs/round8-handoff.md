@@ -207,3 +207,11 @@ memories (round-trip OK); `jarvis ingest-status` → correctly surfaces the expe
   but TCP 8766 times out; LAN `192.168.1.94` works. Monitor + follow-up use the LAN URL
   via `--url`; flagged in `docs/STATUS.md` (resolve tailnet/box tailscale, or adopt LAN
   `JARVIS_REMOTE`).
+
+## Inbox drain — COMPLETE (2026-08-07)
+- Ingester drained the full backlog to `remaining: 0, done: true, errors: 0` (~25 min).
+- **Memory count 3954 → 4119** (+165 net-new). The other ~2,565 inbox files were already
+  present in the brain → content-hash dedupe correctly collapsed them (0 duplicates,
+  0 errors). This is the intended idempotent reconcile.
+- Monitor (`scripts/monitor-ingest.py`) reported `DONE ✓ 100.0%`; one-shot LaunchAgent
+  `com.user.jarvis-ingest-monitor` unloaded after completion.

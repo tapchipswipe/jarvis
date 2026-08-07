@@ -25,7 +25,9 @@ _Updated 2026-08-06/07 (Rounds 8–9). This is the canonical resume doc. Read AG
 - Token auth is config-gated: no `JARVIS_TOKEN` is set yet, so the API is open on the network.
 
 ## Immediate next actions (priority order)
-1. **Finish/verify the inbox drain** (`scripts/monitor-ingest.py` or `jarvis ingest-status` → `remaining: 0`), then reconcile counts (ingested == files, no orphans).
+1. **Inbox drain DONE (2026-08-07):** the box's in-process ingester drained the full
+   backlog to `remaining: 0, errors: 0`; brain went **3954 → 4119** (+165 net-new, ~2,565
+   deduped by content-hash). Use `scripts/monitor-ingest.py` for future drains.
 2. **Resolve the Tailscale-8766 anomaly** (or adopt the LAN `JARVIS_REMOTE` explicitly).
 3. **Enable `JARVIS_TOKEN`** end-to-end (same value in the box env + `server-start.bat` and `~/.zshrc` on the Mac) now that all mutating/sensitive routes are guarded.
 4. **Register thin-client ambient collection**: `launchctl load ~/Library/LaunchAgents/com.user.jarvis-collect.plist` (30-min `collect --flush`).
