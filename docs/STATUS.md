@@ -24,15 +24,16 @@ _Updated 2026-08-06/07 (Round 8). This is the canonical resume doc. Read AGENTS.
 - Token auth is config-gated: no `JARVIS_TOKEN` is set on the box yet, so the network API is effectively open (except loopback rules). See Round 8 notes on enabling it consistently.
 
 ## Immediate next actions (priority order)
-1. **Verify inbox-backlog reconcile** once the inbound ingester drains `C:\data\jarvis\inbox` (~2,730 files): compare ingested count vs file count, confirm no orphans.
-2. **Relocate triggers/Mayor/digests/idle-maintenance INTO the `jarvis server` process** (Mayor runs in the server; a `JARVIS_MODE=client` ambient-collector job is being added on the Mac). Only if box RAM allows (~3 GB floor guard).
-3. **Offload pilot:** delegate ONE heavy task to the Lightspeed Cline CLI and confirm its JSON result returns to the Mac.
-4. **Enable `JARVIS_TOKEN`** end-to-end (set the same value in the box env and in `~/.zshrc` on the Mac) now that token enforcement is consistent across all mutating API routes.
-5. **Hardened backup:** consider a strict consistent snapshot (stop server during copy) or TrueNAS age-encrypted archive for the 3-2-1 (current `jarvis-backup.sh` is a warm copy).
+1. **Restart the box server to activate the in-process inbox ingester** (git is current at `966d7b2`; the running process predates it — inbox still 5,458 files, no cursor). Restart task `JarvisServer` / re-run `server-start.bat`, then watch `/api/ingest/status` until `remaining` → 0; reconcile counts.
+2. **Verify inbox-backlog reconcile** once the ingester drains `C:\data\jarvis\inbox` (~2,730 files): compare ingested count vs file count, confirm no orphans.
+3. **Restore server-side digests/triggers**: `docs/runtime-audit.md` confirms Mayor idle-maintenance (reindex/promote) runs in the server, but `TriggerLoop` (morning/end-of-day digests) is NOT started by `run_dashboard` — add a config-gated `TriggerLoop` in the server (default OFF; model-tier discipline), OR run on a maintenance window.
+4. **Enable `JARVIS_TOKEN`** end-to-end (set the same value in the box env + `server-start.bat` and in `~/.zshrc` on the Mac) now that token enforcement is consistent across all mutating API routes.
+5. **Offload pilot:** delegate ONE heavy task to the Lightspeed Cline CLI and confirm its JSON result returns to the Mac.
+6. **Hardened backup:** consider a strict consistent snapshot (stop server during copy) or TrueNAS age-encrypted archive for the 3-2-1 (current `jarvis-backup.sh` is a warm copy).
 
 ## How to resume after a reboot
 1. `cd /Users/lucasdespot/jarvis` (venv `.venv/bin/python`).
-2. Read this file + `logs/round8-handoff.md` + `logs/round7-handoff.md` + `docs/deployment-lightspeed.md` + `docs/topology.md`.
+2. Read this file + `logs/round8-handoff.md` + `logs/round7-handoff.md` + `docs/runtime-audit.md` + `docs/deployment-lightspeed.md` + `docs/topology.md`.
 3. Verify live: `git status`; `launchctl list | grep -E 'jarvis-(backup|health)'` (resilience); `curl http://100.102.0.99:8766/api/health` + `/api/health/deep` (box). Confirmation that Mac-local brain is retired: `launchctl list | grep jarvis` should only show backup+health.
 4. Continue with the priority list above; keep `main`/`bot` in sync and tests green (`.venv/bin/python -m pytest -p no:cacheprovider`).
 

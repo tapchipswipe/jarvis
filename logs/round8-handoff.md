@@ -43,9 +43,16 @@ This session runs while the user is away. All work is agent-driven, committed to
   error (e.g. 403 from the new token guards) is now reported as "Server error (code)"
   instead of being mislabelled "Offline (cached subset)". 2 new tests. Suite 344
   passed, 1 skipped. Confirmed the offline fallback itself was already implemented.
-- [x] **Round 7 (pending commit):** `jarvis status` is now remote-aware — in client
+- [x] **Round 7 (9264f24):** `jarvis status` is now remote-aware — in client
   mode it reports the live box (`/api/health/deep` memories/mode/uptime) + local
   outbox backlog instead of the stale local (rollback) store. 2 new tests; ruff clean.
   Suite 346 passed, 1 skipped.
+- [x] **Round 8 (31bc485):** Reconciled stale 2025 `[planned]` UPGRADES entries
+  (reindex/promote, delivered 2026-08-05) → marked done.
+- [x] **Round 9 (pending commit):** `docs/runtime-audit.md` — verified what runs in the
+  box server: API, Mayor loop, Mayor idle-maintenance (reindex/promote) YES;
+  inbox ingester WIRED-BUT-NEEDS-RESTART (5,458 files, no cursor);
+  triggers/digests (`TriggerLoop`) NOT running (died with the daemon). STATUS
+  next-actions reordered (restart box first). Docs only; no code change.
 
 
