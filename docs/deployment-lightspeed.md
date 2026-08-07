@@ -1,9 +1,12 @@
-# Lightspeed Deployment — Jarvis Server (Round 6)
+# Lightspeed Deployment — Jarvis Server (Round 6 + Round 8/9 refreshes)
 
-Status as of 2026-08-06: **Lightspeed runs the current `bot` code (`2d98a1d`) as a
-single consolidated `jarvis server` on port 8766, reachable from the Mac over
-Tailscale.** The old per-role runners (`dash_runner.py`, `run_mayor` x2 on 8767)
-were consolidated into one process.
+Status as of 2026-08-07: **Lightspeed runs the consolidated `jarvis server` on port
+8766, reachable from the Mac over Tailscale.** The right server entrypoint is
+`jarvis server` (FastAPI + Mayor loop + **inbox ingester**). **IMPORTANT (Round 8/9):**
+the box's git working tree is at `966d7b2` — ~33 commits behind `bot`/`main`
+(currently `e797f52`) — so it MUST `git pull` before a restart to get tonight's inbox
+ingester + `/api/memories` + `/api/ingest/status` + token guards. The old per-role
+runners (`dash_runner.py`, `run_mayor` x2 on 8767) were consolidated into one process.
 
 ## Where things live on Lightspeed
 - Code/repo: `C:\Users\despo\jarvis` (git branch `bot`)
@@ -29,10 +32,15 @@ cd /d C:\Users\despo\jarvis
 "<python.exe>" -u -m jarvis.cli server --port 8766 >> "C:\Users\despo\jarvis\logs\server.out.log" 2>&1
 ```
 
-## Restart procedure
+## Restart procedure (Round 8/9 refreshed — includes git pull)
+0. **Update code on the box first** (it is ~33 commits behind `bot`/`main`):
+   `ssh despo@100.102.0.99 'cd C:\Users\despo\jarvis && git pull'`.
 1. Stop current: `ssh despo@100.102.0.99 'powershell -Command "Get-Process | Where-Object {$_.ProcessName -match ''python'' and $_.Id -ne <other>} | Stop-Process -Force"'` (or kill the bat's cmd + python pid on 8766).
 2. Start: `ssh despo@100.102.0.99 'cmd /c start "" C:\data\jarvis\server-start.bat'`  (or log off/on to trigger the task).
-3. Verify from the Mac: `curl http://100.102.0.99:8766/api/health` and `/api/health/deep`.
+3. Verify from the Mac:
+   - `curl http://100.102.0.99:8766/api/health` and `/api/health/deep`
+   - `.venv/bin/python -m jarvis.cli doctor` (mode/box/ingest/os)
+   - Watch the inbox drain: `.venv/bin/python -m jarvis.cli ingest-status` until `remaining` → 0.
 
 ## Verified end-to-end (this deploy)
 - `jarvis server --check` -> `OK app=loaded memories=0 port=8766`
