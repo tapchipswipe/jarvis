@@ -1,7 +1,7 @@
 import sqlite3
 import shutil
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -58,9 +58,9 @@ def sync_notes(store):
                     try:
                         ts = datetime.fromtimestamp(mod_date + 978307200).isoformat()
                     except Exception:
-                        ts = datetime.utcnow().isoformat()
+                        ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                 else:
-                    ts = datetime.utcnow().isoformat()
+                    ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                 text = f"{'[' + folder + '] ' if folder else ''}{title}\n{snippet}\n{body}"
                 if len(text.strip()) < 10:
                     continue
@@ -81,3 +81,4 @@ def sync_notes(store):
             if tmp_path:
                 tmp_path.unlink(missing_ok=True)
     return count
+

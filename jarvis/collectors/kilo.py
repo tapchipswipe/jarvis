@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -16,7 +16,7 @@ def ingest_kilo_sessions(store):
             data = f.read_text(errors="ignore")
             source = "ai_kilo"
             source_id = str(f)
-            ts = datetime.utcnow().isoformat()
+            ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint(source, source_id, data, ts)
             if store.exists(fid):
                 continue
@@ -32,3 +32,4 @@ def ingest_kilo_sessions(store):
         except Exception:
             pass
     return count
+

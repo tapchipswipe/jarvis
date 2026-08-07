@@ -49,10 +49,14 @@ This session runs while the user is away. All work is agent-driven, committed to
   Suite 346 passed, 1 skipped.
 - [x] **Round 8 (31bc485):** Reconciled stale 2025 `[planned]` UPGRADES entries
   (reindex/promote, delivered 2026-08-05) → marked done.
-- [x] **Round 9 (pending commit):** `docs/runtime-audit.md` — verified what runs in the
+- [x] **Round 9 (9041d97):** `docs/runtime-audit.md` — verified what runs in the
   box server: API, Mayor loop, Mayor idle-maintenance (reindex/promote) YES;
   inbox ingester WIRED-BUT-NEEDS-RESTART (5,458 files, no cursor);
   triggers/digests (`TriggerLoop`) NOT running (died with the daemon). STATUS
   next-actions reordered (restart box first). Docs only; no code change.
+- [x] **Round 10 (pending commit):** modernized all `datetime.utcnow()` uses (22 source
+  files, ~67 call sites) to `datetime.now(timezone.utc).replace(tzinfo=None)` —
+  string-identical naive-UTC semantics, so no behavior change. Warnings dropped
+  370 → 2 (both from 3rd-party deps). Suite 346 passed, 1 skipped.
 
 

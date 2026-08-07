@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -68,7 +68,7 @@ class TaskQueue:
     ) -> str:
         """Add a new task to the queue. Returns the task ID."""
         task_id = str(uuid.uuid4())[:12]
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         self.conn.execute(
             """INSERT INTO tasks
                (id, title, description, agent, status, priority, source, raw_idea, created_at)
@@ -101,7 +101,7 @@ class TaskQueue:
 
     def approve_task(self, task_id: str) -> bool:
         """Move a task from pending_review to approved."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = self.conn.execute(
             "UPDATE tasks SET status = 'approved', approved_at = ? WHERE id = ? AND status = 'pending_review'",
             (now, task_id),
@@ -111,7 +111,7 @@ class TaskQueue:
 
     def approve_all(self) -> int:
         """Approve all pending_review tasks. Returns count approved."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = self.conn.execute(
             "UPDATE tasks SET status = 'approved', approved_at = ? WHERE status = 'pending_review'",
             (now,),
@@ -121,7 +121,7 @@ class TaskQueue:
 
     def reject_task(self, task_id: str) -> bool:
         """Reject a pending task (mark as failed with reason)."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = self.conn.execute(
             "UPDATE tasks SET status = 'failed', completed_at = ?, error = 'rejected by user' WHERE id = ? AND status = 'pending_review'",
             (now, task_id),
@@ -131,7 +131,7 @@ class TaskQueue:
 
     def start_task(self, task_id: str) -> bool:
         """Mark a task as in_progress."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = self.conn.execute(
             "UPDATE tasks SET status = 'in_progress', started_at = ?, attempts = attempts + 1 WHERE id = ? AND status = 'approved'",
             (now, task_id),
@@ -141,7 +141,7 @@ class TaskQueue:
 
     def complete_task(self, task_id: str, result: str = "", commit_hash: str = "") -> bool:
         """Mark a task as completed."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = self.conn.execute(
             "UPDATE tasks SET status = 'completed', completed_at = ?, result = ?, commit_hash = ? WHERE id = ?",
             (now, result, commit_hash, task_id),
@@ -151,7 +151,7 @@ class TaskQueue:
 
     def fail_task(self, task_id: str, error: str = "") -> bool:
         """Mark a task as failed."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         task = self.get_task(task_id)
         if not task:
             return False
@@ -205,3 +205,4 @@ class TaskQueue:
     def close(self):
         if self.conn:
             self.conn.close()
+

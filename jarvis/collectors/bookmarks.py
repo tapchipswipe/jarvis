@@ -1,6 +1,6 @@
 import plistlib
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -27,7 +27,7 @@ def sync_bookmarks(store):
                 text = f"{bm.get('name', '')} | {bm.get('url', '')}"
                 source = "bookmark"
                 source_id = bm.get("url", "")
-                ts = bm.get("date", datetime.utcnow().isoformat())
+                ts = bm.get("date", datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
                 fid = fingerprint(source, source_id, text, ts)
                 if store.exists(fid):
                     continue
@@ -79,3 +79,4 @@ def _walk_chrome_children(node):
         elif child.get("type") == "folder":
             results.extend(_walk_chrome_children(child))
     return results
+

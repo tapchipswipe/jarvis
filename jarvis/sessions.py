@@ -4,7 +4,7 @@ jarvis/sessions.py — SQLite-backed session database for multi-turn agent chat.
 import sqlite3
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from jarvis.paths import data_dir
@@ -48,7 +48,7 @@ class SessionDB:
 
     def create_session(self, title="", tier="raw") -> str:
         session_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         self.conn.execute(
             "INSERT INTO sessions (id, title, created_at, updated_at, tier) VALUES (?, ?, ?, ?, ?)",
             (session_id, title, now, now, tier),
@@ -58,7 +58,7 @@ class SessionDB:
         return session_id
 
     def append_message(self, session_id, role, content, tool_calls=None):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         tool_calls_json = json.dumps(tool_calls) if tool_calls is not None else None
         self.conn.execute(
             "INSERT INTO session_messages (session_id, role, content, tool_calls, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -105,7 +105,7 @@ class SessionDB:
     def update_session(self, session_id, **kwargs):
         if not kwargs:
             return
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         kwargs["updated_at"] = now
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         params = list(kwargs.values()) + [session_id]
@@ -118,3 +118,4 @@ class SessionDB:
     def close(self):
         if self.conn:
             self.conn.close()
+

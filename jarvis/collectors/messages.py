@@ -1,7 +1,7 @@
 import sqlite3
 import shutil
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -54,9 +54,9 @@ def sync_messages(store):
                 try:
                     ts = datetime.fromtimestamp(date_val + 978307200).isoformat()
                 except Exception:
-                    ts = datetime.utcnow().isoformat()
+                    ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             else:
-                ts = datetime.utcnow().isoformat()
+                ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             full_text = f"[{chat_name}] {sender}: {text}"
             if len(full_text.strip()) < 3:
                 continue
@@ -77,3 +77,4 @@ def sync_messages(store):
         if tmp_path:
             tmp_path.unlink(missing_ok=True)
     return count
+

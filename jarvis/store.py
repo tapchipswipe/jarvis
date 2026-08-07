@@ -3,7 +3,7 @@ import hashlib
 import json
 import chromadb
 from chromadb.config import Settings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jarvis.paths import data_dir, ensure_private_dir
@@ -162,7 +162,7 @@ class Store:
         return hashlib.sha256(content.encode()).hexdigest()
 
     def _expire_old(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         self.conn.execute("DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < ?", (now,))
         self.conn.commit()
 
@@ -192,7 +192,7 @@ class Store:
         """Return entity id for canonical_name, creating it if absent."""
         if not canonical_name:
             return None
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         row = self.conn.execute(
             "SELECT id, source_count, first_seen FROM entities WHERE canonical_name = ?",
             (canonical_name,)
@@ -249,7 +249,7 @@ class Store:
         """Create a relationship edge between two entities"""
         if not source_entity or not target_entity:
             return
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         # Upsert: if same pair + relation exists, keep best confidence
         existing = self.conn.execute(
             "SELECT id, confidence FROM relationships WHERE source_entity = ? AND target_entity = ? AND relation_type = ?",
@@ -278,7 +278,7 @@ class Store:
         if self.exists(fid):
             return True
         weight = self._tier_weight(tier)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         self.conn.execute(
             "INSERT OR IGNORE INTO memories (id, source, source_id, timestamp, content, content_hash, tags, metadata, tier, weight, route, expires_at, consolidated_from, superseded, embedded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (fid, source, source_id, timestamp, content, content_hash, json.dumps(tags or []), json.dumps(metadata or {}), tier, weight, route, expires_at, consolidated_from, 1 if superseded else 0, now),
@@ -312,7 +312,7 @@ class Store:
         return [dict(r) for r in cur.fetchall()]
 
     def get_recent_raw(self, hours: int = 24, limit: int = 200):
-        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)).isoformat()
         cur = self.conn.execute("SELECT * FROM memories WHERE tier = 'raw' AND timestamp >= ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?", (cutoff, limit))
         return [dict(r) for r in cur.fetchall()]
 
@@ -342,7 +342,7 @@ class Store:
         """Record that a memory now has a vector embedding."""
         self.conn.execute(
             "UPDATE memories SET embedded_at = ? WHERE id = ?",
-            (datetime.utcnow().isoformat(), fid),
+            (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), fid),
         )
         self.conn.commit()
 
@@ -354,13 +354,13 @@ class Store:
             "INSERT OR IGNORE INTO push_queue (push_key, content, sidecar, created_at)"
             " VALUES (?, ?, ?, ?)",
             (push_key, content, json.dumps(sidecar, ensure_ascii=False),
-             datetime.utcnow().isoformat()),
+             datetime.now(timezone.utc).replace(tzinfo=None).isoformat()),
         )
         self.conn.commit()
 
     def push_queue_due(self, limit: int = 1000, now: str | None = None):
         """Items ready to push now (never attempted, or backoff elapsed)."""
-        now = now or datetime.utcnow().isoformat()
+        now = now or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = self.conn.execute(
             "SELECT * FROM push_queue WHERE next_attempt_at IS NULL OR next_attempt_at <= ?"
             " ORDER BY created_at ASC LIMIT ?",
@@ -407,7 +407,7 @@ class Store:
         so search re-ranking keeps using the promoted weight. Returns the number
         of memories promoted.
         """
-        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).isoformat()
         rows = self.conn.execute(
             "SELECT * FROM memories WHERE tier = 'raw' AND superseded = 0"
             " AND timestamp < ? ORDER BY timestamp ASC LIMIT ?",
@@ -444,7 +444,7 @@ class Store:
     def log_decision(self, memory_id: str, route: str, confidence: str, envelope: dict, applied: int = 0):
         self.conn.execute(
             "INSERT INTO decision_log (ts, memory_id, route, confidence, envelope, applied) VALUES (?, ?, ?, ?, ?, ?)",
-            (datetime.utcnow().isoformat(), memory_id, route, confidence, json.dumps(envelope), 1 if applied else 0)
+            (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), memory_id, route, confidence, json.dumps(envelope), 1 if applied else 0)
         )
         self.conn.commit()
 
@@ -454,3 +454,4 @@ class Store:
 
     def close(self):
         self.conn.close()
+

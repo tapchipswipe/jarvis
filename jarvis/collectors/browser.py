@@ -31,7 +31,7 @@ def _read_chrome(store, db_path: Path, days_back: int):
             text = f"{row['title'] or ''} | {url}"
             source = "browser"
             source_id = url
-            ts = row["ts"] or datetime.utcnow().isoformat()
+            ts = row["ts"] or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint(source, source_id, text, ts)
             if store.exists(fid):
                 continue
@@ -69,7 +69,7 @@ def _read_safari(store, db_path: Path, days_back: int):
             text = f"{row['title'] or ''} | {url}"
             source = "browser"
             source_id = url
-            ts = row["ts"] or datetime.utcnow().isoformat()
+            ts = row["ts"] or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint(source, source_id, text, ts)
             if store.exists(fid):
                 continue
@@ -113,7 +113,7 @@ def _read_firefox(store, profiles_dir: Path, days_back: int):
                 text = f"{row['title'] or ''} | {url}"
                 source = "browser"
                 source_id = url
-                ts = row["ts"] or datetime.utcnow().isoformat()
+                ts = row["ts"] or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                 fid = fingerprint(source, source_id, text, ts)
                 if store.exists(fid):
                     continue
@@ -147,3 +147,4 @@ def read_browser_history(store, days_back=7):
         if reader:
             count += reader(store, db_path, days_back)
     return count
+

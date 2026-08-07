@@ -1,7 +1,7 @@
 import subprocess
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -18,7 +18,7 @@ def sync_system(store):
             text = f"Installed Applications:\n{app_summary}"
             source = "system"
             source_id = "installed-apps"
-            ts = datetime.utcnow().isoformat()
+            ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint(source, source_id, text, ts)
             if not store.exists(fid):
                 emb = get_embedding(text[:4000])
@@ -40,7 +40,7 @@ def sync_system(store):
             log_text = log_result.stdout[:40000]
             source = "system"
             source_id = "unified-log-24h"
-            ts = datetime.utcnow().isoformat()
+            ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint(source, source_id, log_text, ts)
             if not store.exists(fid):
                 emb = get_embedding(log_text[:4000])
@@ -52,3 +52,4 @@ def sync_system(store):
     except Exception as e:
         print(f"system log error: {e}")
     return count
+

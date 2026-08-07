@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -14,7 +14,7 @@ def append_decision(memory_id: str, route: str, confidence: str, envelope: dict,
     path = _decision_log()
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
-        "ts": datetime.utcnow().isoformat(),
+        "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "memory_id": memory_id,
         "route": route,
         "confidence": confidence,
@@ -23,3 +23,4 @@ def append_decision(memory_id: str, route: str, confidence: str, envelope: dict,
     }
     with open(path, "a") as f:
         f.write(json.dumps(record) + "\n")
+

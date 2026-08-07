@@ -1,6 +1,6 @@
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -26,7 +26,7 @@ def sync_calendar(store):
                     text = f"{row['summary'] or ''}\n{row['start_date'] or ''} → {row['end_date'] or ''}\n{row['location'] or ''}"
                     source = "calendar"
                     source_id = f"{cal_db}:{row['summary']}"
-                    ts = row["start_date"] or datetime.utcnow().isoformat()
+                    ts = row["start_date"] or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     fid = fingerprint(source, source_id, text, ts)
                     if store.exists(fid):
                         continue
@@ -39,3 +39,4 @@ def sync_calendar(store):
             except Exception:
                 pass
     return count
+

@@ -1,6 +1,6 @@
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -26,7 +26,7 @@ def sync_email(store):
                     text = f"Subject: {row['subject'] or ''}\nFrom: {row['sender'] or ''}\nDate: {row['date_received'] or ''}\n\n{row['body'] or ''}"
                     source = "email"
                     source_id = f"{mail_db}:{row['subject']}"
-                    ts = row["date_received"] or datetime.utcnow().isoformat()
+                    ts = row["date_received"] or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     fid = fingerprint(source, source_id, text, ts)
                     if store.exists(fid):
                         continue
@@ -39,3 +39,4 @@ def sync_email(store):
             except Exception:
                 pass
     return count
+

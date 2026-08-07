@@ -1,6 +1,6 @@
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -45,9 +45,9 @@ def sync_contacts(store):
                         try:
                             ts = datetime.fromtimestamp(creation + 978307200).isoformat()
                         except Exception:
-                            ts = datetime.utcnow().isoformat()
+                            ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     else:
-                        ts = datetime.utcnow().isoformat()
+                        ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     name = f"{first} {last}".strip()
                     text = f"{name}\n{org}\n{job}"
                     if len(text.strip()) < 2:
@@ -66,3 +66,4 @@ def sync_contacts(store):
             except Exception as e:
                 print(f"contacts error: {e}")
     return count
+

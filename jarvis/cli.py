@@ -1,7 +1,7 @@
 import json
 import os
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import click
@@ -156,7 +156,7 @@ def memories(source, tag, tier, n):
 @click.option("-n", default=50, help="Number of results")
 def timeline(days, n):
     store = Store()
-    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).isoformat()
     cur = store.conn.execute("SELECT * FROM memories WHERE superseded = 0 AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?", (cutoff, n))
     rows = [dict(r) for r in cur.fetchall()]
     store.close()
@@ -497,7 +497,7 @@ def export(fmt, output, source, tier):
 
     if fmt == "json":
         payload = {
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             "count": len(rows),
             "memories": rows,
         }
@@ -524,14 +524,14 @@ def _export_default_dir() -> Path:
 
 
 def _export_filename(fmt: str) -> str:
-    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d-%H%M%S")
     ext = "md" if fmt == "markdown" else "json"
     return f"jarvis-export-{stamp}.{ext}"
 
 
 def _render_markdown(rows: list[dict]) -> str:
     lines = ["# Jarvis Memory Export", ""]
-    lines.append(f"**Exported:** {datetime.utcnow().isoformat()}")
+    lines.append(f"**Exported:** {datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}")
     lines.append(f"**Memories:** {len(rows)}")
     lines.append("")
     for r in rows:
@@ -832,7 +832,7 @@ def graph_cmd(action, hours, n):
         store.close()
         return
     click.echo(f"Scanning last {hours}h of memories (limit {n})...")
-    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)).isoformat()
     rows = store.conn.execute(
         "SELECT id, source, content FROM memories WHERE tier = 'raw' AND timestamp >= ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?",
         (cutoff, n)
@@ -899,7 +899,7 @@ def promote(days, limit, dry_run):
     store = Store()
     try:
         if dry_run:
-            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).isoformat()
             rows = store.conn.execute(
                 "SELECT id, timestamp FROM memories WHERE tier = 'raw' AND superseded = 0"
                 " AND timestamp < ? ORDER BY timestamp ASC LIMIT ?",
@@ -1147,3 +1147,4 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     cli()
+

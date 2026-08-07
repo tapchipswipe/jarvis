@@ -186,8 +186,8 @@ def test_get_entity_timeline_with_memories(store):
 # ── infer_relationships ───────────────────────────────────────────────────────
 
 def test_infer_relationships_creates_edges(store):
-    from datetime import datetime
-    now_ts = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     eid1 = upsert_entity(store, "Alice", entity_type="person")
     eid2 = upsert_entity(store, "Bob", entity_type="person")
     from jarvis.store import fingerprint

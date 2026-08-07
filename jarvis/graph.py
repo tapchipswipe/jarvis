@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import hashlib
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Optional
 
@@ -76,7 +76,7 @@ def upsert_entity(store, name: str, entity_type: str = "person", memory_id: str 
     canonical = _normalise(name)
     if not canonical:
         return None
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     row = store.conn.execute(
         "SELECT id, source_count FROM entities WHERE canonical_name = ?",
         (canonical,)
@@ -204,7 +204,7 @@ def infer_relationships(store, limit_hours: int = 24, max_memories: int = 500) -
     *Inline* call — meant to run on ingestion (lightweight) or on a nightly
     cron (full sweep).  We process at most *max_memories* recent raw memories.
     """
-    cutoff = (datetime.utcnow() - timedelta(hours=limit_hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=limit_hours)).isoformat()
     rows = store.conn.execute(
         "SELECT id FROM memories WHERE tier = 'raw' AND timestamp >= ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?",
         (cutoff, max_memories)
@@ -229,3 +229,4 @@ def infer_relationships(store, limit_hours: int = 24, max_memories: int = 500) -
                 created += 1
     if created:
         logger.info("infer_relationships: created %d relationship edges", created)
+

@@ -1,7 +1,7 @@
 import json
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -110,7 +110,7 @@ class Brain:
                 "still open. Use 3-5 short bullets. Do not invent facts."
             )
 
-        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)).isoformat()
         rows = self.store.conn.execute(
             "SELECT source, content, timestamp FROM memories"
             " WHERE superseded = 0 AND timestamp >= ?"
@@ -186,20 +186,20 @@ class Brain:
             return False
         try:
             session_text = "\n".join(f"{m['role']}: {m['content']}" for m in session)
-            fid = fingerprint("session", f"chat-{datetime.utcnow().isoformat()}", session_text, datetime.utcnow().isoformat())
+            fid = fingerprint("session", f"chat-{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}", session_text, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
             if self.store.exists(fid):
                 return False
             emb = get_embedding(session_text)
             tags = ["session", "chat"]
             meta = {"user_turns": user_turns}
-            expires = (datetime.utcnow() + timedelta(days=7)).isoformat()
-            self.store.add(fid, "session", fid, datetime.utcnow().isoformat(), session_text, tags, meta, emb, tier="session", expires_at=expires)
+            expires = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)).isoformat()
+            self.store.add(fid, "session", fid, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), session_text, tags, meta, emb, tier="session", expires_at=expires)
             return True
         except Exception:
             return False
 
     def get_recent_activity(self, hours: int = 24, limit: int = 20) -> list[dict]:
-        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)).isoformat()
         cur = self.store.conn.execute(
             "SELECT * FROM memories WHERE timestamp >= ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?",
             (cutoff, limit),
@@ -217,7 +217,7 @@ class Brain:
 
     def remember(self, text: str, source: str = "manual", tags: list[str] | None = None, classify: bool = False):
         from jarvis.extract import extract_metadata
-        fid = fingerprint(source, "manual", text, datetime.utcnow().isoformat())
+        fid = fingerprint(source, "manual", text, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
         metadata = {"tags": tags or []}
         chunks = chunk_document(text, metadata=metadata)
         extraction = extract_metadata(text) if not tags else {"tags": tags, "entities": []}
@@ -226,7 +226,7 @@ class Brain:
         added = 0
         for i, chunk in enumerate(chunks):
             cid = f"{fid}-{i}"
-            ct = datetime.utcnow().isoformat()
+            ct = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             chunk_meta = {**metadata, "entities": extraction.get("entities", [])}
             emb = get_embedding(chunk["text"])
             self.store.add(cid, source, "manual", ct, chunk["text"], all_tags, chunk_meta, emb)
@@ -249,7 +249,7 @@ class Brain:
     def correct(self, memory_id: str, correction_text: str):
         if self.store.exists(memory_id):
             self.store.mark_superseded(memory_id)
-        fid = fingerprint("correction", memory_id, correction_text, datetime.utcnow().isoformat())
+        fid = fingerprint("correction", memory_id, correction_text, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
         if self.store.exists(fid):
             return 0
         tags = ["correction", f"correction-of:{memory_id}"]
@@ -258,14 +258,14 @@ class Brain:
         added = 0
         for i, chunk in enumerate(chunks):
             cid = f"{fid}-{i}"
-            ct = datetime.utcnow().isoformat()
+            ct = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             emb = get_embedding(chunk["text"])
             self.store.add(cid, "correction", memory_id, ct, chunk["text"], tags, meta, emb)
             added += 1
         return added
 
     def upgrade(self, feature_request: str, status: str = "requested") -> int:
-        fid = fingerprint("upgrade", feature_request, feature_request, datetime.utcnow().isoformat())
+        fid = fingerprint("upgrade", feature_request, feature_request, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
         if self.store.exists(fid):
             return 0
         tags = ["upgrade", status]
@@ -274,7 +274,7 @@ class Brain:
         added = 0
         for i, chunk in enumerate(chunks):
             cid = f"{fid}-{i}"
-            ct = datetime.utcnow().isoformat()
+            ct = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             emb = get_embedding(chunk["text"])
             self.store.add(cid, "upgrade", feature_request, ct, chunk["text"], tags, meta, emb)
             added += 1
@@ -283,8 +283,9 @@ class Brain:
             upgrades_path = config_file("UPGRADES.md")
             if upgrades_path.exists():
                 with open(upgrades_path, "a") as f:
-                    ts = datetime.utcnow().strftime("%Y-%m-%d")
+                    ts = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
                     f.write(f"- `[{status}]` {ts} — {feature_request}\n")
         except Exception:
             pass
         return added
+

@@ -1,6 +1,6 @@
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -46,9 +46,9 @@ def sync_reminders(store):
                         try:
                             ts = datetime.fromtimestamp(creation + 978307200).isoformat()
                         except Exception:
-                            ts = datetime.utcnow().isoformat()
+                            ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     else:
-                        ts = datetime.utcnow().isoformat()
+                        ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     status = "completed" if completed else "open"
                     due_str = ""
                     if due:
@@ -73,3 +73,4 @@ def sync_reminders(store):
             except Exception as e:
                 print(f"reminders error: {e}")
     return count
+

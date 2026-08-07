@@ -146,7 +146,7 @@ def test_get_unclassified(store):
 
 def test_get_recent_raw(store):
     from datetime import datetime
-    now_ts = datetime.utcnow().isoformat()
+    now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     emb = [0.1] * 768
     store.add(fingerprint("s", "1", "c1", now_ts), "s", "1", now_ts, "c1", [], {}, emb, tier="raw")
     store.add(fingerprint("s", "2", "c2", now_ts), "s", "2", now_ts, "c2", [], {}, emb, tier="raw")

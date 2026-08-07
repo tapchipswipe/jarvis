@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -61,7 +61,7 @@ def sync_shell(store):
                 seen_commands.add(cmd)
                 source = "shell"
                 source_id = cmd[:64]
-                ts = datetime.utcnow().isoformat()
+                ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                 fid = fingerprint(source, source_id, cmd, ts)
                 if store.exists(fid):
                     continue
@@ -76,3 +76,4 @@ def sync_shell(store):
         except Exception as e:
             print(f"shell error ({shell_type}): {e}")
     return count
+

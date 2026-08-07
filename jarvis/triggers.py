@@ -351,7 +351,7 @@ def _action_digest(
         try:
             from jarvis.store import fingerprint
             from jarvis.embed import get_embedding
-            now_iso = datetime.utcnow().isoformat()
+            now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint("brief", title, text, now_iso)
             if not store.exists(fid):
                 emb = get_embedding(text[:4000])
@@ -700,3 +700,4 @@ class TriggerLoop(threading.Thread):
             elapsed = time.monotonic() - tick
             self._stop_event.wait(max(0.0, self.interval - elapsed))
         logger.info("Trigger loop stopped")
+

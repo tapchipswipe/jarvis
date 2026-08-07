@@ -9,7 +9,7 @@ import uuid
 import urllib.parse
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jarvis.store import Store
@@ -179,13 +179,13 @@ def create_reminder(session_store, args):
     reminder_dir = data_dir("data")
     reminder_dir.mkdir(parents=True, exist_ok=True)
     reminder_path = reminder_dir / "reminders.json"
-    reminder_id = f"rem-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    reminder_id = f"rem-{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
     entry = {
         "reminder_id": reminder_id,
         "title": title,
         "due": due,
         "notes": notes,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "status": "pending",
     }
     try:
@@ -331,3 +331,4 @@ def execute_tool(name, session_store, args):
     if not tool:
         return {"error": f"unknown tool: {name}"}
     return tool["fn"](session_store, args)
+

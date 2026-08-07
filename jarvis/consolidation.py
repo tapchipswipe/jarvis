@@ -2,7 +2,7 @@ from jarvis.store import Store, fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
 from jarvis.brain import Brain
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 
 PROMPT_DAILY = """You are a memory consolidation engine. Read the raw memories below and write a concise session summary (200-400 words). Group by topic. Focus on key events, decisions, and insights. Write in first-person plural (we/our). Do not invent facts. End with 1-2 sentence "takeaway" block."""
@@ -51,7 +51,7 @@ def run_daily():
         if not summary:
             continue
         all_ids = [m["id"] for m in cluster]
-        fid = fingerprint("consolidation", f"daily-{datetime.utcnow().date().isoformat()}", summary, datetime.utcnow().isoformat())
+        fid = fingerprint("consolidation", f"daily-{datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()}", summary, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
         existing = fid.rsplit("-", 1)[0]
         if store.exists(fid):
             continue
@@ -59,8 +59,8 @@ def run_daily():
         meta = {"consolidated_from": json.dumps(all_ids), "count": len(cluster)}
         text = summary[:4000]
         emb = get_embedding(text)
-        expires = (datetime.utcnow() + timedelta(days=7)).isoformat()
-        store.add(fid, "consolidation", existing, datetime.utcnow().isoformat(), summary, tags, meta, emb, tier="session", expires_at=expires, consolidated_from=json.dumps(all_ids))
+        expires = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)).isoformat()
+        store.add(fid, "consolidation", existing, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), summary, tags, meta, emb, tier="session", expires_at=expires, consolidated_from=json.dumps(all_ids))
         added += 1
     store.close()
     return added
@@ -78,7 +78,7 @@ def run_weekly():
     if not reflection:
         store.close()
         return 0
-    fid = fingerprint("consolidation", f"weekly-{datetime.utcnow().date().isoformat()}", reflection, datetime.utcnow().isoformat())
+    fid = fingerprint("consolidation", f"weekly-{datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()}", reflection, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
     if store.exists(fid):
         store.close()
         return 0
@@ -87,8 +87,8 @@ def run_weekly():
     meta = {"consolidated_from": json.dumps(all_ids), "count": len(sessions)}
     text = reflection[:4000]
     emb = get_embedding(text)
-    expires = (datetime.utcnow() + timedelta(days=30)).isoformat()
-    store.add(fid, "consolidation", fid, datetime.utcnow().isoformat(), reflection, tags, meta, emb, tier="reflection", expires_at=expires, consolidated_from=json.dumps(all_ids))
+    expires = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).isoformat()
+    store.add(fid, "consolidation", fid, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), reflection, tags, meta, emb, tier="reflection", expires_at=expires, consolidated_from=json.dumps(all_ids))
     store.close()
     return 1
 
@@ -105,7 +105,7 @@ def run_monthly():
     if not arc:
         store.close()
         return 0
-    fid = fingerprint("consolidation", f"monthly-{datetime.utcnow().date().isoformat()}", arc, datetime.utcnow().isoformat())
+    fid = fingerprint("consolidation", f"monthly-{datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()}", arc, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
     if store.exists(fid):
         store.close()
         return 0
@@ -114,6 +114,7 @@ def run_monthly():
     meta = {"consolidated_from": json.dumps(all_ids), "count": len(reflections)}
     text = arc[:4000]
     emb = get_embedding(text)
-    store.add(fid, "consolidation", fid, datetime.utcnow().isoformat(), arc, tags, meta, emb, tier="arc", consolidated_from=json.dumps(all_ids))
+    store.add(fid, "consolidation", fid, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), arc, tags, meta, emb, tier="arc", consolidated_from=json.dumps(all_ids))
     store.close()
     return 1
+

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from jarvis.store import Store, fingerprint
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
@@ -22,7 +22,7 @@ def ingest_gemini_takeout(zip_path: Path, store: Store):
             data = json.loads(jf.read_text(errors="ignore"))
             conversations = data if isinstance(data, list) else data.get("conversations", [])
             for convo in conversations:
-                ts = convo.get("timestamp", datetime.utcnow().isoformat())
+                ts = convo.get("timestamp", datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
                 text = json.dumps(convo, ensure_ascii=False)
                 source = "ai_gemini"
                 source_id = convo.get("id", jf.name)
@@ -210,3 +210,4 @@ def run_sync(target: str = "all", progress_callback=None):
             progress_callback("photos_ocr", results.get("photos_ocr"))
     store.close()
     return results
+
