@@ -289,6 +289,8 @@ def _action_notify(
 ) -> str:
     title = spec.get("title", kwargs.get("trigger_name", "Jarvis"))
     body  = spec.get("body", "")
+    # Allow body to be a template-like string referencing context fields
+    body = _render_template(body, ctx)
     send_notification(title, body)
     return f"notify:{title}"
 

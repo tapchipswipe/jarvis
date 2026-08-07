@@ -238,6 +238,17 @@ def test_action_notify(mock_notify):
     mock_notify.assert_called_once_with("Test", "Hello")
 
 
+@patch("jarvis.triggers.send_notification")
+def test_action_notify_renders_template(mock_notify):
+    ctx = _make_ctx(memory_count=7, pending_queue=[{"a": 1}, {"b": 2}])
+    result = _dispatch_action(
+        {"type": "notify", "title": "Stats", "body": "Count: {memory_count}, Pending: {pending_count}"},
+        ctx,
+    )
+    assert result == "notify:Stats"
+    mock_notify.assert_called_once_with("Stats", "Count: 7, Pending: 2")
+
+
 @patch("jarvis.triggers.write_briefing")
 def test_action_brief(mock_brief):
     mock_brief.return_value = "/tmp/briefing.md"
