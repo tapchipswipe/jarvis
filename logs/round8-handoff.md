@@ -140,10 +140,12 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 29 (459d444):** `jarvis search --json` — scriptable structured output
   (memories+entities / offline-cached / local response). 1 new test.
   Suite 380 passed, 1 skipped.
-- [x] **Round 30 (pending commit):** `test_mayor` — added idle-maintenance coverage
+- [x] **Round 30 (bf88fce):** `test_mayor` — added idle-maintenance coverage
   (`_maybe_idle_maintenance`: runs reindex(limit=200)+promote(7d,500) when idle and not
   VRAM-busy; skips when Ollama is generating or an approved task is queued, timer held).
   Mayor 15 → 18 tests. Suite 383 passed, 1 skipped.
+- [x] **Round 31 (pending commit):** `scripts/verify.sh` — one-command QA gate
+  (full pytest + ruff + import smoke) for the user/agent to run anytime.
 
 ### Note — box restart gating (2026-08-07, live check)
 `jarvis memories/timeline/ingest-status` against the CURRENT box correctly report the
