@@ -20,9 +20,13 @@ import pytest
 
 from jarvis.mayor import (
     Mayor,
+    ensure_model_loaded,
+    get_agent,
     get_mode,
     parse_idea,
+    run_agent_on_task,
     run_tests_and_maybe_revert,
+    unload_model,
 )
 
 # ── get_mode ─────────────────────────────────────────────────────────────────
@@ -274,4 +278,153 @@ def test_idle_maintenance_skips_when_task_queued(mayor, monkeypatch):
 
     m._maybe_idle_maintenance()
     assert called == []                 # approved work present -> leave to dispatch
+    q.close()
+
+
+# ── model load/unload (ollama VRAM discipline) ───────────────────────────────
+
+class _DummyResp:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self): return b"{}"
+
+
+def test_unload_model_success(monkeypatch):
+    sent = {}
+    def _fake(req, timeout=None):
+        sent["url"] = req.full_url
+        sent["payload"] = req.data
+        return _DummyResp()
+    monkeypatch.setattr("jarvis.mayor.urllib.request.urlopen", _fake)
+    unload_model("qwen2.5:7b")
+    assert "api/generate" in sent["url"]
+    assert b"keep_alive" in sent["payload"]
+
+
+def test_unload_model_failure_is_quiet(monkeypatch):
+    monkeypatch.setattr("jarvis.mayor.urllib.request.urlopen",
+                        lambda req, timeout=None: (_ for _ in ()).throw(
+                            OSError("no ollama")))
+    unload_model("qwen2.5:7b")  # must not raise
+
+
+def test_ensure_model_loaded_true_and_false(monkeypatch):
+    monkeypatch.setattr("jarvis.mayor.urllib.request.urlopen",
+                        lambda req, timeout=None: _DummyResp())
+    assert ensure_model_loaded("model-x") is True
+    monkeypatch.setattr("jarvis.mayor.urllib.request.urlopen",
+                        lambda req, timeout=None: (_ for _ in ()).throw(
+                            OSError("down")))
+    assert ensure_model_loaded("model-x") is False
+
+
+# ── agent dispatch ───────────────────────────────────────────────────────────
+
+def test_run_agent_on_task_success(monkeypatch, tmp_path):
+    class _FakeAgent:
+        def execute(self, task):
+            return {"success": True, "result": "ok", "commit_hash": "abc",
+                    "files_changed": ["a.py"]}
+    monkeypatch.setattr("jarvis.mayor.get_agent", lambda name, root: _FakeAgent())
+    res = run_agent_on_task({"agent": "code", "id": "t1"}, tmp_path)
+    assert res["success"] is True and res["commit_hash"] == "abc"
+
+
+def test_run_agent_on_task_crash_returns_clean_dict(monkeypatch, tmp_path):
+    class _Boom:
+        def execute(self, task):
+            raise RuntimeError("agent blew up")
+    monkeypatch.setattr("jarvis.mayor.get_agent", lambda name, root: _Boom())
+    res = run_agent_on_task({"agent": "code", "id": "t1"}, tmp_path)
+    assert res["success"] is False
+    assert "Agent crashed" in res["result"]
+
+
+def test_get_agent_returns_executable(tmp_path):
+    agent = get_agent("code", tmp_path)
+    assert hasattr(agent, "execute")
+
+
+# ── health checks ────────────────────────────────────────────────────────────
+
+def test_run_health_checks_all_healthy(mayor, monkeypatch):
+    m, q = mayor
+    m.running = True
+    monkeypatch.setattr(
+        "jarvis.mayor.urllib.request.urlopen",
+        lambda req, timeout=None: _json_resp(
+            {"models": [{"name": "qwen2.5:7b"}]}))
+    checks = m.run_health_checks()
+    assert checks["ollama"]["healthy"] is True
+    assert checks["task_queue"]["healthy"] is True
+    assert checks["filesystem"]["healthy"] is True
+    assert checks["mayor"]["healthy"] is True
+    q.close()
+
+
+def test_run_health_checks_ollama_down(mayor, monkeypatch):
+    m, q = mayor
+    m.running = True
+    monkeypatch.setattr("jarvis.mayor.urllib.request.urlopen",
+                        lambda req, timeout=None: (_ for _ in ()).throw(
+                            OSError("down")))
+    checks = m.run_health_checks()
+    assert checks["ollama"]["healthy"] is False
+    q.close()
+
+
+def _json_resp(obj):
+    class _R(_DummyResp):
+        def read(self): return json.dumps(obj).encode()
+    return _R()
+
+
+# ── mode switching ───────────────────────────────────────────────────────────
+
+def test_check_mode_switch_to_memory_starts_night_mode(mayor, monkeypatch):
+    m, q = mayor
+    m.current_mode = "coding"
+    monkeypatch.setattr("jarvis.mayor.get_mode", lambda *a, **k: "memory")
+    monkeypatch.setattr("jarvis.mayor.unload_model", lambda *a, **k: None)
+    monkeypatch.setattr("jarvis.mayor.ensure_model_loaded", lambda *a, **k: True)
+    started = []
+    monkeypatch.setattr(m, "_start_night_mode", lambda: started.append(1))
+    m.check_mode_switch()
+    assert m.current_mode == "memory"
+    assert started == [1]
+    q.close()
+
+
+def test_check_mode_switch_no_change(mayor, monkeypatch):
+    m, q = mayor
+    m.current_mode = "memory"
+    monkeypatch.setattr("jarvis.mayor.get_mode", lambda *a, **k: "memory")
+    called = []
+    monkeypatch.setattr(m, "_start_night_mode", lambda: called.append(1))
+    m.check_mode_switch()
+    assert called == []  # no switch -> no night-mode start
+    q.close()
+
+
+# ── task dispatch ────────────────────────────────────────────────────────────
+
+def test_dispatch_next_task_skips_outside_coding_mode(mayor):
+    m, _q = mayor
+    m.current_mode = "memory"
+    assert m.dispatch_next_task() is None
+
+
+def test_dispatch_next_task_completes_task(mayor, monkeypatch):
+    m, q = mayor
+    m.current_mode = "coding"
+    tid = q.add_task("ship the thing", agent="code")
+    q.approve_task(tid)
+
+    monkeypatch.setattr("jarvis.mayor.run_agent_on_task",
+                        lambda task, root: {"success": True, "result": "done",
+                                            "commit_hash": "c1"})
+    monkeypatch.setattr("jarvis.mayor.run_tests_and_maybe_revert",
+                        lambda root, commit: (True, "green"))
+    m.dispatch_next_task()
+    assert q.get_task(tid)["status"] == "completed"
     q.close()
