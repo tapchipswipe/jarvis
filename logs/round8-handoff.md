@@ -58,9 +58,15 @@ This session runs while the user is away. All work is agent-driven, committed to
   files, ~67 call sites) to `datetime.now(timezone.utc).replace(tzinfo=None)` —
   string-identical naive-UTC semantics, so no behavior change. Warnings dropped
   370 → 2 (both from 3rd-party deps). Suite 346 passed, 1 skipped.
-- [x] **Round 11 (pending commit):** `jarvis ingest-status` CLI + `remote.ingest_status()`
+- [x] **Round 11 (f3d6a1d):** `jarvis ingest-status` CLI + `remote.ingest_status()`
   so the box inbox-drain progress is observable from the Mac without curl. 2 new
   tests; ruff-clean in new regions. Also removed a duplicated `__main__` guard.
   Suite 348 passed, 1 skipped.
+- [x] **Round 12 (c978ebe):** health-check now also reports `box ingest:` progress
+  (read-only; n/a on the pre-restart server). Verified syntax + live run.
+- [x] **Round 13 (pending commit):** test-coverage round — new `tests/test_remote.py`
+  (transport wrappers + token header, no network), `tests/test_decision_log.py`,
+  and server.py shim tests (app identity + `run` delegation). Added coverage for the
+  client API surface. Suite 358 passed, 1 skipped.
 
 

@@ -215,3 +215,20 @@ def test_ingest_status_endpoint(client):
     body = r.json()
     assert "active" in body and "enabled" in body and "uptime" in body
 
+
+# ── server.py shim ─────────────────────────────────────────────────────────────
+def test_server_shim_exposes_same_app():
+    from jarvis import dashboard, server
+    assert server.app is dashboard.app
+    assert server.DEFAULT_PORT == dashboard.DEFAULT_PORT
+    assert server.DEFAULT_DAEMON_URL == dashboard.DEFAULT_DAEMON_URL
+
+
+def test_server_run_delegates_to_run_dashboard(monkeypatch):
+    from jarvis import dashboard, server
+    calls = {}
+    monkeypatch.setattr(dashboard, "run_dashboard",
+                        lambda port, daemon_url: calls.update(port=port, daemon_url=daemon_url))
+    server.run(port=9876, daemon_url="http://daemon:8765")
+    assert calls == {"port": 9876, "daemon_url": "http://daemon:8765"}
+
