@@ -73,10 +73,16 @@ This session runs while the user is away. All work is agent-driven, committed to
 - [x] **Round 15 (69b861f):** `jarvis doctor` — consolidated local+box diagnostics
   (mode, outbox backlog, box health+memories, ingest status, os). Verified live against
   the real box (all PASS). 2 new tests. Suite 360 passed, 1 skipped.
-- [x] **Round 16 (pending commit):** `jarvis export` is now thin-client aware — in client
+- [x] **Round 16 (d9a0dd5):** `jarvis export` is now thin-client aware — in client
   mode it pulls from the live box (`/api/export` JSON, tags/metadata normalized
   client-side) instead of the local rollback store; only local mode reads the store.
-  3 new client-mode tests (+ allocution autouse pin). Suite 363 passed, 1 skipped.
+  3 new client-mode tests (+ autouse local pin). Suite 363 passed, 1 skipped.
+- [x] **Round 17 (c84d95e):** `/api/memories` (token-guarded, limit/source/tier/since,
+  pre-decoded tags) + `remote.memories()` + remote-aware `memories`/`timeline` CLI.
+  Suite 368 passed, 1 skipped.
+- [x] **Round 18 (pending commit):** end-to-end `process_batch` cursor-advancement test
+  (drains the whole backlog across calls via the persisted cursor + dedupes re-runs),
+  locking the Round 7 'advances via cursor' fix. Suite 369 passed, 1 skipped.
 
 ### Live thin-client validation (2026-08-07, read-only)
 `jarvis status` → live box (memories=3954); `jarvis search 'tailscale' -n 3` → real box

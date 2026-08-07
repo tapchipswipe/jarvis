@@ -102,3 +102,59 @@ def test_process_batch_empty_dir_updates_status(tmp_path):
     assert st["done"] is True
     assert st["remaining"] == 0
 
+
+def test_process_batch_advances_cursor_across_calls(tmp_path, monkeypatch):
+    """process_batch must drain the WHOLE backlog across calls via the persisted
+    cursor (regression for the Round 7 fix 'ingester advances via cursor')."""
+    from unittest.mock import patch
+
+    from jarvis import inbox_ingest
+    from jarvis.store import Store
+
+    inbox_root = tmp_path / "inbox"
+    dev = inbox_root / "dev1"
+    dev.mkdir(parents=True)
+    for i in range(3):
+        (dev / f"n{i}.txt").write_text(
+            f"distinct note number {i} about tailscale mesh", encoding="utf-8")
+
+    def _mkstore():
+        with patch("jarvis.store.chromadb.PersistentClient"):
+            return Store(chroma_dir=tmp_path / "chroma", db_path=tmp_path / "meta.db")
+
+    monkeypatch.setattr(inbox_ingest, "Store", _mkstore)
+    cursor = tmp_path / "cursor.txt"
+
+    def _persist(res):
+        # the background ingester loop writes the returned cursor to disk each cycle
+        if res.get("cursor"):
+            cursor.write_text(res["cursor"], encoding="utf-8")
+        return res
+
+    with patch("jarvis.embed.get_embedding", lambda *a, **k: [0.1] * 8):
+        r1 = _persist(inbox_ingest.process_batch(inbox_dir=inbox_root, batch=1, cooldown=0, cursor_path=cursor))
+        assert r1["processed"] == 1 and r1["added"] == 1 and r1["remaining"] == 2 and r1["done"] is False
+        assert cursor.exists() and cursor.read_text() != ""
+
+        r2 = _persist(inbox_ingest.process_batch(inbox_dir=inbox_root, batch=1, cooldown=0, cursor_path=cursor))
+        assert r2["processed"] == 1 and r2["remaining"] == 1
+
+        r3 = _persist(inbox_ingest.process_batch(inbox_dir=inbox_root, batch=5, cooldown=0, cursor_path=cursor))
+        assert r3["done"] is True and r3["remaining"] == 0
+
+        # idempotent: once drained, a further call adds nothing
+        r4 = _persist(inbox_ingest.process_batch(inbox_dir=inbox_root, batch=5, cooldown=0, cursor_path=cursor))
+        assert r4["done"] is True and r4["remaining"] == 0
+
+    # exactly the distinct contents landed in the store, no duplicates from re-runs
+    s = _mkstore()
+    try:
+        n = s.conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        assert n == 3
+        dups = s.conn.execute(
+            "SELECT content_hash, COUNT(*) AS c FROM memories GROUP BY content_hash HAVING c > 1"
+        ).fetchone()
+        assert dups is None
+    finally:
+        s.close()
+
