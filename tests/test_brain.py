@@ -370,3 +370,24 @@ def test_upgrade_adds_and_appends(store, tmp_path, monkeypatch):
     assert first >= 1
     assert "rocket mode" in upgrades.read_text(encoding="utf-8")
 
+
+def test_ollama_chat_honors_ollama_host_env(monkeypatch):
+    """Round 9 #7: _ollama_chat must honor OLLAMA_HOST/PORT env (lets a thin
+    client reach the box's Ollama for out-of-band digest previews)."""
+    from jarvis import brain as B
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"response": "x"}'
+
+    captured = {}
+    def _fake(req, timeout=180):
+        captured["u"] = req.full_url
+        return _Resp()
+    monkeypatch.setenv("OLLAMA_HOST", "100.102.0.99")
+    monkeypatch.setenv("OLLAMA_PORT", "11434")
+    monkeypatch.setattr("jarvis.brain.urllib.request.urlopen", _fake)
+    B._ollama_chat("m", [{"role": "user", "content": "x"}])
+    assert captured["u"] == "http://100.102.0.99:11434/api/generate"
+

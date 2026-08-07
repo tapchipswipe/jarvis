@@ -32,10 +32,14 @@ def _digest_model() -> str:
 
 
 def _ollama_chat(model: str, messages: list[dict]) -> dict:
+    # Host/port read from env at call time (defaults 127.0.0.1:11434), so a
+    # thin client can point the brain at the box's Ollama for out-of-band runs.
+    host = os.environ.get("OLLAMA_HOST", "") or _OLLAMA_HOST
+    port = os.environ.get("OLLAMA_PORT", "") or _OLLAMA_PORT
     prompt = _messages_to_prompt(messages)
     payload = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
     req = urllib.request.Request(
-        f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/generate",
+        f"http://{host}:{port}/api/generate",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
