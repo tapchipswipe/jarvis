@@ -60,3 +60,12 @@ if [ -n "$DISK" ]; then
 else
     notice "box disk: n/a"
 fi
+
+# 4. Inbox backlog ingester progress (present once the box server runs 966d7b2+)
+INGEST=$(curl -m 8 -fsS "http://$BOX_HOST:$PORT/api/ingest/status" 2>/dev/null || true)
+if [ -n "$INGEST" ]; then
+    notice "box ingest: $(printf '%s' "$INGEST" | head -c 200)"
+else
+    notice "box ingest: n/a (endpoint not yet on the running pre-restart server)"
+fi
+
