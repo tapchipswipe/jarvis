@@ -41,7 +41,7 @@ _SUFFIXES = {".md", ".txt", ".csv"}
 # Thread-safe progress registry for /api/ingest/status observability.
 _status_lock = threading.Lock()
 _status: dict = {"active": False, "enabled": False, "inbox": str(DEFAULT_INBOX),
-                 "errors": 0}
+                 "errors": 0, "total": 0}
 
 
 def ingest_status() -> dict:
@@ -131,11 +131,12 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     {processed, added, remaining, done, cursor}.
     """
     files = sorted(inbox_files(inbox_dir), key=lambda p: str(p))
+    total = len(files)
     if not files:
-        _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), remaining=0,
-                    processed=0, added=0, errors=0, done=True, cursor=None)
+        _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), total=0,
+                    remaining=0, processed=0, added=0, errors=0, done=True, cursor=None)
         return {"processed": 0, "added": 0, "errors": 0, "remaining": 0,
-                "done": True, "cursor": None}
+                "total": 0, "done": True, "cursor": None}
 
     start_idx = 0
     if cursor_path is not None:
@@ -151,10 +152,10 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
 
     todo = files[start_idx:start_idx + batch]
     if not todo:
-        _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), remaining=0,
-                    processed=0, added=0, errors=0, done=True, cursor=str(files[-1]))
+        _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), total=total,
+                    remaining=0, processed=0, added=0, errors=0, done=True, cursor=str(files[-1]))
         return {"processed": 0, "added": 0, "errors": 0, "remaining": 0,
-                "done": True, "cursor": str(files[-1])}
+                "total": total, "done": True, "cursor": str(files[-1])}
 
     store = Store()
     processed = 0
@@ -173,11 +174,12 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     finally:
         store.close()
     remaining = len(files) - (start_idx + processed)
-    _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), processed=processed,
-                added=added, errors=errors, remaining=remaining, done=remaining <= 0,
-                cursor=str(todo[-1]))
+    _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), total=total,
+                processed=processed, added=added, errors=errors, remaining=remaining,
+                done=remaining <= 0, cursor=str(todo[-1]))
     return {"processed": processed, "added": added, "errors": errors,
-            "remaining": remaining, "done": remaining <= 0, "cursor": str(todo[-1])}
+            "total": total, "remaining": remaining, "done": remaining <= 0,
+            "cursor": str(todo[-1])}
 
 
 

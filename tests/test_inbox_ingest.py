@@ -102,6 +102,7 @@ def test_process_batch_empty_dir_updates_status(tmp_path):
     assert st["done"] is True
     assert st["remaining"] == 0
     assert st["errors"] == 0
+    assert st["total"] == 0
 
 
 def test_process_batch_advances_cursor_across_calls(tmp_path, monkeypatch):
