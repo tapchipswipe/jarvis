@@ -74,9 +74,18 @@ The whole "next-up" backlog is done:
   (token-gated) runs in-process; `scripts/jarvis-backup.sh` uses it (`JARVIS_BACKUP_STRICT=1`
   pauses the scheduled task for a consistent HNSW snapshot, always restarts).
 - **`jarvis ask "<q>"`** — one-shot answer ALWAYS grounded on the brain (local or box).
+  `--session` threads; `--save` (default) writes Q&A back to memory; `--no-save` opts out;
+  shows grounding sources + related entities. Uses the box's grounded `/api/query` (NOT the
+  agentic chat), so it returns a clean answer — this fixed the "ask → To" fragment bug.
+- **`jarvis console`** — interactive Iron-Man-style terminal (grounded Q&A, persistent thread,
+  `/help /session /clear /save /digest /status /quit`).
+- **`jarvis digest --now`** — generate a digest on demand (via `/api/digest`).
 - **`jarvis delegate` RETIRED** — removed (the box's `cline` needs Cline Credits; the Pass
   didn't clear it for Muse Spark, and Ollama-on-same-box offload is pointless). Jarvis is
-  **zero external dependencies**: tasks run through the Mayor's local `jarvis/agents/*`.
+  **zero external dependencies**.
+- **Ingest marker fix** — the ingester persists a drain-marker so a server restart idles
+  instead of re-draining the whole inbox (which caused Chroma lock contention that stalled
+  concurrent queries). `scripts/verify-restore.sh` smoke-tests the encrypted restore path.
 - **Digest model guard** (`JARVIS_DIGEST_MODEL`), **ingester idle fast-path**, **per-user
   isolation 0700 chain**, **desktop+webhook alerting** (`JARVIS_ALERT_WEBHOOK`, rate-limited).
 - Coverage **54%** (extract_entities 96%, mayor 57%); ruff 344 → ~220; suite **450 passed**.
