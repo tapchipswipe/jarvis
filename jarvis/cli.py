@@ -1142,8 +1142,25 @@ def collect(max_files, do_flush):
         )
 
 
-if __name__ == "__main__":
-    cli()
+@cli.command(name="ingest-status")
+def ingest_status():
+    """Show the box's inbox-backlog ingester progress (thin client)."""
+    from jarvis import remote
+    if not remote.is_remote():
+        click.echo("ingest-status requires thin-client mode (JARVIS_MODE=client + JARVIS_REMOTE).")
+        return
+    try:
+        st = remote.ingest_status()
+    except Exception as e:  # noqa: BLE001 - connectivity/endpoint-not-present
+        click.echo(f"Could not reach the box (/api/ingest/status): {e}")
+        return
+    click.echo(
+        f"Active={st.get('active')} Enabled={st.get('enabled')} "
+        f"processed={st.get('processed')} added={st.get('added')} "
+        f"remaining={st.get('remaining')} done={st.get('done')}"
+    )
+    click.echo(f"  inbox: {st.get('inbox')}")
+
 
 if __name__ == "__main__":
     cli()

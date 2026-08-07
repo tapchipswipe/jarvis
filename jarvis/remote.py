@@ -57,6 +57,11 @@ def health_deep():
     return _request("GET", "/api/health/deep")
 
 
+def ingest_status():
+    """Inbox-backlog ingester progress on the box (active/enabled/processed/remaining)."""
+    return _request("GET", "/api/ingest/status")
+
+
 def remember_batch(memories: list[dict]) -> dict:
     return _request("POST", "/api/remember", {"memories": memories})
 

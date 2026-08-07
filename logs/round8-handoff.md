@@ -54,9 +54,13 @@ This session runs while the user is away. All work is agent-driven, committed to
   inbox ingester WIRED-BUT-NEEDS-RESTART (5,458 files, no cursor);
   triggers/digests (`TriggerLoop`) NOT running (died with the daemon). STATUS
   next-actions reordered (restart box first). Docs only; no code change.
-- [x] **Round 10 (pending commit):** modernized all `datetime.utcnow()` uses (22 source
+- [x] **Round 10 (7003146):** modernized all `datetime.utcnow()` uses (22 source
   files, ~67 call sites) to `datetime.now(timezone.utc).replace(tzinfo=None)` —
   string-identical naive-UTC semantics, so no behavior change. Warnings dropped
   370 → 2 (both from 3rd-party deps). Suite 346 passed, 1 skipped.
+- [x] **Round 11 (pending commit):** `jarvis ingest-status` CLI + `remote.ingest_status()`
+  so the box inbox-drain progress is observable from the Mac without curl. 2 new
+  tests; ruff-clean in new regions. Also removed a duplicated `__main__` guard.
+  Suite 348 passed, 1 skipped.
 
 

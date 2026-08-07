@@ -148,6 +148,34 @@ def test_status_offline_reports_box_unreachable(monkeypatch):
     assert "Box unreachable" in result.output
 
 
+def test_ingest_status_reports_box_progress(monkeypatch):
+    from jarvis import remote
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: True)
+    monkeypatch.setattr(remote, "ingest_status",
+                        lambda: {"active": True, "enabled": True, "processed": 250,
+                                 "added": 248, "remaining": 5208, "done": False,
+                                 "inbox": "C:/data/jarvis/inbox"})
+
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["ingest-status"])
+    assert result.exit_code == 0
+    assert "Active=True" in result.output
+    assert "remaining=5208" in result.output
+    assert "C:/data/jarvis/inbox" in result.output
+
+
+def test_ingest_status_needs_client_mode(monkeypatch):
+    from jarvis.cli import cli
+
+    monkeypatch.setattr("jarvis.remote.is_remote", lambda: False)
+    from click.testing import CliRunner
+    result = CliRunner().invoke(cli, ["ingest-status"])
+    assert result.exit_code == 0
+    assert "requires thin-client mode" in result.output
+
+
 def test_task_list_command_still_registered():
     """The CLI command remains ``task list`` after the rename."""
     from jarvis.cli import cli
