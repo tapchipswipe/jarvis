@@ -11,7 +11,7 @@ You are Cline working on the **Jarvis** project (repo root = this directory).
 If this is a new/continued session, reconstruct context from these, in order:
 1. **`docs/STATUS.md`** — the canonical snapshot: topology, what's deployed+where, branches,
    services, known issues, and the concrete **next actions**.
-2. **`logs/round6-handoff.md`** — the newest session narrative (what was done last + decisions).
+2. **`logs/round7-handoff.md`** — the newest session narrative (what was done last + decisions).
 3. **`docs/deployment-lightspeed.md`** — the Lightspeed server runbook (paths, restart, reverse).
 4. **`docs/topology.md`** — the agreed architecture (FULL-THIN: Lightspeed = brain, Mac = thin client).
 5. `docs/system-diagram.md` / `docs/architecture.md` — overall layout.
@@ -20,16 +20,18 @@ If this is a new/continued session, reconstruct context from these, in order:
 To resume after a reboot (context was reset): read those files, check live state
 (`git status`, `launchctl list | grep jarvis`, `curl <server>/api/health`), then continue.
 
-## Current architecture (top level)
+## Current architecture (top level) — cutover DONE (Round 7)
 - **Lightspeed (Dell G7, 16 GB, Tailscale 100.102.0.99) = single source of truth + single writer.**
-  Runs `jarvis server` on `:8766` (branch `bot`, currently `2d98a1d`) via scheduled task `JarvisServer`;
-  canonical store at `C:\Users\despo\jarvis\data\`; Ollama local (`OLLAMA_HOST=127.0.0.1`). See `docs/deployment-lightspeed.md`.
-- **Mac = thin client.** CLI/dashboard read/write the server over Tailscale; keep a disposable
-  outbox + rolling-tail cache (`jarvis/cache.py`, `jarvis/remote.py`). Local dev store still exists
-  until the cutover runs.
+  Runs `jarvis server` on `:8766` (branch `bot`) via scheduled task `JarvisServer`;
+  canonical store at `C:\Users\despo\jarvis\data\` (3,950 memories); Ollama local (`OLLAMA_HOST=127.0.0.1`).
+  See `docs/deployment-lightspeed.md`.
+- **Mac = thin client (cut over).** CLI read/write the server over Tailscale via `jarvis/cache.py`
+  (disposable outbox + rolling tail). Mac-local daemon/dashboard/watcher/sync are **retired** (plists in
+  `~/jarvis/rollback-launchagents-*/`); the local `~/jarvis/data` store is kept only as a rollback copy.
+  `JARVIS_MODE=client` + `JARVIS_REMOTE=http://100.102.0.99:8766` live in `~/.zshrc`.
 - **Remote agent:** a headless Cline CLI is installed on Lightspeed (`cline` v3.0.51) and can be
   driven from the Mac via `ssh despo@100.102.0.99 'cline --cwd <repo> --json "<task>"'` to offload
-  maintenance/Windows-native work off the Mac.
+  maintenance/Windows-native work off the Mac. Delegate ONE task at a time (box RAM-tight).
 
 ## git
 - Default working branch: `bot`. `main` is fast-forward-mirrored to `bot` and both pushed to origin

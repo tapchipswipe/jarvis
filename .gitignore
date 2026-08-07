@@ -60,6 +60,7 @@ Library/LaunchAgents/*.plist
 
 # Backups
 backups/
+rollback-launchagents-*/
 *.tar.gz
 *.tar.gz.enc
 *.age
