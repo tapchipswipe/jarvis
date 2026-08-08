@@ -71,10 +71,17 @@ class Cache:
 
     # ── outbox (write-back) ─────────────────────────────────────────────────
     def enqueue(self, content: str, source: str = "device", tags: list[str] | None = None,
-                metadata: dict | None = None) -> bool:
+                metadata: dict | None = None, max_bytes: int = 20_000) -> bool:
         """Append a capture item. Idempotent on content hash — returns False if a
-        pending copy already exists (so retries never duplicate)."""
+        pending copy already exists (so retries never duplicate).
+
+        ``max_bytes`` caps a single item's content. Oversized blobs (multi-hundred-KB
+        file dumps the collector picked up) are rejected outright — they bloat the
+        outbox and force the box to embed megabytes of junk per flush.
+        """
         if not content or not content.strip():
+            return False
+        if len(content) > max_bytes:
             return False
         key = hashlib.sha256(content.encode()).hexdigest()
         payload = json.dumps({"content": content, "source": source,
@@ -177,16 +184,23 @@ def flush_outbox(cache: Cache, limit: int = 200) -> dict:
     due = cache.due(limit=limit)
     if not due:
         return {"pushed": 0, "failed": 0, "offline": False}
-    # batch: split into chunks and remember via the server
+    # Batch in small chunks: the box's single uvicorn worker blocks on each
+    # /api/remember, and a huge batch (e.g. 200 new items) holds Chroma's HNSW
+    # re-index for minutes — stalling every other request. Small chunks keep the
+    # box responsive and let the client mark progress between batches.
     mems = [json.loads(d["payload"]) for d in due]
-    for chunk_start in range(0, len(mems), 200):
-        chunk = mems[chunk_start:chunk_start + 200]
+    pushed = 0
+    chunk_size = 25
+    for chunk_start in range(0, len(mems), chunk_size):
+        chunk = mems[chunk_start:chunk_start + chunk_size]
+        ids = [d["id"] for d in due[chunk_start:chunk_start + chunk_size]]
         try:
             remote.remember_batch(chunk)
+            for mid in ids:
+                cache.mark_synced(mid)
+            pushed += len(ids)
         except Exception:  # noqa: BLE001 - keep queued on any server error
-            for d in due[chunk_start:chunk_start + 200]:
-                cache.mark_retry(d["id"])
-            return {"pushed": 0, "failed": len(chunk), "offline": False}
-    for d in due:
-        cache.mark_synced(d["id"])
-    return {"pushed": len(due), "failed": 0, "offline": False}
+            for mid in ids:
+                cache.mark_retry(mid)
+            return {"pushed": pushed, "failed": len(ids), "offline": False}
+    return {"pushed": pushed, "failed": 0, "offline": False}
