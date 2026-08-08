@@ -71,6 +71,28 @@ def test_scan_skips_blank(tmp_path, monkeypatch):
     assert stats["enqueued"] == 0
 
 
+def test_scan_excludes_python_cache_dirs(tmp_path, monkeypatch):
+    """Python/tool cache dirs must not be walked — they bloat the scan and can
+    block reads; they contribute nothing to memory quality."""
+    from jarvis.collectors import thin
+
+    monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "cache.db"))
+    d = tmp_path / "docs"
+    d.mkdir()
+    # A real note the collector should pick up.
+    (d / "real.md").write_text("A genuine note worth remembering.", encoding="utf-8")
+    # Python / tooling caches that must be skipped.
+    for cache_dir in ("__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"):
+        c = d / cache_dir
+        c.mkdir(parents=True, exist_ok=True)
+        (c / "junk.txt").write_text("serialized cache junk", encoding="utf-8")
+
+    stats = thin.scan_once(roots=[d], max_files=100)
+    assert stats["enqueued"] == 1        # only real.md
+    assert stats["files"] == 1           # cache files not walked
+    assert stats["errors"] == 0
+
+
 def test_scan_accepts_string_roots(tmp_path, monkeypatch):
     """--root passes *strings* (click.Path→str); scan_once must coerce to Path."""
     from jarvis.collectors import thin

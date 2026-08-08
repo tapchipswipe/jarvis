@@ -26,8 +26,15 @@ COLLECT_DIRS = [
 ]
 COLLECT_EXTENSIONS = {".md", ".txt", ".json", ".csv", ".xml", ".html", ".log",
                       ".yaml", ".yml", ".toml", ".rst", ".org"}
-COLLECT_EXCLUDE_DIRS = {".git", "node_modules", "__pycache__", "venv", ".venv",
-                        "Cache", "Caches", "tmp", "VirtualBox VMs", ".Trash"}
+COLLECT_EXCLUDE_DIRS = {
+    ".git", "node_modules", "venv", ".venv", "env", ".env",
+    "Cache", "Caches", "tmp", "VirtualBox VMs", ".Trash",
+    # Python / tooling caches — serialized binary-ish files that bloat the
+    # scan and (in some cases) block reads, doing nothing for memory quality.
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".hypothesis", ".tox", ".nox", ".coverage", ".cache", ".ipynb_checkpoints",
+    ".mypy", ".pyre", ".pyright", ".eggs", ".egg-info", ".venv-cache",
+}
 # A hard cap on how large a single file may be before it is skipped outright.
 # A multi-GB .json/.csv/.log would otherwise be read fully into memory via
 # path.read_text() and stored in the outbox, risking OOM and backlog bloat.
