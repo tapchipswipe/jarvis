@@ -250,6 +250,44 @@ def test_search_recency_boost_does_not_override_relevance(store):
     assert ids == [old_relevant, new_irrelevant]
 
 
+def test_search_re_rank_false_caps_at_n_results(store):
+    """task_0040: with re_rank=False the returned list must be capped exactly at
+    n_results, not the n_results*3 rows Chroma fetches internally."""
+    emb = [0.1] * 3
+    fids = []
+    for i in range(5):
+        fid = fingerprint("s", f"m{i}", f"memory {i}", "2025-06-01")
+        fids.append(fid)
+        store.add(fid, "s", f"m{i}", "2025-06-01T10:00:00", f"memory {i}", [], {}, emb, tier="raw")
+    store.collection.query.return_value = {
+        "documents": [[f"memory {i}" for i in range(5)]],
+        "ids": [fids],
+        "metadatas": [[{"source": "s"}] * 5],
+        "distances": [[0.1, 0.2, 0.3, 0.4, 0.5]],
+    }
+    results = store.search(emb, n_results=2, re_rank=False)
+    assert len(results) == 2
+
+
+def test_search_re_rank_true_caps_at_n_results(store):
+    """task_0040: with re_rank=True the returned list must still be capped exactly
+    at n_results after the tier/recency re-sort."""
+    emb = [0.1] * 3
+    fids = []
+    for i in range(5):
+        fid = fingerprint("s", f"m{i}", f"memory {i}", "2025-06-01")
+        fids.append(fid)
+        store.add(fid, "s", f"m{i}", "2025-06-01T10:00:00", f"memory {i}", [], {}, emb, tier="raw")
+    store.collection.query.return_value = {
+        "documents": [[f"memory {i}" for i in range(5)]],
+        "ids": [fids],
+        "metadatas": [[{"source": "s"}] * 5],
+        "distances": [[0.1, 0.2, 0.3, 0.4, 0.5]],
+    }
+    results = store.search(emb, n_results=2, re_rank=True)
+    assert len(results) == 2
+
+
 # ── Tier / route queries ──────────────────────────────────────────────────────
 
 def test_get_by_tier(store):

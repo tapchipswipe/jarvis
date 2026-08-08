@@ -386,7 +386,10 @@ class Store:
                 rows.sort(key=lambda pair: (-(pair[1].get("weight", 0.3)), pair[0], memory_age_hours(pair[1].get("timestamp"))))
             else:
                 rows.sort(key=lambda pair: (-(pair[1].get("weight", 0.3)), pair[0]))
-            rows = rows[:n_results]
+        # Cap the result list at n_results regardless of re_rank. Without this,
+        # re_rank=False would return up to n_results*3 rows (the full Chroma
+        # fetch) instead of the requested count.
+        rows = rows[:n_results]
         return [row for _, row in rows]
 
     def get_by_tier(self, tier: str, limit: int = 100):
