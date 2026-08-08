@@ -85,6 +85,22 @@ Posted between round 9b and now; full detail in `docs/STATUS.md` Round 10 +
   zero-vectors), ingest cursor retries failed files, Chrome/Safari epoch + OCR/exiftool fixes,
   notify/trigger fixes, `/api/chat` returns 400 on malformed history.
 
+## Round 11 (2026-08-08, autonomous find→fix→repeat) — disk triage + ingest speed + thin-client hardening
+Full detail + verification in `logs/round11-handoff.md`. HEAD `aee3f1d` (`bot`==`main`==origin), suite
+**632 passed / 1 skipped**, box healthy at **~4,589 memories**.
+- **Disk triage:** data volume was at 99% (2.2 GB free) and the overnight backup had failed ("No space
+  left on device"); freed ~5 GB and re-ran the backup (new `store-20260808.tar.gz.age`). 3-2-1 restored.
+- **Ingest ~56× faster (deployed):** `embed.py` batches via Ollama `/api/embed` (20 embeds in 0.35 s),
+  new `Store.add_many`/`Brain.remember_many` batch Chroma adds (one HNSW add per request), and
+  `remember_batch` scales its timeout to batch size.
+- **Collector fixes:** exclude Python/tool caches (`.mypy_cache`/`.pytest_cache`/`.ruff_cache`/…) and
+  boilerplate lockfiles; `scan_once` went from 1500 files / ~1400 errors / hangs → **91 files / 0 errors /
+  0.06 s**. `cache.enqueue` caps item size (>20 KB rejected). `flush_outbox` drains in 25-item chunks.
+- **HTTPS in daemon scripts** (`jarvis-collect.sh`, `jarvis-health-check.sh`) — they still used `http://`
+  after the TLS move, so the collector never flushed. Now `https://` + pinned fingerprint.
+- **Modernization:** removed all deprecated `datetime.utcfromtimestamp()` (Python 3.15 removal),
+  output-identical so nothing re-ingests.
+
 ## Round 9b (2026-08-07) — hardening pass, all delivered
 - **HTTPS enabled end-to-end**: self-signed cert, box serves `https://100.102.0.99:8766`;
   Mac client pins the cert fingerprint (`JARVIS_TLS_FINGERPRINT`); ops scripts use HTTPS
