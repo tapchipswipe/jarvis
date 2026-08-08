@@ -403,3 +403,65 @@ def test_process_batch_does_not_advance_past_failed_file(tmp_path, monkeypatch):
     finally:
         s.close()
 
+
+def test_process_batch_tail_failure_keeps_ingester_active(tmp_path, monkeypatch):
+    """Regression for commit ed7c4bf intent: when the LAST file in the (only)
+    batch fails, ``processed`` still counts the attempt, so ``remaining`` alone
+    collapses to 0. Before the fix ``done = remaining <= 0`` was then True, which
+    made ``_loop`` persist the drained marker and unlink the cursor, stranding the
+    failed tail file forever. ``done`` must require ``errors == 0`` so the loop
+    stays active and retries the failed file next cycle (never marking drained)."""
+    from unittest.mock import patch
+
+    from jarvis import inbox_ingest
+    from jarvis.store import Store
+
+    inbox_root = tmp_path / "inbox"
+    dev = inbox_root / "dev1"
+    dev.mkdir(parents=True)
+    bad = dev / "only.txt"  # sole file: the tail of the (empty-)then-one backlog
+    bad.write_text("content that will blow up", encoding="utf-8")
+
+    def _mkstore():
+        with patch("jarvis.store.chromadb.PersistentClient"):
+            return Store(chroma_dir=tmp_path / "chroma", db_path=tmp_path / "meta.db")
+
+    monkeypatch.setattr(inbox_ingest, "Store", _mkstore)
+    cursor = tmp_path / "cursor.txt"
+
+    orig = inbox_ingest.ingest_inbox_file
+
+    def _flaky(store, path):
+        raise RuntimeError("boom")  # every file in this batch fails
+
+    monkeypatch.setattr(inbox_ingest, "ingest_inbox_file", _flaky)
+
+    with patch("jarvis.embed.get_embedding", lambda *a, **k: [0.1] * 8):
+        # single-file batch: processed=1 (attempt), errors=1, remaining=0.
+        res = inbox_ingest.process_batch(inbox_dir=inbox_root, batch=10,
+                                         cooldown=0, cursor_path=cursor)
+        st = inbox_ingest.ingest_status()
+        assert res["processed"] == 1
+        assert res["errors"] == 1
+        assert res["added"] == 0
+        # done must be False despite remaining==0, so _loop does NOT persist the
+        # drained marker nor unlink the cursor — the file is retried next cycle.
+        assert res["done"] is False
+        assert st["done"] is False
+        assert st["errors"] == 1
+        # cursor did NOT advance over the failed file: on the retry it must be
+        # re-attempted from the start.
+        assert res["cursor"] is None
+
+        # the transient failure clears; the next cycle must retry the file and
+        # finish draining (done=True), proving it was not stranded forever.
+        monkeypatch.setattr(inbox_ingest, "ingest_inbox_file", orig)
+        r2 = inbox_ingest.process_batch(inbox_dir=inbox_root, batch=10,
+                                        cooldown=0, cursor_path=cursor)
+        assert r2["processed"] == 1
+        assert r2["errors"] == 0
+        assert r2["added"] == 1
+        assert r2["done"] is True
+
+
+

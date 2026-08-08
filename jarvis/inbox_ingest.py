@@ -215,11 +215,12 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     finally:
         store.close()
     remaining = len(files) - (start_idx + processed)
+    done = (errors == 0) and (remaining <= 0)
     _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), total=total,
                 processed=processed, added=added, errors=errors, remaining=remaining,
-                done=remaining <= 0, cursor=cursor_file)
+                done=done, cursor=cursor_file)
     return {"processed": processed, "added": added, "errors": errors,
-            "total": total, "remaining": remaining, "done": remaining <= 0,
+            "total": total, "remaining": remaining, "done": done,
             "cursor": cursor_file}
 
 
