@@ -93,6 +93,24 @@ def test_scan_excludes_python_cache_dirs(tmp_path, monkeypatch):
     assert stats["errors"] == 0
 
 
+def test_scan_skips_boilerplate_lockfiles(tmp_path, monkeypatch):
+    """Dependency manifests / lockfiles carry no memory value and must not be
+    enqueued (they'd bloat the outbox with near-identical boilerplate)."""
+    from jarvis.collectors import thin
+
+    monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "cache.db"))
+    d = tmp_path / "repo"
+    d.mkdir()
+    (d / "package-lock.json").write_text("{lockfile}", encoding="utf-8")
+    (d / "tsconfig.json").write_text("{compiler opts}", encoding="utf-8")
+    (d / "notes.md").write_text("A real note appended to the repo.", encoding="utf-8")
+
+    stats = thin.scan_once(roots=[d], max_files=100)
+    assert stats["enqueued"] == 1        # only notes.md
+    assert stats["files"] == 1
+    assert stats["errors"] == 0
+
+
 def test_scan_accepts_string_roots(tmp_path, monkeypatch):
     """--root passes *strings* (click.Path→str); scan_once must coerce to Path."""
     from jarvis.collectors import thin

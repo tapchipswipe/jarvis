@@ -41,10 +41,32 @@ COLLECT_EXCLUDE_DIRS = {
 # Files above this size are skipped during the walk without being read.
 DEFAULT_MAX_SCAN_BYTES = 1_048_576  # 1 MiB
 
+# Boilerplate / generated files that carry no memory value and bloat the outbox
+# with near-duplicate dependency manifests, lockfiles and lockfiles of third-party
+# templates. Skipped by exact filename (basename) regardless of location.
+COLLECT_EXCLUDE_FILENAMES = {
+    "package-lock.json", "package.json", "yarn.lock", "pnpm-lock.yaml",
+    "bun.lock", "bun.lockb", "tsconfig.json", "tsconfig.build.json",
+    "tslint.json", "eslint.config.js", "eslint.config.mjs", ".eslintrc",
+    ".eslintrc.json", ".prettierrc", ".prettierrc.json", ".babelrc",
+    "webpack.config.js", "vite.config.ts", "vite.config.js", "next.config.js",
+    "next.config.mjs", "nuxt.config.ts", "rollup.config.js", "jest.config.js",
+    "jest.config.ts", "vitest.config.ts", "vitest.config.js", "docker-compose.yml",
+    "docker-compose.yaml", "pyproject.toml", "requirements.txt",
+    "requirements-dev.txt", "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock",
+    "poetry.lock", "Cargo.lock", "Cargo.toml", "go.mod", "go.sum", "Gemfile",
+    "Gemfile.lock", "composer.json", "composer.lock", "mix.lock",
+    "Podfile", "Podfile.lock", "Makefile", "CMakeLists.txt",
+    "Dockerfile", ".dockerignore", ".gitignore", ".gitattributes",
+    ".DS_Store", "Thumbs.db", ".coverage", "coverage.xml",
+}
+
 
 def _should_exclude(path: Path) -> bool:
     parts = path.parts
-    return any(excl in parts for excl in COLLECT_EXCLUDE_DIRS)
+    if any(excl in parts for excl in COLLECT_EXCLUDE_DIRS):
+        return True
+    return path.name in COLLECT_EXCLUDE_FILENAMES
 
 
 def _fingerprint(path: Path) -> str:
