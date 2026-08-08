@@ -335,7 +335,7 @@ def classify(memory_id, model, dry_run):
         store.close()
         return
     click.echo(f"Classifying memory {memory_id}...")
-    envelope = classify_existing(store, memory, model=model)
+    envelope = classify_existing(store, memory, model=model, dry_run=dry_run)
     route = envelope.get("route", "escalate")
     confidence = envelope.get("confidence", "low")
     store.close()
@@ -367,7 +367,7 @@ def classify_recent(limit, model, dry_run):
     click.echo(f"Classifying {len(rows)} unclassified memories...")
     counts = {}
     for m in rows:
-        env = classify_existing(store, m, model=model)
+        env = classify_existing(store, m, model=model, dry_run=dry_run)
         route = env.get("route", "escalate")
         counts[route] = counts.get(route, 0) + 1
         click.echo(f"  {m['id'][:12]}... -> {route} ({env.get('confidence', 'low')})")

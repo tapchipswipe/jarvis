@@ -7,6 +7,89 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from click.testing import CliRunner
+
+
+def _fake_classify_rows():
+    rows = [
+        {"id": "mx1", "content": "idea: a thing", "route": None, "source_id": "s1"},
+        {"id": "mx2", "content": "reference: another", "route": None, "source_id": "s2"},
+    ]
+    return rows
+
+
+def test_classify_forwards_dry_run(monkeypatch):
+    """`classify --dry-run` must forward dry_run=True to classify_existing."""
+    import jarvis.cli as cli_module
+    from jarvis.cli import cli
+
+    seen = {}
+    fake_store = MagicMock()
+    fake_store.conn.execute.return_value.fetchone.return_value = {
+        "id": "mx1", "content": "idea: a thing", "route": None, "source_id": "s1",
+    }
+    monkeypatch.setattr(cli_module, "Store", lambda *a, **k: fake_store)
+    monkeypatch.setattr(
+        cli_module, "classify_existing",
+        lambda store, memory, model=None, dry_run=False: (
+            seen.update(memory_id=memory["id"], dry_run=dry_run) or
+            {"route": "idea_capture", "confidence": "high", "escalate_reason": None,
+             "action_atom": None, "target_list": None, "tag_seeds": ["idea"]}))
+
+    result = CliRunner().invoke(cli, ["classify", "mx1", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert seen["memory_id"] == "mx1"
+    assert seen["dry_run"] is True
+    assert "dry-run" in result.output
+
+
+def test_classify_not_dry_run_by_default(monkeypatch):
+    """`classify` without --dry-run must forward dry_run=False."""
+    import jarvis.cli as cli_module
+    from jarvis.cli import cli
+
+    seen = {}
+    fake_store = MagicMock()
+    fake_store.conn.execute.return_value.fetchone.return_value = {
+        "id": "mx1", "content": "idea: a thing", "route": None, "source_id": "s1",
+    }
+    monkeypatch.setattr(cli_module, "Store", lambda *a, **k: fake_store)
+    monkeypatch.setattr(
+        cli_module, "classify_existing",
+        lambda store, memory, model=None, dry_run=False: (
+            seen.update(memory_id=memory["id"], dry_run=dry_run) or
+            {"route": "idea_capture", "confidence": "high", "escalate_reason": None,
+             "action_atom": None, "target_list": None, "tag_seeds": ["idea"]}))
+
+    result = CliRunner().invoke(cli, ["classify", "mx1"])
+    assert result.exit_code == 0, result.output
+    assert seen["dry_run"] is False
+    assert "Applied: yes" in result.output
+
+
+def test_classify_recent_forwards_dry_run(monkeypatch):
+    """`classify_recent --dry-run` must forward dry_run=True to classify_existing."""
+    import jarvis.cli as cli_module
+    from jarvis.cli import cli
+
+    seen = {"calls": 0}
+    fake_store = MagicMock()
+    fake_store.get_unclassified.return_value = _fake_classify_rows()
+    monkeypatch.setattr(cli_module, "Store", lambda *a, **k: fake_store)
+
+    def spy(store, memory, model=None, dry_run=False):
+        seen["calls"] += 1
+        seen["dry_run"] = dry_run
+        return {"route": "idea_capture", "confidence": "high", "escalate_reason": None,
+                "action_atom": None, "target_list": None, "tag_seeds": ["idea"]}
+
+    monkeypatch.setattr(cli_module, "classify_existing", spy)
+
+    result = CliRunner().invoke(cli, ["classify-recent", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert seen["calls"] == 2
+    assert seen["dry_run"] is True
+
 
 def test_remember_does_not_invoke_task_list(monkeypatch):
     """Regression: ``remember`` must store/confirm, not run the ``task list`` command.

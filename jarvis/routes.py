@@ -11,7 +11,7 @@ VALID_CONTEXT_LISTS = {"errands.md", "groceries.md", "chores.md", "inbox.md", "d
 ESCALATE_REASON_MAX = 200
 
 
-def classify_existing(store, memory: dict, model: str = None) -> dict:
+def classify_existing(store, memory: dict, model: str = None, dry_run: bool = False) -> dict:
     from jarvis.classifier import apply_envelope, classify, validate_envelope
     content = memory.get("content", "")
     source_id = memory.get("source_id", memory.get("id", "unknown"))
@@ -29,5 +29,6 @@ def classify_existing(store, memory: dict, model: str = None) -> dict:
             "escalate_reason": "envelope validation failed after classification; escalated automatically.",
             "notes": None,
         }
-    apply_envelope(store, memory["id"], envelope, log=True)
+    if not dry_run:
+        apply_envelope(store, memory["id"], envelope, log=True)
     return envelope
