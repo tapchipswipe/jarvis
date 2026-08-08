@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
@@ -44,7 +44,7 @@ class FileIngestionHandler(FileSystemEventHandler):
             emb = get_embedding(text[:4000])
             source = "file"
             source_id = str(path)
-            ts = datetime.utcfromtimestamp(path.stat().st_mtime).isoformat()
+            ts = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint(source, source_id, text, ts)
             added = 0
             for i, chunk in enumerate(chunks):

@@ -68,7 +68,7 @@ class InboxHandler(FileSystemEventHandler):
             source_id = str(path)
             ts = Path(path).stat().st_mtime_ns
             import datetime
-            ts_iso = datetime.datetime.utcfromtimestamp(ts / 1e9).isoformat()
+            ts_iso = datetime.datetime.fromtimestamp(ts / 1e9, datetime.timezone.utc).replace(tzinfo=None).isoformat()
             fid = fingerprint("device", source_id, text, ts_iso)
             if self.store.exists(fid):
                 self.seen.add(key)

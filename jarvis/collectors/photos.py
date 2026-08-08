@@ -1,6 +1,6 @@
 import json
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from jarvis.embed import get_embedding
@@ -62,7 +62,7 @@ def sync_photos(store):
                         text = f"Photo: {photo_path.name}\nDate: {exif.get('DateCreated', '')}\nTitle: {exif.get('Title', '')}\nDescription: {exif.get('Description', '')}\nGPS: {exif.get('GPSLatitude', '')}, {exif.get('GPSLongitude', '')}"
                         source = "photo"
                         source_id = str(photo_path)
-                        ts = exif.get("DateCreated", datetime.utcfromtimestamp(photo_path.stat().st_mtime).isoformat())
+                        ts = exif.get("DateCreated", datetime.fromtimestamp(photo_path.stat().st_mtime, timezone.utc).replace(tzinfo=None).isoformat())
                         fid = fingerprint(source, source_id, text, ts)
                         if store.exists(fid):
                             continue
@@ -79,7 +79,7 @@ def sync_photos(store):
                         if ocr_text:
                             ocr_source = "photos_ocr"
                             ocr_id = f"ocr:{photo_path}"
-                            ocr_ts = datetime.utcfromtimestamp(photo_path.stat().st_mtime).isoformat()
+                            ocr_ts = datetime.fromtimestamp(photo_path.stat().st_mtime, timezone.utc).replace(tzinfo=None).isoformat()
                             ocr_fid = fingerprint(ocr_source, ocr_id, ocr_text, ocr_ts)
                             if not store.exists(ocr_fid):
                                 ocr_emb = get_embedding(ocr_text[:4000])

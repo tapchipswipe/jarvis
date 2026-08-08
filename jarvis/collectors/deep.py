@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from jarvis.embed import get_embedding
@@ -50,7 +50,7 @@ def sync_deep(store, max_files=50000, max_errors=1024):
                         continue
                     source = "deep"
                     source_id = str(path)
-                    ts = datetime.utcfromtimestamp(path.stat().st_mtime).isoformat()
+                    ts = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(tzinfo=None).isoformat()
                     fid = fingerprint(source, source_id, text, ts)
                     if store.exists(fid):
                         continue

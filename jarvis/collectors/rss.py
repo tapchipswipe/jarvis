@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from jarvis.embed import get_embedding
@@ -24,7 +24,7 @@ def sync_rss(store):
                 text = rss_file.read_text(errors="ignore")
                 source = "rss"
                 source_id = str(rss_file)
-                ts = datetime.utcfromtimestamp(rss_file.stat().st_mtime).isoformat()
+                ts = datetime.fromtimestamp(rss_file.stat().st_mtime, timezone.utc).replace(tzinfo=None).isoformat()
                 fid = fingerprint(source, source_id, text, ts)
                 if store.exists(fid):
                     continue
