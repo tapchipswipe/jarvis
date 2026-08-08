@@ -13,6 +13,15 @@ DEFAULT_CHAT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 CHAT_TIERS = ("fast", "medium", "big")
 
 
+def _stable_day() -> str:
+    """Stable day key (YYYY-MM-DD) used in fingerprints so re-runs within the
+    same day produce the same fingerprint and store.exists() dedup fires. A
+    live clock timestamp in the fingerprint made every re-run distinct, so
+    re-saving a session / re-applying a correction / re-logging a feature
+    request silently created duplicates."""
+    return datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()
+
+
 def chat_model() -> str:
     """Active chat/query model — configurable via JARVIS_CHAT_MODEL.
 
@@ -301,7 +310,13 @@ class Brain:
             return False
         try:
             session_text = "\n".join(f"{m['role']}: {m['content']}" for m in session)
-            fid = fingerprint("session", f"chat-{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}", session_text, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+            # Anchor the fingerprint on session identity (first user message) +
+            # stable day, not a live clock timestamp, so re-saving the same
+            # session dedups via store.exists() instead of creating a duplicate.
+            day = _stable_day()
+            first_user = next((m["content"] for m in session if m["role"] == "user"), "")[:120]
+            session_key = f"chat-{day}-{first_user}"
+            fid = fingerprint("session", session_key, session_text, day)
             if self.store.exists(fid):
                 return False
             emb = get_embedding(session_text)
@@ -364,8 +379,8 @@ class Brain:
     def correct(self, memory_id: str, correction_text: str):
         if self.store.exists(memory_id):
             self.store.mark_superseded(memory_id)
-        fid = fingerprint("correction", memory_id, correction_text, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
-        if self.store.exists(fid):
+        fid = fingerprint("correction", memory_id, correction_text, _stable_day())
+        if self.store.exists(f"{fid}-0"):
             return 0
         tags = ["correction", f"correction-of:{memory_id}"]
         meta = {"corrects": memory_id}
@@ -380,8 +395,8 @@ class Brain:
         return added
 
     def upgrade(self, feature_request: str, status: str = "requested") -> int:
-        fid = fingerprint("upgrade", feature_request, feature_request, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
-        if self.store.exists(fid):
+        fid = fingerprint("upgrade", feature_request, feature_request, _stable_day())
+        if self.store.exists(f"{fid}-0"):
             return 0
         tags = ["upgrade", status]
         meta = {"status": status}

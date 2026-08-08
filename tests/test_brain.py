@@ -431,3 +431,64 @@ def test_tier_model_falls_back_to_medium(monkeypatch):
     assert tier_model("fast") == "medium-model"
     assert tier_model("big") == "medium-model"
     assert tier_model("medium") == "medium-model"
+
+
+# ── stable-fingerprint dedup (task_0024) ─────────────────────────────────────
+
+def _row_count(store):
+    return store.conn.execute("SELECT COUNT(*) AS n FROM memories").fetchone()["n"]
+
+
+def test_save_session_dedups_on_resave(store):
+    """Re-saving the same session must produce no duplicate (dedup fires)."""
+    b = _brain(store)
+    session = [
+        {"role": "user", "content": "What did I work on yesterday?"},
+        {"role": "assistant", "content": "You worked on the sync protocol."},
+        {"role": "user", "content": "And what is next on the list?"},
+        {"role": "assistant", "content": "Consolidation is next."},
+        {"role": "user", "content": "Thanks, that's all."},
+    ]
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        assert b.save_session(session) is True
+        first = _row_count(store)
+        assert first >= 1
+        assert b.save_session(session) is False  # dedup fires -> no re-add
+        assert _row_count(store) == first
+
+
+def test_correct_dedups_on_reapply(store):
+    """Re-applying the same correction to the same memory produces no duplicate."""
+    b = _brain(store)
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        b.remember("Original statement that needs fixing.", source="manual")
+    orig_id = store.conn.execute(
+        "SELECT id FROM memories WHERE content LIKE '%needs fixing%'"
+    ).fetchone()["id"]
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        first = b.correct(orig_id, "This is the corrected fact.")
+        assert first >= 1
+        before = _row_count(store)
+        second = b.correct(orig_id, "This is the corrected fact.")
+        assert second == 0  # dedup fires -> no new correction chunks
+        assert _row_count(store) == before
+
+
+def test_upgrade_dedups_on_relog(store, tmp_path, monkeypatch):
+    """Re-logging the same feature request produces no duplicate and does not
+    re-append to UPGRADES.md."""
+    from jarvis import paths as P
+    upgrades = tmp_path / "UPGRADES.md"
+    upgrades.write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "config_file", lambda *a: upgrades)
+    b = _brain(store)
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        first = b.upgrade("Add a teleport button", status="requested")
+        assert first >= 1
+        before = _row_count(store)
+        first_lines = len(upgrades.read_text(encoding="utf-8").splitlines())
+        second = b.upgrade("Add a teleport button", status="requested")
+        assert second == 0  # dedup fires -> no new upgrade memory
+        assert _row_count(store) == before
+        assert len(upgrades.read_text(encoding="utf-8").splitlines()) == first_lines
