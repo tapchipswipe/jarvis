@@ -49,36 +49,56 @@ def test_summarize_cluster_empty_returns_none():
     assert summarize_cluster([], PROMPT_DAILY) is None
 
 
-@patch("jarvis.consolidation.Brain")
-@patch("jarvis.consolidation.Store")
-def test_summarize_cluster_uses_store_param(mock_store_cls, mock_brain_cls):
-    """summarize_cluster should create its own Store and close it."""
-    mock_store = MagicMock()
-    mock_store_cls.return_value = mock_store
-    mock_brain = MagicMock()
-    mock_brain.query.return_value = ("summary text", [])
-    mock_brain_cls.return_value = mock_brain
+@patch("jarvis.consolidation._ollama_chat")
+def test_summarize_cluster_no_store_opened(mock_ollama):
+    """summarize_cluster must NOT open a Store/Brain — it only needs the LLM to
+    summarize pre-loaded text. Opening a Store would create a second Chroma
+    PersistentClient handle on the same dir (single-writer hazard) and run a
+    pointless embedding + empty n_results=0 search."""
+    mock_ollama.return_value = {"message": {"content": "summary text"}}
 
     memories = [{"id": "m1", "content": "hello", "timestamp": "2025-01-01", "source": "test", "tags": []}]
     result = summarize_cluster(memories, PROMPT_DAILY)
 
     assert result == "summary text"
-    mock_store_cls.assert_called_once()
-    mock_store.close.assert_called_once()
+    mock_ollama.assert_called_once()
+    assert mock_ollama.call_args.kwargs["messages"][0] == {"role": "system", "content": PROMPT_DAILY}
+    # The combined memory text is passed straight to the LLM as the user message.
+    assert mock_ollama.call_args.kwargs["messages"][1]["content"].startswith("[2025-01-01] [test] hello")
 
 
-@patch("jarvis.consolidation.Brain")
 @patch("jarvis.consolidation.Store")
-def test_summarize_cluster_brain_exception_returns_none(mock_store_cls, mock_brain_cls):
-    mock_store = MagicMock()
-    mock_store_cls.return_value = mock_store
-    mock_brain = MagicMock()
-    mock_brain.query.side_effect = RuntimeError("oom")
-    mock_brain_cls.return_value = mock_brain
+@patch("jarvis.consolidation._ollama_chat")
+def test_summarize_cluster_no_second_store(mock_ollama, mock_store_cls):
+    """Even when the surrounding run already holds an open Store, summarize_cluster
+    never constructs another one — it only calls the LLM on the pre-loaded text,
+    so exactly one Store (the caller's) exists at a time."""
+    outer = MagicMock()
+    mock_store_cls.return_value = outer
+    mock_ollama.return_value = {"message": {"content": "summary text"}}
+
+    memories = [{"id": "m1", "content": "hello", "timestamp": "2025-01-01", "source": "test", "tags": []}]
+    result = summarize_cluster(memories, PROMPT_DAILY)
+
+    assert result == "summary text"
+    mock_store_cls.assert_not_called()
+    outer.close.assert_not_called()
+
+
+@patch("jarvis.consolidation._ollama_chat")
+def test_summarize_cluster_ollama_exception_returns_none(mock_ollama):
+    mock_ollama.side_effect = RuntimeError("oom")
 
     result = summarize_cluster([{"id": "m1", "content": "x", "timestamp": "t", "source": "s", "tags": []}], PROMPT_DAILY)
     assert result is None
-    mock_store.close.assert_called_once()
+
+
+@patch("jarvis.consolidation._ollama_chat")
+def test_summarize_cluster_empty_answer_returns_none(mock_ollama):
+    mock_ollama.return_value = {"message": {"content": ""}}
+
+    result = summarize_cluster([{"id": "m1", "content": "x", "timestamp": "t", "source": "s", "tags": []}], PROMPT_DAILY)
+    assert result is None
 
 
 # ── run_daily ─────────────────────────────────────────────────────────────────

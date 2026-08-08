@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from jarvis.brain import Brain
+from jarvis.brain import _ollama_chat, chat_model
 from jarvis.embed import get_embedding
 from jarvis.store import Store, fingerprint
 
@@ -27,15 +27,20 @@ def summarize_cluster(memories: list[dict], prompt: str) -> str | None:
     if not memories:
         return None
     combined = "\n\n".join(f"[{m['timestamp']}] [{m['source']}] {m['content']}" for m in memories)
-    brain_store = Store()
-    jarvis = Brain(brain_store)
+    # The caller already holds an open Store and pre-loaded the memory text, so
+    # this only needs the LLM to summarize it. Calling the chat endpoint directly
+    # (rather than going through Brain/Store) avoids opening a second Chroma
+    # PersistentClient handle on the same dir (single-writer hazard) and the
+    # pointless embedding + empty n_results=0 search.
     try:
-        resp, _ = jarvis.query(f"{prompt}\n\nMESSAGES:\n{combined}", n_results=0)
-        return resp
+        resp = _ollama_chat(model=chat_model(), messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": combined},
+        ])
+        answer = (resp.get("message") or {}).get("content", "")
+        return answer or None
     except Exception:
         return None
-    finally:
-        brain_store.close()
 
 
 def run_daily():
