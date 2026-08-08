@@ -1,21 +1,22 @@
 # Jarvis — STATUS / Resume Snapshot
 
-_Updated 2026-08-07 (Rounds 8–10). This is the canonical resume doc. Read AGENTS.md for how to use it._
+_Updated 2026-08-08 (Rounds 8–11). This is the canonical resume doc. Read AGENTS.md for how to use it._
 
 ## Topology (agreed and NOW LIVE)
 **FULL-THIN is executed.** Lightspeed = single source of truth + single writer + the LLM brain (holds the active memories). Mac = thin terminal + collectors + disposable cache (outbox + rolling tail). Mac-local brain retired. See `docs/topology.md`.
 
 ## What is deployed / where / how to reach
-- **Lightspeed server** (`jarvis server`, branch `bot` @ `ab465f2`): Tailscale `100.102.0.99:8766`.
+- **Lightspeed server** (`jarvis server`, branch `bot` @ `545ba20`): Tailscale `100.102.0.99:8766`.
   - Auto-start: scheduled task `JarvisServer` (on logon). Launcher `C:\data\jarvis\server-start.bat`.
-  - Env: `OLLAMA_HOST=127.0.0.1`, `OLLAMA_PORT=11434` (user env + in the bat). Canonical store at `C:\Users\despo\jarvis\data\` — active memory count 3,954 (`/api/health/deep`), **stable until the running server is restarted onto the pushed commit**.
+  - Env: `OLLAMA_HOST=127.0.0.1`, `OLLAMA_PORT=11434` (user env + in the bat). Canonical store at `C:\Users\despo\jarvis\data\` — active memory count **4,524** (`/api/health/deep`). Server was restarted onto `545ba20` (Round 11) with all its ingest-speed fixes live on the box.
   - API: `/api/backfill`, `/api/remember`, `/api/search`, `/api/query`, `/api/chat`, `/api/sessions`, `/api/memories`, `/api/export`, `/api/ingest/status`, `/api/digest`, `/api/admin/backup`, `/api/health(+deep)`, plus dashboard/task/entity routes — mutating + sensitive reads token-guarded.
   - Runbook: `docs/deployment-lightspeed.md`. What-runs-where: `docs/runtime-audit.md`.
 - **Mac = thin client.** `~/.zshrc` sets `JARVIS_MODE=client`, `JARVIS_REMOTE=https://100.102.0.99:8766`. CLI remember/search/status/export/memories/timeline/collect/flush/ingest-status/doctor route to the box (or queue to the disposable outbox). Mac-local services (daemon 8765, dashboard 8766, watcher, sync) are **stopped + plists retired**; Mac store (`~/jarvis/data`, 3,951 rows) left intact for rollback.
 - **Remote agent:** headless Cline on the box (`cline` v3.0.51): `ssh despo@100.102.0.99 'cline --cwd C:\Users\despo\jarvis --json "<task>"'`. Delegate one task at a time (box RAM-tight).
 
 ## Branches / git
-- Work on `bot`; `main` is ff-mirrored to `bot`; both pushed to `tapchipswipe/jarvis`. HEAD `ab465f2`. Tests: **583 passed, 1 skipped** (hermetic suite — autouse fixture clears `JARVIS_*` env so tests never touch the live brain). All thin-client work is on `bot`==`main` (pushed).
+- Work on `bot`; `main` is ff-mirrored to `bot`; both pushed to `tapchipswipe/jarvis`. HEAD `545ba20`. Tests: **632 passed, 1 skipped** (hermetic suite — autouse fixture clears `JARVIS_*` env so tests never touch the live brain). All thin-client work is on `bot`==`main` (pushed).
+- **Round 11 (2026-08-08):** disk triage (~2.2 GB free → ~7 GB; restored the failing backup chain), batched embeddings (`/api/embed`), batched Chroma adds (`Store.add_many`/`Brain.remember_many` — ~56× faster ingest), Python-cache/noise exclusion in the thin collector (1500→91 files, 0 errors), HTTPS + pinned fingerprint in the daemon scripts, and `remember_batch`/`flush_outbox` hardening. All deployed to the box (server restarted onto `545ba20`).
 
 ## Known issues
 - **DEPLOYED (2026-08-07 morning):** the box now runs `bot`@`d82145b`+ (`git pull` fast-forwarded 40 commits; `JarvisServer` restarted). The in-process inbox ingester is **live and draining** — watch `scripts/monitor-ingest.py` (or `jarvis ingest-status`) until `remaining` → 0; reconcile counts.
