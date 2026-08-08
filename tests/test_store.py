@@ -138,6 +138,24 @@ def test_search_returns_results(store):
     assert results[0]["content"] == "hello world"
 
 
+def test_search_with_none_embedding_returns_empty(store):
+    """task_0051: get_embedding returns None on Ollama failure; search must
+    degrade gracefully to [] without ever calling Chroma (which would raise
+    -> 500/empty-crash)."""
+    emb = [0.1] * 768
+    fid = fingerprint("test", "1", "hello world", "2025-06-01")
+    store.add(fid, "test", "1", "2025-06-01T10:00:00", "hello world", [], {}, emb, tier="raw")
+    # Make sure Chroma would blow up if the falsy embedding actually reached it.
+    store.collection.query.reset_mock()
+    store.collection.query.side_effect = AssertionError("Chroma must not be called")
+
+    assert store.search(None) == []
+    assert store.search(None, n_results=5, source_filter="test") == []
+    assert store.search([]) == []
+    assert store.search([], n_results=5, source_filter="test") == []
+    store.collection.query.assert_not_called()
+
+
 def test_search_with_source_filter(store):
     emb = [0.1] * 768
     email_fid = fingerprint("email", "1", "email content", "2025-06-01")

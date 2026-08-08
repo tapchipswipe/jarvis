@@ -355,7 +355,13 @@ class Store:
             self.collection.add(ids=[fid], embeddings=[embedding], documents=[content], metadatas=[chroma_meta])
         return True
 
-    def search(self, query_embedding: list[float], n_results: int = 10, source_filter: str | None = None, re_rank: bool = True, recency_boost: bool = True):
+    def search(self, query_embedding: list[float] | None, n_results: int = 10, source_filter: str | None = None, re_rank: bool = True, recency_boost: bool = True):
+        # get_embedding returns None on Ollama failure; callers pass that straight
+        # through. Drop the query immediately instead of handing a falsy embedding
+        # to Chroma, which would raise -> 500. Empty results are the graceful
+        # degradation (matches the old zero-vector fallback behaviour).
+        if not query_embedding:
+            return []
         where = {"source": source_filter} if source_filter else None
         results = self.collection.query(query_embeddings=[query_embedding], n_results=n_results * 3, where=where)
         docs = results.get("documents", [[]])[0]
