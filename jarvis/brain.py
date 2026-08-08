@@ -324,6 +324,7 @@ class Brain:
             meta = {"user_turns": user_turns}
             expires = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)).isoformat()
             self.store.add(fid, "session", fid, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), session_text, tags, meta, emb, tier="session", expires_at=expires)
+            self._link_entities_to_graph(session_text, "session", [fid])
             return True
         except Exception:
             return False
@@ -345,6 +346,44 @@ class Brain:
             return False
         return True
 
+    def _link_entities_to_graph(self, text: str, source: str, memory_ids: list[str]) -> None:
+        """Best-effort: extract entities from *text* and link them into the graph.
+
+        Manual/session/consolidated memories used to write extracted entities
+        only into chunk metadata but never into the knowledge graph, so the most
+        'Jarvis' memories were invisible to get_related / get_entity_timeline.
+        This closes that gap: run extract_entities, exact-match each entity via
+        get_or_create_entity + link_memory_entity (no fuzzy, to avoid spurious
+        merges / dupes), then infer co-participant edges among the affected
+        memories.
+
+        Deliberately best-effort: any graph failure is logged and swallowed so
+        the memory write itself is never jeopardized.
+        """
+        if not text or not memory_ids:
+            return
+        try:
+            from jarvis.extract_entities import extract_entities
+            from jarvis.graph import infer_relationships
+            ents = extract_entities(text, source_type=source)
+            if not ents:
+                return
+            for ent in ents:
+                eid = self.store.get_or_create_entity(
+                    ent["name"], entity_type=ent.get("type", "person")
+                )
+                if not eid:
+                    continue
+                for mid in memory_ids:
+                    self.store.link_memory_entity(
+                        mid, eid, confidence=ent.get("confidence", 1.0)
+                    )
+            # Generate co_participant edges among the entities co-occurring in
+            # these memories (explicit ids -> works for any tier, not just raw).
+            infer_relationships(self.store, memory_ids=list(memory_ids))
+        except Exception as exc:
+            logger.warning("Entity graph linking skipped for %s: %s", source, exc)
+
     def remember(self, text: str, source: str = "manual", tags: list[str] | None = None, classify: bool = False):
         from jarvis.extract import extract_metadata
         fid = fingerprint(source, "manual", text, datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
@@ -354,13 +393,17 @@ class Brain:
         auto_tags = extraction.get("tags", [])
         all_tags = list(dict.fromkeys((tags or []) + auto_tags))[:10]
         added = 0
+        chunk_ids: list[str] = []
         for i, chunk in enumerate(chunks):
             cid = f"{fid}-{i}"
             ct = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             chunk_meta = {**metadata, "entities": extraction.get("entities", [])}
             emb = get_embedding(chunk["text"])
             self.store.add(cid, source, "manual", ct, chunk["text"], all_tags, chunk_meta, emb)
+            chunk_ids.append(cid)
             added += 1
+        if added > 0:
+            self._link_entities_to_graph(text, source, chunk_ids)
         if classify and added > 0:
             primary_id = f"{fid}-0"
             row = self.store.conn.execute("SELECT content, source_id FROM memories WHERE id = ?", (primary_id,)).fetchone()

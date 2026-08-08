@@ -222,17 +222,25 @@ def _extract_entities_from_memory(store, memory_id: str) -> list[str]:
     return [r["entity_id"] for r in rows]
 
 
-def infer_relationships(store, limit_hours: int = 24, max_memories: int = 500) -> None:
+def infer_relationships(store, limit_hours: int = 24, max_memories: int = 500, memory_ids: list[str] | None = None) -> None:
     """Scan recent memories and create relationship edges based on heuristics.
 
     *Inline* call — meant to run on ingestion (lightweight) or on a nightly
     cron (full sweep).  We process at most *max_memories* recent raw memories.
+
+    Pass *memory_ids* to process an explicit set of memories regardless of
+    tier (e.g. freshly-written session / consolidated memories that the raw
+    sweep would otherwise skip).  When omitted, behaviour is unchanged: recent
+    raw memories are scanned.
     """
-    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=limit_hours)).isoformat()
-    rows = store.conn.execute(
-        "SELECT id FROM memories WHERE tier = 'raw' AND timestamp >= ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?",
-        (cutoff, max_memories)
-    ).fetchall()
+    if memory_ids:
+        rows = [{"id": mid} for mid in memory_ids]
+    else:
+        cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=limit_hours)).isoformat()
+        rows = store.conn.execute(
+            "SELECT id FROM memories WHERE tier = 'raw' AND timestamp >= ? AND superseded = 0 ORDER BY timestamp DESC LIMIT ?",
+            (cutoff, max_memories)
+        ).fetchall()
     created = 0
     for r in rows:
         mid = r["id"]

@@ -492,3 +492,73 @@ def test_upgrade_dedups_on_relog(store, tmp_path, monkeypatch):
         assert second == 0  # dedup fires -> no new upgrade memory
         assert _row_count(store) == before
         assert len(upgrades.read_text(encoding="utf-8").splitlines()) == first_lines
+
+
+# ── graph linking for manual/session/consolidated memories (task_0037) ───────
+
+def _linked_entity_ids(store, entity_name):
+    """Return the memory_ids linked to the entity with the given name."""
+    eid = store.get_or_create_entity(entity_name, entity_type="person")
+    if eid is None:
+        return []
+    rows = store.conn.execute(
+        "SELECT memory_id FROM memory_entities WHERE entity_id = ?", (eid,)
+    ).fetchall()
+    return [r["memory_id"] for r in rows]
+
+
+def test_remember_links_entities_into_graph(store):
+    """A manual memory mentioning a known entity must surface it in the graph."""
+    from jarvis.graph import get_entity_timeline
+    b = _brain(store)
+    text = "Worked with Alice Smith and Jane Doe on the roadmap."
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        added = b.remember(text, source="manual")
+        assert added >= 1
+    # entity exists and is linked to at least one stored chunk
+    assert _linked_entity_ids(store, "Alice Smith"), "Alice Smith not linked"
+    # timeline query surfaces the manual memory
+    eid = store.get_or_create_entity("Alice Smith", entity_type="person")
+    timeline = get_entity_timeline(store, eid)
+    assert timeline
+    assert timeline[0]["source"] == "manual"
+    assert "Alice Smith" in timeline[0]["content"]
+
+
+def test_save_session_links_entities_into_graph(store):
+    """A session mentioning entities must surface them via get_related."""
+    from jarvis.graph import get_related
+    b = _brain(store)
+    session = [
+        {"role": "user", "content": "What did Alice Smith and Jane Doe decide?"},
+        {"role": "assistant", "content": "They agreed on the launch date."},
+        {"role": "user", "content": "Great, please schedule the kickoff."},
+        {"role": "assistant", "content": "Scheduled for Friday."},
+        {"role": "user", "content": "Thanks, that covers it."},
+    ]
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8):
+        assert b.save_session(session) is True
+    assert _linked_entity_ids(store, "Alice Smith"), "Alice Smith not linked"
+    assert _linked_entity_ids(store, "Jane Doe"), "Jane Doe not linked"
+    # co-participant edge inferred -> get_related surfaces the other entity
+    alice_id = store.get_or_create_entity("Alice Smith", entity_type="person")
+    related = get_related(store, alice_id, depth=1)
+    names = {r["entity_name"] for r in related}
+    assert "Jane Doe" in names
+
+
+def test_remember_graph_linking_is_best_effort(store, monkeypatch):
+    """Graph failures during remember() must not fail the memory write."""
+    b = _brain(store)
+    text = "Worked with Bob Carter on delivery."
+    # Force entity extraction to raise inside the helper; the helper's own
+    # best-effort try/except must swallow it and keep the memory write intact.
+    import jarvis.extract_entities as EE
+    def _boom(*a, **k):
+        raise RuntimeError("graph down")
+    monkeypatch.setattr(EE, "extract_entities", _boom)
+    with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
+         patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+        added = b.remember(text, source="manual")
+        assert added >= 1  # memory still stored despite graph failure
