@@ -75,6 +75,60 @@ Feature requests and planned upgrades for the Jarvis. Each entry is also stored 
 - `[deferred]` Tailscale ACL console edit (scopes who can hit `:8766`) — requires the Tailscale admin console; docs note it. HTTPS + token make the LAN/plain-HTTP exposure moot.
 
 
+## Round 11 (2026-08-08) — Disk triage + thin-client collector & remote hardening
+
+Autonomous session (find→fix→repeat). Focus: reclaim ~5 GB of full-disk (~2.2 GB free) so
+the on-box/off-box backup chain stopped failing, then fix real bugs in the thin-client
+pipeline that surfaced as hangs, silent dropouts and outbox bloat.
+
+### Disk triage (first priority)
+- Freed **~5 GB** (2.2 → ~7 GB free): truncated 1.1 GB of runaway CLI logs
+  (`~/.cline/data/logs/cline.log` 799 MB + `hub-daemon.log` 364 MB), cleared Homebrew
+  / npm / uv / WebKit / HTTPStorages caches, removed redundant unencrypted
+  `~/jarvis/backups/store-*` dirs (kept the `.age` encrypted archives), cleaned
+  GoogleUpdater (744 MB), wallpaper aerials (596 MB), zoom + Cursor Electron caches,
+  and the installers for already-installed apps (`Antigravity IDE`, `Plaud`).
+- **Restored the 3-2-1 backup chain** that had failed overnight on "No space left on
+  device": re-ran `scripts/jarvis-backup.sh` → new `store-20260808.tar.gz.age` (58 MB).
+
+### Real bugs fixed (thin-client pipeline)
+- **`remember_batch` timeout** (`remote.py`): it used the default 60 s, but a batch of
+  200 memories takes the box **minutes** to embed (~5 s/item) → every large flush was
+  aborting mid-embed. Now scales the timeout to batch size (`max(600, 10*n)`) like
+  `backfill_batch` already did. Root cause of interminable `jarvis flush` hangs.
+- **Batched embeddings** (`embed.py`): `_ollama_embed` now sends all texts in **one**
+  request to Ollama's `/api/embed` (returns `embeddings: [...]`), with a graceful
+  fallback to the old single-input `/api/embeddings` for older Ollama. Cuts HTTP
+  round-trips from N to 1.
+- **Python cache-dir exclusion** (`collectors/thin.py`): `_should_exclude` now skips
+  `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `.tox`, `.hypothesis`, `.nox`,
+  `.ipynb_checkpoints`, `.egg-info`, etc. The collector was walking into these and
+  reading serialized cache files — **1500 files / ~1400 errors / intermittent hangs**
+  (e.g. `.mypy_cache` blobs that block on read) → now **91 files, 0 errors, ~0.06 s**.
+- **Boilerplate exclusion** (`collectors/thin.py`): exact-filename skip for dependency
+  manifests / lockfiles / framework-config noise (`package-lock.json`, `tsconfig.json`,
+  `Cargo.lock`, `poetry.lock`, `pyproject.toml`, etc.) that padded the outbox with
+  near-identical useless memories.
+- **HTTPS in daemon scripts** (`scripts/jarvis-collect.sh`, `scripts/jarvis-health-check.sh`):
+  these still pointed at `http://...:8766` after the Round 9b TLS move → the collect
+  daemon's flush always reported `offline=True` and the outbox backlog grew unboundedly.
+  Now uses `https://` + the pinned `JARVIS_TLS_FINGERPRINT`.
+
+### Modernization
+- Replaced all remaining deprecated `datetime.utcfromtimestamp()` calls
+  (5 files: `files.py`, `rss.py`, `photos.py`, `deep.py`, `inbox.py`) with
+  `fromtimestamp(ts, timezone.utc).replace(tzinfo=None)` — string-identical naive-UTC,
+  so **fingerprints are unchanged** and nothing re-ingests. (Round 8 modernized
+  `utcnow`; this closes the `utcfromtimestamp` gap that Python 3.15 will remove.)
+
+### Verification (this session)
+- `pytest`: **630 passed, 1 skipped** (added 3 tests: cache-dir exclusion ×2 + boilerplate
+  exclusion). All embed/remote/thin suites green.
+- Box reachable + healthy throughout; memories climbing as the outbox drained in-process.
+
+
+
+
 ## Round 7 (2026-08-06) — Thin-client cutover (backfill + retire Mac brain)
 
 
