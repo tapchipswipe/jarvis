@@ -94,6 +94,7 @@ token stays enforced).
 - **Retired Mac-local daemons have 0 coverage by design** — they run on the Mac side and are not in the pytest suite.
 
 ## Session state
-- Repo: branch `bot`, HEAD `c38a2b2`, working tree clean. **Not pushed** (coordinator handles push).
-- Suite 614 passed / 1 skipped; ruff 185; doctor PASS; server --check OK.
-- Box: healthy, 4,132+ memories (per doctor), ingester drained.
+- Repo: branches `bot` == `main` == `origin/bot` == `origin/main`, HEAD `4f67fcd`, working tree clean.
+- **PUSHED + ACTIVATED (2026-08-08):** `git push origin bot` + `main` completed; the box pulled to `4f67fcd` and `JarvisServer` was restarted (stale PID force-killed to free port 8766). Verified live: `/api/health` uptime reset (fresh boot), memories=4132 intact, thin-client `status` OK over the box.
+- Suite 616 passed / 1 skipped; ruff 185 (no new F-codes); doctor PASS (box reachable, 4132 memories, ingester drained, idle).
+- Box: healthy, 4,132 memories, ingester idle/drained, on the new commit.
