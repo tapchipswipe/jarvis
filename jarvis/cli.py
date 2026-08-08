@@ -118,6 +118,137 @@ def remember(text, source, tag, classify):
     added = brain.remember(text, source=source, tags=list(tag), classify=classify)
     store.close()
     click.echo(f"Remembered {added} chunk(s).{' Classified.' if classify else ''}")
+@cli.group()
+def profile():
+    """Manage your Jarvis profile — the structured 'who you are' onboarding.
+
+    Gives Jarvis an explicit model of you (name, role, goals, people, projects,
+    preferences) so it can genuinely know you rather than only recalling ambient
+    shell/file/browser noise. Commands: `show`, `init`, `set`, `add`, `sync`.
+    """
+
+
+@profile.command()
+def show():
+    """Show the current profile."""
+    _show_profile()
+
+
+def _show_profile() -> None:
+    from jarvis.profile import profile_digest
+
+    p = profile_digest(_load_profile_cmd())
+    click.echo(p if p else "(profile is empty — try `jarvis profile init`)")
+
+
+def _load_profile_cmd() -> dict:
+    from jarvis.profile import load_profile
+
+    return load_profile()
+
+
+def _apply_profile_to_brain(profile: dict, only_fields: list[str] | None = None) -> int:
+    """Sync the profile into the brain — via the box (outbox) in client mode,
+    or the local store otherwise. Respects the single-writer rule."""
+    from jarvis import remote
+    from jarvis.profile import profile_entries
+
+    entries = profile_entries(profile, only_fields=only_fields)
+    if not entries:
+        click.echo("Profile is empty — run `jarvis profile init` first.")
+        return 0
+    if remote.is_remote():
+        from jarvis.cache import Cache, flush_outbox
+
+        cache = Cache()
+        try:
+            queued = 0
+            for ent in entries:
+                queued += int(cache.enqueue(ent["text"], source="profile", tags=ent["tags"]))
+            res = flush_outbox(cache)
+        finally:
+            cache.close()
+        status = "to server" if res.get("pushed", 0) else ("to outbox (offline)"
+                                                            if res.get("offline") else "to outbox")
+        click.echo(f"Synced {queued} profile item(s) to Jarvis {status}.")
+        return queued
+    store = Store()
+    try:
+        from jarvis.profile import apply_profile_locally
+
+        added = apply_profile_locally(store, profile, only_fields=only_fields)
+    finally:
+        store.close()
+    click.echo(f"Applied {added} profile item(s) to the local brain.")
+    return added
+
+
+@profile.command()
+def init():
+    """Guided onboarding — answer a few questions to build your profile."""
+    from jarvis.profile import LIST_FIELDS, SCALAR_FIELDS, load_profile, save_profile
+
+    p = load_profile()
+    click.echo("Jarvis profile setup — empty answers skip a field.")
+    for field, hint in SCALAR_FIELDS.items():
+        cur = p.get(field) or ""
+        val = click.prompt(f"{hint} [{cur}]", default=cur, show_default=False)
+        p[field] = val.strip()
+    for field, hint in LIST_FIELDS.items():
+        click.echo(f"\n{hint} (one per line, blank to finish):")
+        while True:
+            val = click.prompt("  >", default="", show_default=False)
+            if not val.strip():
+                break
+            p[field].append(val.strip())
+    save_profile(p)
+    click.echo("\nProfile saved. Syncing to your brain...")
+    _apply_profile_to_brain(p)
+
+
+@profile.command("set")
+@click.argument("field")
+@click.argument("value")
+def set_field(field: str, value: str):
+    """Set a scalar profile field (name, role, employer, timezone, motto)."""
+    from jarvis.profile import SCALAR_FIELDS, load_profile, save_profile
+
+    if field not in SCALAR_FIELDS:
+        click.echo(f"'{field}' is not a scalar field. Scalars: {', '.join(SCALAR_FIELDS)}")
+        return
+    p = load_profile()
+    p[field] = value.strip()
+    save_profile(p)
+    _apply_profile_to_brain(p, only_fields=[field])
+    click.echo(f"Set {field} = {value.strip()}")
+
+
+@profile.command("add")
+@click.argument("field")
+@click.argument("value")
+def add_field(field: str, value: str):
+    """Append to a list field (goals, people, projects, preferences, commitments)."""
+    from jarvis.profile import LIST_FIELDS, load_profile, save_profile
+
+    if field not in LIST_FIELDS:
+        click.echo(f"'{field}' is not a list field. Lists: {', '.join(LIST_FIELDS)}")
+        return
+    p = load_profile()
+    if not isinstance(p.get(field), list):
+        p[field] = []
+    p[field].append(value.strip())
+    save_profile(p)
+    _apply_profile_to_brain(p, only_fields=[field])
+    click.echo(f"Added to {field}: {value.strip()}")
+
+
+@profile.command("sync")
+def sync_profile():
+    """Re-sync the profile into the brain (idempotent)."""
+    p = _load_profile_cmd()
+    _apply_profile_to_brain(p)
+
+
 @cli.command()
 @click.option("--source", default=None, help="Filter by source")
 @click.option("--tag", default=None, help="Filter by tag")
@@ -1167,6 +1298,16 @@ def _render_greeting_facts(facts: dict) -> list[str]:
     return bits
 
 
+def _profile_first_name() -> str:
+    """Best-effort first name from the profile ('' if unset/unreadable)."""
+    try:
+        from jarvis.profile import load_profile
+        name = (load_profile().get("name") or "").strip()
+        return name.split()[0] if name else ""
+    except Exception:  # noqa: BLE001 - greeting must never crash
+        return ""
+
+
 def _build_greeting_banner(sid: str) -> list[str]:
     """Opening banner for the interactive console.
 
@@ -1177,7 +1318,9 @@ def _build_greeting_banner(sid: str) -> list[str]:
     try:
         hour = datetime.now(timezone.utc).astimezone().hour
         bits = _render_greeting_facts(_collect_greeting_facts())
-        fact_line = f"  {_greet_for_hour(hour)}, sir."
+        name = _profile_first_name()
+        addr = f", {name}." if name else ", sir."
+        fact_line = f"  {_greet_for_hour(hour)}{addr}"
         if bits:
             fact_line += "  " + " · ".join(bits) + "."
         return [
