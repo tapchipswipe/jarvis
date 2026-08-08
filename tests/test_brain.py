@@ -222,6 +222,54 @@ def test_query_passes_history_into_messages(store, monkeypatch):
     assert contents[-1] == "follow up?"
 
 
+def test_query_synthesizes_retrieval_from_history(store, monkeypatch):
+    """A follow-up with no topical signal must still embed/search with the
+    thread's subject — the retrieval query is synthesized from prior user turns
+    while the raw query stays in the final prompt (task_0038)."""
+    import jarvis.brain as B
+    seen = {}
+
+    def _emb(text):
+        seen["q"] = text
+        return [0.1] * 8
+
+    def _chat(model, messages):
+        seen["prompt_q"] = messages[-1]["content"]
+        return {"message": {"content": "ok"}}
+
+    monkeypatch.setattr(B, "get_embedding", _emb)
+    monkeypatch.setattr(B, "_ollama_chat", _chat)
+    b = _brain(store)
+    b.query("and what about them?", history=[
+        {"role": "user", "content": "Tell me about the rocket launch"},
+        {"role": "assistant", "content": "It was delayed until Friday."},
+    ])
+    # Embedding used a synthesized query carrying the thread's topic...
+    assert seen.get("q") is not None
+    assert "rocket launch" in seen["q"]
+    assert "and what about them?" in seen["q"]
+    # ...but the raw follow-up remains the final prompt to the model.
+    assert seen["prompt_q"] == "and what about them?"
+
+
+def test_query_no_history_embeds_raw_query(store, monkeypatch):
+    """Without history the retrieval query is exactly the raw user query."""
+    import jarvis.brain as B
+    seen = {}
+
+    def _emb(text):
+        seen["q"] = text
+        return [0.1] * 8
+
+    monkeypatch.setattr(B, "get_embedding", _emb)
+    monkeypatch.setattr(
+        B, "_ollama_chat", lambda model, messages: {"message": {"content": "ok"}}
+    )
+    b = _brain(store)
+    b.query("just a standalone question")
+    assert seen.get("q") == "just a standalone question"
+
+
 def test_query_injects_related_entities(store):
     fid = "mem-q1"
     store.add(fid, "manual", "1", "2026-01-01T10:00:00", "worked with alice on the plan", [], {}, [0.1] * 8)

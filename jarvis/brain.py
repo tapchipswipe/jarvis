@@ -150,13 +150,43 @@ def _messages_to_prompt(messages: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+def _retrieval_query(user_query: str, history: list | None) -> str:
+    """Build the text that is embedded and searched for retrieval.
+
+    A follow-up like "and what about them?" carries no topical signal on its own,
+    so a bare-embedding search returns nothing even though the thread had a clear
+    subject. When a conversation history is present, synthesize a retrieval query
+    from the raw user_query plus the most recent prior user turns so the vector
+    search picks up the thread's topic. The raw user_query is still passed to the
+    model in the final prompt — this only affects what gets embedded/searched.
+    With no history (or no prior user turns) this is identical to before.
+    """
+    if not history:
+        return user_query
+    prior_user_turns = [
+        t.get("content", "").strip()
+        for t in history
+        if t.get("role") == "user" and t.get("content")
+    ]
+    if not prior_user_turns:
+        return user_query
+    # Newest first context: the immediately-preceding user turn + a couple before
+    # it, so the closest topical anchors sit right next to the follow-up.
+    recent = prior_user_turns[-3:]
+    return " ".join(recent + [user_query]).strip()
+
+
 class Brain:
     def __init__(self, store, model: str | None = None):
         self.store = store
         self.model = model or chat_model()
 
     def query(self, user_query: str, n_results: int = 8, source_filter: str | None = None, verbose: bool = False, history: list | None = None) -> tuple[str, list[dict]]:
-        q_emb = get_embedding(user_query)
+        # Embed a retrieval query that inherits topical signal from the thread so
+        # follow-ups ("and what about them?") still hit the right memories. The
+        # raw user_query remains the final prompt to the model below.
+        retrieval_q = _retrieval_query(user_query, history)
+        q_emb = get_embedding(retrieval_q)
         memories = self.store.search(q_emb, n_results=n_results, source_filter=source_filter)
         context_parts = []
         for m in memories:
