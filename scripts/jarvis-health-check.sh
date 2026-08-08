@@ -72,7 +72,8 @@ fi
 # 2. Outbox backlog (thin-client write buffer not yet flushed to box)
 OUTBOX=""
 if [ -x "$VENV_PY" ]; then
-    OUTBOX=$(cd "$JARVIS_ROOT" && JARVIS_MODE=client JARVIS_REMOTE="http://$BOX_HOST:$PORT" \
+    OUTBOX=$(cd "$JARVIS_ROOT" && JARVIS_MODE=client JARVIS_REMOTE="https://$BOX_HOST:$PORT" \
+        JARVIS_TLS_FINGERPRINT="${JARVIS_TLS_FINGERPRINT:-a8a66b951e0ee3bcabd99106db9affd97e3ae80c3249b07d2e5d54915e94a3c8}" \
         "$VENV_PY" -c 'from jarvis.cache import Cache; print(Cache().pending_count())' 2>/dev/null)
 fi
 if [ -n "$OUTBOX" ] && [ "$OUTBOX" != "0" ]; then

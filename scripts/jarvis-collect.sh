@@ -31,7 +31,8 @@ mkdir -p "$LOG_DIR"
 TS=$(date "+%Y-%m-%d %H:%M:%S")
 
 export JARVIS_MODE=client
-export JARVIS_REMOTE="http://$BOX_HOST:$PORT"
+export JARVIS_REMOTE="https://$BOX_HOST:$PORT"
+export JARVIS_TLS_FINGERPRINT="${JARVIS_TLS_FINGERPRINT:-a8a66b951e0ee3bcabd99106db9affd97e3ae80c3249b07d2e5d54915e94a3c8}"
 # LaunchAgent context doesn't source ~/.zshrc, so read the shared token file:
 export JARVIS_TOKEN="$(cat "$HOME/.config/jarvis/token" 2>/dev/null)"
 
