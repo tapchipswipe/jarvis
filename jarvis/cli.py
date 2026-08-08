@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import sys
 import urllib.error
 from datetime import datetime, timedelta, timezone
@@ -1073,6 +1074,133 @@ def ask(question, n_results, source, model, json_out, session_id, save_qa, show_
             sdb.close()
 
 
+def _greet_for_hour(hour: int) -> str:
+    """A time-of-day greeting — J.A.R.V.I.S.-style, no LLM required."""
+    if hour < 5:
+        return "Burning the midnight oil"
+    if hour < 12:
+        return "Good morning"
+    if hour < 17:
+        return "Good afternoon"
+    if hour < 21:
+        return "Good evening"
+    return "Good night"
+
+
+def _collect_greeting_facts() -> dict:
+    """Best-effort snapshot of lightweight context for the console banner.
+
+    Reads only cheap, local SQLite state (the Mayor task queue + meta.db) — no
+    LLM, no Chroma, no network. Every key may be ``None`` when its source is
+    unavailable; this function never raises. Callers fall back to the static
+    banner on any unexpected failure.
+    """
+    facts = {"task_pending": None, "calendar_today": None, "last_memory_ts": None}
+
+    # Tasks awaiting review / in flight.
+    try:
+        from jarvis.task_queue import TaskQueue
+        tq = TaskQueue()
+        try:
+            pending = tq.list_tasks(status="pending_review")
+            in_flight = tq.list_tasks(status="in_progress")
+            facts["task_pending"] = len(pending) + len(in_flight)
+        finally:
+            tq.close()
+    except Exception:  # noqa: BLE001, S110 - best-effort fallback
+        pass
+
+    # Memory stats from meta.db (plain sqlite, read-only — no chroma handle).
+    try:
+        from jarvis.paths import data_dir
+        db_path = data_dir("data", "meta.db")
+        if db_path.exists():
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            try:
+                row = conn.execute(
+                    "SELECT MAX(timestamp) FROM memories WHERE superseded = 0"
+                ).fetchone()
+                if row and row[0]:
+                    facts["last_memory_ts"] = row[0]
+                cal = conn.execute(
+                    "SELECT COUNT(*) FROM memories WHERE source = 'calendar' "
+                    "AND superseded = 0 "
+                    "AND date(timestamp) = date('now', 'localtime')"
+                ).fetchone()
+                if cal is not None:
+                    facts["calendar_today"] = int(cal[0])
+            finally:
+                conn.close()
+    except Exception:  # noqa: BLE001, S110 - best-effort fallback
+        pass
+
+    return facts
+
+
+def _fmt_ago(ts: str) -> str:
+    """Render an ISO timestamp as a short relative age ('2h ago')."""
+    try:
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        secs = max(0, int((datetime.now(timezone.utc) - dt).total_seconds()))
+        if secs < 60:
+            return "just now"
+        if secs < 3600:
+            return f"{secs // 60}m ago"
+        if secs < 86400:
+            return f"{secs // 3600}h ago"
+        return f"{secs // 86400}d ago"
+    except Exception:  # noqa: BLE001
+        return "a while ago"
+
+
+def _render_greeting_facts(facts: dict) -> list[str]:
+    """Turn the collected facts into short, human-readable phrases."""
+    bits: list[str] = []
+    if facts.get("task_pending"):
+        bits.append(f"{facts['task_pending']} task(s) awaiting you")
+    if facts.get("calendar_today"):
+        bits.append(f"{facts['calendar_today']} calendar event(s) today")
+    if facts.get("last_memory_ts"):
+        bits.append(f"last memory {_fmt_ago(facts['last_memory_ts'])}")
+    return bits
+
+
+def _build_greeting_banner(sid: str) -> list[str]:
+    """Opening banner for the interactive console.
+
+    A time-of-day greeting plus a couple of lightweight, best-effort context
+    facts (pending tasks, today's calendar events, last memory). If anything
+    fails to resolve, fall back to the tasteful static banner — never crash.
+    """
+    try:
+        hour = datetime.now(timezone.utc).astimezone().hour
+        bits = _render_greeting_facts(_collect_greeting_facts())
+        fact_line = f"  {_greet_for_hour(hour)}, sir."
+        if bits:
+            fact_line += "  " + " · ".join(bits) + "."
+        return [
+            "",
+            "  ╔══════════════════════════════════════════════════╗",
+            "  ║   J A R V I S   —   your personal Jarvis          ║",
+            "  ╚══════════════════════════════════════════════════╝",
+            f"(session {sid})  type /help for commands, /quit to exit.",
+            "",
+            fact_line,
+            "",
+        ]
+    except Exception:  # noqa: BLE001 - never break the console on a greeting
+        return [
+            "",
+            "  ╔══════════════════════════════════════════════════╗",
+            "  ║   J A R V I S   —   your personal Jarvis          ║",
+            "  ╚══════════════════════════════════════════════════╝",
+            f"(session {sid})  type /help for commands, /quit to exit.",
+            "",
+        ]
+
+
 @cli.command()
 @click.option("--session", "session_id", default=None,
               help="Resume an existing console session by ID (else start a new one)")
@@ -1099,11 +1227,8 @@ def console(session_id, show_entities, save_qa):
     sdb = SessionDB()
     sid = session_id or sdb.create_session(title="console")
 
-    click.echo("")
-    click.echo("  ╔══════════════════════════════════════════════════╗")
-    click.echo("  ║   J A R V I S   —   your personal Jarvis          ║")
-    click.echo("  ╚══════════════════════════════════════════════════╝")
-    click.echo(f"(session {sid})  type /help for commands, /quit to exit.\n")
+    for _banner_line in _build_greeting_banner(sid):
+        click.echo(_banner_line)
 
     last_qa = {"q": "", "a": ""}
     model_override = None  # None=auto-tier; else a tier (fast/medium/big) or model id

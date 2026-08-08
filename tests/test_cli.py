@@ -975,3 +975,49 @@ def test_render_grounded_suggest_opt_out(capsys):
     out = capsys.readouterr().out
     assert "→ try:" not in out
 
+def test_greeting_banner_includes_context_counts(monkeypatch):
+    """`_build_greeting_banner` must surface pending tasks / calendar counts /
+    last-memory recency when the (stubbed) data is available."""
+    from jarvis.cli import _build_greeting_banner
+
+    facts = {"task_pending": 3, "calendar_today": 2,
+             "last_memory_ts": "2026-01-01T08:00:00"}
+    monkeypatch.setattr("jarvis.cli._collect_greeting_facts", lambda: facts)
+
+    text = "\n".join(_build_greeting_banner("s1"))
+    assert "J A R V I S" in text
+    assert "3 task(s) awaiting you" in text
+    assert "2 calendar event(s) today" in text
+    assert "last memory" in text
+    assert "(session s1)" in text
+    assert "sir" in text
+
+
+def test_greeting_banner_falls_back_when_data_unavailable(monkeypatch):
+    """If the context collector raises, the console must still show a clean
+    static banner — no crash, no task/calendar noise."""
+    from jarvis.cli import _build_greeting_banner
+
+    def _boom():
+        raise RuntimeError("brain unreachable")
+
+    monkeypatch.setattr("jarvis.cli._collect_greeting_facts", _boom)
+
+    text = "\n".join(_build_greeting_banner("s1"))
+    assert "J A R V I S" in text
+    assert "(session s1)" in text
+    assert "task(s)" not in text
+    assert "calendar event(s)" not in text
+
+
+def test_greeting_facts_render_gracefully_with_none():
+    """All-None facts → no fact phrases, and `_fmt_ago` degrades gracefully."""
+    from jarvis.cli import _fmt_ago, _render_greeting_facts
+
+    assert _render_greeting_facts(
+        {"task_pending": None, "calendar_today": None, "last_memory_ts": None}
+    ) == []
+    assert _render_greeting_facts(
+        {"task_pending": 0, "calendar_today": 0, "last_memory_ts": None}
+    ) == []
+    assert _fmt_ago("not-a-timestamp") == "a while ago"
