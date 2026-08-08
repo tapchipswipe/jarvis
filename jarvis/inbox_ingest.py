@@ -193,12 +193,21 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     processed = 0
     added = 0
     errors = 0
+    cursor_file = None  # last consecutively-successful file; stays put on failure
     try:
+        advancing = True
         for path in todo:
             try:
                 added += ingest_inbox_file(store, path)
+                if advancing:
+                    cursor_file = str(path)
             except Exception:
+                # A failed file must NOT be permanently skipped: stop advancing
+                # the cursor here so this file (and anything after it) is retried
+                # next cycle. Later files in this batch are still processed now;
+                # on the retry they're idempotent (dedup on content-hash).
                 errors += 1
+                advancing = False
                 logger.warning("inbox ingest failed for %s", path, exc_info=True)
             processed += 1
             if added and cooldown:
@@ -208,10 +217,10 @@ def process_batch(inbox_dir: Path | None = None, batch: int = 50,
     remaining = len(files) - (start_idx + processed)
     _set_status(True, inbox=str(inbox_dir or DEFAULT_INBOX), total=total,
                 processed=processed, added=added, errors=errors, remaining=remaining,
-                done=remaining <= 0, cursor=str(todo[-1]))
+                done=remaining <= 0, cursor=cursor_file)
     return {"processed": processed, "added": added, "errors": errors,
             "total": total, "remaining": remaining, "done": remaining <= 0,
-            "cursor": str(todo[-1])}
+            "cursor": cursor_file}
 
 
 

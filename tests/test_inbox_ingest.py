@@ -335,3 +335,71 @@ def test_process_batch_counts_errors(tmp_path, monkeypatch):
         st = inbox_ingest.ingest_status()
         assert st["errors"] == 1
 
+
+def test_process_batch_does_not_advance_past_failed_file(tmp_path, monkeypatch):
+    """Regression for task_0027: a transient failure must not permanently skip
+    the failed file. The cursor only advances to the last consecutively-successful
+    file; a failure stops the cursor so the failed file is retried next cycle,
+    while later (successful) files are still processed in this batch."""
+    from unittest.mock import patch
+
+    from jarvis import inbox_ingest
+    from jarvis.store import Store
+
+    inbox_root = tmp_path / "inbox"
+    dev = inbox_root / "dev1"
+    dev.mkdir(parents=True)
+    good1 = dev / "a.txt"
+    good1.write_text("valid note alpha", encoding="utf-8")
+    bad = dev / "b.txt"
+    bad.write_text("content that will blow up", encoding="utf-8")
+    good2 = dev / "c.txt"
+    good2.write_text("valid note gamma", encoding="utf-8")
+
+    def _mkstore():
+        with patch("jarvis.store.chromadb.PersistentClient"):
+            return Store(chroma_dir=tmp_path / "chroma", db_path=tmp_path / "meta.db")
+
+    monkeypatch.setattr(inbox_ingest, "Store", _mkstore)
+    cursor = tmp_path / "cursor.txt"
+
+    orig = inbox_ingest.ingest_inbox_file
+
+    def _flaky(store, path):
+        if path.name.startswith("b"):
+            raise RuntimeError("boom")
+        return orig(store, path)
+
+    monkeypatch.setattr(inbox_ingest, "ingest_inbox_file", _flaky)
+
+    with patch("jarvis.embed.get_embedding", lambda *a, **k: [0.1] * 8):
+        r1 = inbox_ingest.process_batch(inbox_dir=inbox_root, batch=10,
+                                        cooldown=0, cursor_path=cursor)
+        # all three processed; the later good files still land, the bad one errors
+        assert r1["processed"] == 3
+        assert r1["errors"] == 1
+        assert r1["added"] == 2
+        # cursor advanced to a.txt then STOPPED before the failed b.txt — it must
+        # NOT jump past the failure to c.txt.
+        assert r1["cursor"] == str(good1)
+        assert r1["cursor"] != str(bad)
+        assert r1["cursor"] != str(good2)
+
+        # now the transient failure clears; the next cycle must retry b.txt (not
+        # skip it) and still finish draining.
+        monkeypatch.setattr(inbox_ingest, "ingest_inbox_file", orig)
+        cursor.write_text(r1["cursor"], encoding="utf-8")
+        r2 = inbox_ingest.process_batch(inbox_dir=inbox_root, batch=10,
+                                        cooldown=0, cursor_path=cursor)
+        assert r2["processed"] == 2      # b.txt + c.txt retried
+        assert r2["errors"] == 0
+        assert r2["added"] == 1          # only b.txt was new; c.txt idempotent
+        assert r2["done"] is True
+
+    s = _mkstore()
+    try:
+        n = s.conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        assert n == 3  # all three distinct notes landed, none dropped
+    finally:
+        s.close()
+
