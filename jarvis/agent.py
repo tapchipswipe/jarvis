@@ -192,10 +192,19 @@ def _chat_with_fallback(messages, tools=None, stream=True, model_override=None):
     return {"message": {"content": errors[-1] if errors else ""}}
 
 
-def _inject_rag_context(session_db, user_message, model: str | None = None) -> str:
-    store = None
-    try:
+def _inject_rag_context(
+    session_db, user_message, model: str | None = None, store=None
+) -> str:
+    """Inject relevant memories into context.
+
+    Reuses the caller-provided ``store`` when given (one open Chroma handle per
+    turn); otherwise opens and closes its own Store. Behavior is otherwise
+    identical.
+    """
+    owns_store = store is None
+    if store is None:
         store = Store()
+    try:
         emb = get_embedding(user_message, model=model or "nomic-embed-text")
         rows = store.search(emb, n_results=5)
         if not rows:
@@ -217,7 +226,7 @@ def _inject_rag_context(session_db, user_message, model: str | None = None) -> s
     except Exception:
         return ""
     finally:
-        if store:
+        if owns_store:
             store.close()
 
 
@@ -276,7 +285,7 @@ def run_turn(
             ollama_messages.append(msg)
 
         # 5. RAG injection + system prompt (ONCE per turn)
-        rag = _inject_rag_context(session_db, user_message, model=model)
+        rag = _inject_rag_context(session_db, user_message, model=model, store=store)
         system_messages = []
         if raw_history:
             block = SYSTEM_PROMPT

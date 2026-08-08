@@ -137,6 +137,35 @@ def test_inject_rag_context_with_results():
     assert "Test content" in result
 
 
+def test_inject_rag_context_reuses_provided_store():
+    """A caller-provided store must be reused, never replaced or closed."""
+    provided_store = MagicMock()
+    provided_store.search.return_value = [
+        {"source": "email", "timestamp": "2025-01-01", "content": "Reused content"}
+    ]
+    with patch("jarvis.agent.Store") as mock_store_cls:
+        result = _inject_rag_context(
+            MagicMock(), "test query", store=provided_store
+        )
+    # No new Store was constructed.
+    mock_store_cls.assert_not_called()
+    # The provided store was used and NOT closed by _inject_rag_context.
+    provided_store.search.assert_called_once()
+    provided_store.close.assert_not_called()
+    assert "Reused content" in result
+
+
+def test_inject_rag_context_opens_and_closes_own_store_when_absent():
+    """Without a provided store, _inject_rag_context opens and closes its own."""
+    with patch("jarvis.agent.Store") as mock_store_cls:
+        mock_store = MagicMock()
+        mock_store_cls.return_value = mock_store
+        mock_store.search.return_value = []
+        result = _inject_rag_context(MagicMock(), "test query")
+    mock_store_cls.assert_called_once_with()
+    assert result == ""
+
+
 # ── execute_tool (safety wrapper) ─────────────────────────────────────────────
 
 def test_execute_tool_unknown_returns_error():
