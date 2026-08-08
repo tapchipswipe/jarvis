@@ -320,6 +320,24 @@ def test_api_digest_requires_token(client, monkeypatch):
     assert client.post("/api/digest", json={"kind": "morning_brief"}).status_code == 403
 
 
+def test_api_digest_failure_is_structured(client, monkeypatch):
+    """A failure inside build_digest must surface as a structured 5xx with a
+    message (not a bare opaque string / unhandled stack trace)."""
+    class _ExplodingBrain:
+        def __init__(self, store, model=None):
+            self.model = model
+        def build_digest(self, kind=None):
+            raise RuntimeError("model backend exploded")
+
+    monkeypatch.setattr("jarvis.brain.Brain", _ExplodingBrain)
+    r = client.post("/api/digest", json={"kind": "morning_brief"})
+    assert r.status_code in (400, 500), r.text
+    body = r.json()
+    assert isinstance(body, dict)
+    assert body.get("error")
+    assert "exploded" in body["error"]
+
+
 # ── server.py shim ─────────────────────────────────────────────────────────────
 def test_server_shim_exposes_same_app():
     from jarvis import dashboard, server
@@ -436,9 +454,10 @@ def test_api_query_history_param_is_threaded(client, monkeypatch):
     assert calls.get("history") == hist
 
 
-def test_api_query_malformed_history_falls_back_to_empty(client, monkeypatch):
-    """Malformed `history` JSON must NOT 4xx — the handler degrades to an empty
-    history list and still answers (graceful fallback, not a hard error)."""
+def test_api_query_malformed_history_returns_400(client, monkeypatch):
+    """Malformed `history` JSON must 4xx with a clear message — NOT silently
+    fall back to an empty history (a dropped history can change the answer).
+    Regression for task_0036."""
     calls = {}
     monkeypatch.setattr(
         "jarvis.brain.select_model_for",
@@ -451,14 +470,39 @@ def test_api_query_malformed_history_falls_back_to_empty(client, monkeypatch):
         def query(self, user_query, n_results=8, source_filter=None,
                   verbose=False, history=None):
             calls.update(history=history)
-            return "still answered", []
+            return "never reached", []
 
     monkeypatch.setattr("jarvis.brain.Brain", _FakeBrain)
 
     r = client.get("/api/query", params={"q": "question",
                                          "history": "not-json{{{"})
-    assert r.status_code == 200, r.text
-    assert calls.get("history") == []
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert "error" in body and "history" in body["error"].lower()
+    assert calls.get("history") is None  # Brain never invoked with a dropped hist
+
+
+def test_api_query_history_must_be_array(client, monkeypatch):
+    """A `history` that parses as JSON but is not a list (e.g. an object) is
+    also malformed for the threading contract and must 4xx."""
+    monkeypatch.setattr(
+        "jarvis.brain.select_model_for",
+        lambda question, force=None: "m",
+    )
+
+    class _FakeBrain:
+        def __init__(self, store, model=None):
+            self.model = model
+        def query(self, user_query, n_results=8, source_filter=None,
+                  verbose=False, history=None):
+            return "never reached", []
+
+    monkeypatch.setattr("jarvis.brain.Brain", _FakeBrain)
+
+    r = client.get("/api/query", params={"q": "question",
+                                         "history": '{"role": "user"}'})
+    assert r.status_code == 400, r.text
+    assert "array" in r.json()["error"].lower()
 
 
 # ── /api/chat: model param ────────────────────────────────────────────────────

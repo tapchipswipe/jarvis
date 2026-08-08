@@ -802,8 +802,18 @@ def api_query(request: Request, q: str = "", n: int = 8, source: str | None = No
     if history:
         try:
             hist = json.loads(history)
-        except (json.JSONDecodeError, TypeError):
-            hist = []
+        except (json.JSONDecodeError, TypeError) as exc:
+            # Surface malformed history as a clear 400 instead of silently
+            # dropping it (a dropped history can silently change the answer).
+            return JSONResponse(
+                {"error": f"history must be a valid JSON array, got unparseable value: {exc}"},
+                status_code=400,
+            )
+        if not isinstance(hist, list):
+            return JSONResponse(
+                {"error": "history must be a JSON array of message objects"},
+                status_code=400,
+            )
     store = _get_store()
     try:
         from jarvis.brain import Brain, select_model_for
