@@ -55,8 +55,8 @@ def promote_old(store: Store | None = None, days: int = 7, limit: int = 500) -> 
 
     Returns the number promoted.
     """
+    owned = store is None
     store = store or Store()
-    owned = False
     try:
         return store.promote_raw_to_session(days=days, limit=limit)
     finally:

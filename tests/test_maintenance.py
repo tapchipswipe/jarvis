@@ -9,12 +9,26 @@ from unittest.mock import MagicMock, patch
 from jarvis.maintenance import promote_old, reindex_missing
 
 
-def test_promote_old_calls_store(tmp_path):
+def test_promote_old_opens_and_closes_own_store(tmp_path):
+    """When promote_old opens its own Store (no store passed), it must close it
+    on exit — otherwise every Mayor-loop promote run leaks a SQLite conn +
+    Chroma client and violates single-writer discipline."""
     with patch("jarvis.maintenance.Store") as mock_store_cls:
         store = mock_store_cls.return_value
-        store.promote_raw_to_session.return_value = 7
-        assert promote_old(days=7, limit=100) == 7
-        store.promote_raw_to_session.assert_called_once_with(days=7, limit=100)
+        store.promote_raw_to_session.return_value = 3
+        assert promote_old(days=14, limit=50) == 3
+        mock_store_cls.assert_called_once()
+        store.close.assert_called_once()
+
+
+def test_promote_old_does_not_close_provided_store():
+    """A caller-provided store must not be closed (the caller owns it)."""
+    store = type("S", (), {
+        "promote_raw_to_session": lambda self, days=7, limit=500: 2,
+        "close": MagicMock(),
+    })()
+    assert promote_old(store=store, days=30, limit=10) == 2
+    store.close.assert_not_called()
 
 
 def test_reindex_missing_calls_store(tmp_path):
