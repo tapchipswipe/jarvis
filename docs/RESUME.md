@@ -64,7 +64,26 @@ The whole "next-up" backlog is done:
 - **`jarvis delegate` RETIRED** (offload tested; box `cline` needs Cline Credits, Pass didn't
   clear it → removed so Jarvis stays zero external dependencies).
 - **Hardened backup active** (`age` + key; encrypted archives validated).
-- Suite **398 passed / 1 skipped**; git `bot` == `main` == origin.
+- Suite **583 passed / 1 skipped** (hermetic — autouse fixture clears `JARVIS_*` env so tests
+  never touch the live brain); git `bot` == `main` == origin, HEAD `ab465f2`.
+
+## Round 10 (2026-08-07, autonomous team) — correctness + Iron-Man polish
+Posted between round 9b and now; full detail in `docs/STATUS.md` Round 10 +
+`UPGRADES.md` (note: there is no `logs/round10-handoff.md`; the round is captured in
+`git log e6c776d..HEAD` = 40 commits). Highlights:
+- **Hermetic test suite** — suite grew 450 → **583 passed / 1 skipped**.
+- **Chroma pruning** (expired/superseded vectors now deleted), **dedup fixes** (stable content
+  fingerprints for bundle cids / consolidation / save_session), **graph fixes** (reversed
+  `co_participant` edges + junk "Organization reference" entity removed, `get_related` depth).
+- **Thin-client chat** — `jarvis chat`/console route through the box in client mode (no longer
+  memory-less local).
+- **Iron-Man console/chat polish** — configurable `JARVIS_CHAT_MODEL` (box on `llama3.2:1b`),
+  tiered model auto-routing + `/model` override, sources hidden by default with `/sources`
+  toggle, context-aware greeting banner, proactive follow-up suggestions.
+- **Robustness pass** — no second Store/Chroma handle in consolidate/mayor, scan file-size
+  cap, per-file failures don't abort scans, failed embeddings retried (not committed as
+  zero-vectors), ingest cursor retries failed files, Chrome/Safari epoch + OCR/exiftool fixes,
+  notify/trigger fixes, `/api/chat` returns 400 on malformed history.
 
 ## Round 9b (2026-08-07) — hardening pass, all delivered
 - **HTTPS enabled end-to-end**: self-signed cert, box serves `https://100.102.0.99:8766`;
