@@ -40,10 +40,12 @@ def _ocr_image(path: Path) -> str | None:
 
 def sync_photos(store):
     count = 0
-    if not _has_exiftool():
-        # exiftool is required to read photo metadata; skip quietly rather than
-        # erroring on every image.
-        print("photos: skipping (exiftool not installed)")
+    has_exiftool = _has_exiftool()
+    has_tesseract = _has_tesseract()
+    if not has_exiftool and not has_tesseract:
+        # Neither tool is available to read anything from the images; skip
+        # quietly rather than erroring on every image.
+        print("photos: skipping (exiftool and tesseract not installed)")
         return count
     for photo_dir in PHOTO_DIRS:
         if not photo_dir.exists():
@@ -51,24 +53,28 @@ def sync_photos(store):
         for ext in ["*.jpg", "*.jpeg", "*.png", "*.heic", "*.raw", "*.dng"]:
             for photo_path in photo_dir.rglob(ext):
                 try:
-                    result = subprocess.run(["exiftool", "-json", "-datecreated", "-gpslatitude", "-gpslongitude", "-title", "-description", str(photo_path)], capture_output=True, text=True, timeout=10, check=False)
-                    if result.returncode != 0:
-                        continue
-                    exif = json.loads(result.stdout)[0] if result.stdout.strip() else {}
-                    text = f"Photo: {photo_path.name}\nDate: {exif.get('DateCreated', '')}\nTitle: {exif.get('Title', '')}\nDescription: {exif.get('Description', '')}\nGPS: {exif.get('GPSLatitude', '')}, {exif.get('GPSLongitude', '')}"
-                    source = "photo"
-                    source_id = str(photo_path)
-                    ts = exif.get("DateCreated", datetime.utcfromtimestamp(photo_path.stat().st_mtime).isoformat())
-                    fid = fingerprint(source, source_id, text, ts)
-                    if store.exists(fid):
-                        continue
-                    emb = get_embedding(text[:4000])
-                    chunks = chunk_document(text, metadata={"path": str(photo_path)})
-                    for i, chunk in enumerate(chunks):
-                        cid = f"{fid}-{i}"
-                        store.add(cid, source, source_id, ts, chunk["text"], ["photo"], {"path": str(photo_path)}, emb)
-                        count += 1
-                    if photo_path.suffix.lower() in OCR_EXTENSIONS and _has_tesseract():
+                    # Exif-metadata path is gated on exiftool alone.
+                    if has_exiftool:
+                        result = subprocess.run(["exiftool", "-json", "-datecreated", "-gpslatitude", "-gpslongitude", "-title", "-description", str(photo_path)], capture_output=True, text=True, timeout=10, check=False)
+                        if result.returncode != 0:
+                            continue
+                        exif = json.loads(result.stdout)[0] if result.stdout.strip() else {}
+                        text = f"Photo: {photo_path.name}\nDate: {exif.get('DateCreated', '')}\nTitle: {exif.get('Title', '')}\nDescription: {exif.get('Description', '')}\nGPS: {exif.get('GPSLatitude', '')}, {exif.get('GPSLongitude', '')}"
+                        source = "photo"
+                        source_id = str(photo_path)
+                        ts = exif.get("DateCreated", datetime.utcfromtimestamp(photo_path.stat().st_mtime).isoformat())
+                        fid = fingerprint(source, source_id, text, ts)
+                        if store.exists(fid):
+                            continue
+                        emb = get_embedding(text[:4000])
+                        chunks = chunk_document(text, metadata={"path": str(photo_path)})
+                        for i, chunk in enumerate(chunks):
+                            cid = f"{fid}-{i}"
+                            store.add(cid, source, source_id, ts, chunk["text"], ["photo"], {"path": str(photo_path)}, emb)
+                            count += 1
+                    # OCR path is gated on tesseract alone, so it runs even on
+                    # machines that only have tesseract installed.
+                    if has_tesseract and photo_path.suffix.lower() in OCR_EXTENSIONS:
                         ocr_text = _ocr_image(photo_path)
                         if ocr_text:
                             ocr_source = "photos_ocr"

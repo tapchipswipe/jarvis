@@ -493,14 +493,64 @@ class TestPhotosCollector:
     @patch("jarvis.collectors.photos.subprocess.run")
     @patch("jarvis.collectors.photos.PHOTO_DIRS", [Path("/nonexistent")])
     def test_sync_photos_skips_when_no_exiftool(self, mock_run, mock_store):
-        # exiftool missing -> skip quietly (return 0), and never attempt per-photo
-        # metadata reads (which relied on exiftool).
+        # Neither exiftool nor tesseract available -> skip quietly (return 0), and
+        # never attempt per-photo metadata reads or OCR.
         from jarvis.collectors.photos import sync_photos
-        mock_run.return_value.returncode = 1  # `which exiftool` fails
+        mock_run.return_value.returncode = 1  # `which exiftool`/`which tesseract` fail
         count = sync_photos(mock_store)
         assert count == 0
-        # Only the `which exiftool` probe should run, no per-photo exiftool calls.
-        assert mock_run.call_count <= 1
+        # Only the two `which` probes (exiftool + tesseract) should run, no
+        # per-photo exiftool/OCR calls.
+        assert mock_run.call_count == 2
+
+    def _make_photo(self, tmp_path):
+        d = tmp_path / "photos"
+        d.mkdir()
+        return d
+
+    @patch("jarvis.collectors.photos.get_embedding")
+    @patch("jarvis.collectors.photos._ocr_image")
+    def test_sync_photos_ocr_runs_without_exiftool(self, mock_ocr, mock_emb, tmp_path, mock_store):
+        # tesseract present, exiftool absent -> OCR must still run (and the
+        # exif-metadata path must NOT run).
+        from jarvis.collectors import photos
+        d = self._make_photo(tmp_path)
+        (d / "scan.png").write_bytes(b"fake-png")
+        mock_ocr.return_value = "recognized text from image"
+        with patch("jarvis.collectors.photos._has_exiftool", return_value=False), \
+             patch("jarvis.collectors.photos._has_tesseract", return_value=True), \
+             patch("jarvis.collectors.photos.PHOTO_DIRS", [d]):
+            count = photos.sync_photos(mock_store)
+        assert count > 0
+        mock_ocr.assert_called()
+        sources = {item["source"] for item in mock_store.added}
+        assert "photos_ocr" in sources
+        assert "photo" not in sources  # exif-metadata path must not run
+
+    @patch("jarvis.collectors.photos.get_embedding")
+    @patch("jarvis.collectors.photos.subprocess.run")
+    @patch("jarvis.collectors.photos._ocr_image")
+    def test_sync_photos_exif_runs_without_tesseract(self, mock_ocr, mock_run, mock_emb, tmp_path, mock_store):
+        # exiftool present, tesseract absent -> exif metadata runs, OCR does not.
+        from jarvis.collectors import photos
+        d = self._make_photo(tmp_path)
+        (d / "scan.jpg").write_bytes(b"fake-jpg")
+        pseudo = MagicMock()
+        pseudo.returncode = 0
+        pseudo.stdout = json.dumps([{
+            "DateCreated": "2020-01-01", "Title": "T", "Description": "D",
+            "GPSLatitude": "1", "GPSLongitude": "2",
+        }])
+        mock_run.return_value = pseudo
+        with patch("jarvis.collectors.photos._has_exiftool", return_value=True), \
+             patch("jarvis.collectors.photos._has_tesseract", return_value=False), \
+             patch("jarvis.collectors.photos.PHOTO_DIRS", [d]):
+            count = photos.sync_photos(mock_store)
+        assert count > 0
+        mock_ocr.assert_not_called()
+        sources = {item["source"] for item in mock_store.added}
+        assert "photo" in sources
+        assert "photos_ocr" not in sources
 
 
 # ---------------------------------------------------------------------------
