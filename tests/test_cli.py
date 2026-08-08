@@ -1066,6 +1066,8 @@ def test_greeting_banner_includes_context_counts(monkeypatch):
     facts = {"task_pending": 3, "calendar_today": 2,
              "last_memory_ts": "2026-01-01T08:00:00"}
     monkeypatch.setattr("jarvis.cli._collect_greeting_facts", lambda: facts)
+    # Deterministic: no profile name -> default "sir" greeting.
+    monkeypatch.setattr("jarvis.cli._profile_first_name", lambda: "")
 
     text = "\n".join(_build_greeting_banner("s1"))
     assert "J A R V I S" in text
@@ -1074,6 +1076,18 @@ def test_greeting_banner_includes_context_counts(monkeypatch):
     assert "last memory" in text
     assert "(session s1)" in text
     assert "sir" in text
+
+
+def test_greeting_banner_uses_profile_name(monkeypatch):
+    """When a profile name is set, the greeting addresses the user by name."""
+    from jarvis.cli import _build_greeting_banner
+
+    monkeypatch.setattr("jarvis.cli._collect_greeting_facts", lambda: {})
+    monkeypatch.setattr("jarvis.cli._profile_first_name", lambda: "Lucas")
+
+    text = "\n".join(_build_greeting_banner("s1"))
+    assert "Lucas" in text
+    assert "sir" not in text
 
 
 def test_greeting_banner_falls_back_when_data_unavailable(monkeypatch):
