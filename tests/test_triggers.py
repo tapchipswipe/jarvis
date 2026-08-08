@@ -92,6 +92,23 @@ def test_time_trigger_invalid_expr_raises():
         TimeTrigger(name="bad", actions=[], cron_expr="invalid")
 
 
+def test_time_trigger_rejects_zero_cron_step():
+    """A */0 typo fails fast at parse time (clear TriggerError), never a
+    silent every-tick ZeroDivisionError that just deadlocks the trigger."""
+    with pytest.raises(TriggerError) as excinfo:
+        TimeTrigger(name="bad", actions=[], cron_expr="*/0 * * * *")
+    assert "step" in str(excinfo.value)
+
+
+def test_instantiate_rejects_zero_cron_step():
+    """load/instantiation path surfaces the */0 config error too."""
+    with pytest.raises(TriggerError) as excinfo:
+        _instantiate(
+            {"type": "time", "name": "bad", "cron_expr": "*/0 * * * *"}
+        )
+    assert "step" in str(excinfo.value)
+
+
 # ── EventTrigger ──────────────────────────────────────────────────────────────
 
 def test_event_trigger_fires_when_event_present():
@@ -603,4 +620,40 @@ def test_trigger_loop_opens_and_closes_store_per_tick():
     assert len(opened) >= 1          # at least one tick ran
     assert all(s.closed for s in opened)  # every tick store was closed
     engine.evaluate.assert_called()
+
+
+# ── TaskQueue gating (avoid per-tick connect/WAL round-trip) ──────────────────
+
+def _eval_store():
+    store = MagicMock()
+    store.conn.execute.return_value.fetchone.return_value = (0, None)
+    return store
+
+
+def test_engine_skips_task_queue_when_templates_unused():
+    """No action template references task counts -> TaskQueue never opened."""
+    trig = TimeTrigger(
+        name="plain",
+        actions=[{"type": "notify", "body": "just a hello"}],
+        cron_expr="* * * * *",
+    )
+    with patch("jarvis.task_queue.TaskQueue") as TQ:
+        engine = TriggerEngine([trig])
+        engine.evaluate(store=_eval_store(), state=MagicMock())
+    TQ.assert_not_called()
+
+
+def test_engine_opens_task_queue_when_templates_use_counts():
+    """An action template referencing {task_pending} opens the TaskQueue."""
+    trig = TimeTrigger(
+        name="counts",
+        actions=[{"type": "notify", "body": "You have {task_pending} pending"}],
+        cron_expr="* * * * *",
+    )
+    with patch("jarvis.task_queue.TaskQueue") as TQ:
+        tq_inst = TQ.return_value
+        tq_inst.list_tasks.return_value = [{"id": 1}, {"id": 2}]
+        engine = TriggerEngine([trig])
+        engine.evaluate(store=_eval_store(), state=MagicMock())
+    TQ.assert_called_once()
 

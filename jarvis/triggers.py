@@ -150,10 +150,47 @@ class TimeTrigger(Trigger):
         elif len(parts) == 5:
             self._mode = "cron"
             self._fields = parts  # [min, hr, dom, mon, dow]
+            self._validate_cron_fields()
         else:
             raise TriggerError(
                 f"TimeTrigger '{expr}' must be HH:MM or 'min hr dom mon dow'."
             )
+
+    def _validate_cron_fields(self) -> None:
+        """Validate cron field syntax at parse/load time.
+
+        Rejects a zero/negative step (e.g. the ``*/0`` typo) so the trigger
+        fails fast with a clear config error instead of raising a
+        ZeroDivisionError on every tick (which gets swallowed per-trigger and
+        silently prevents the trigger from ever firing).
+        """
+        field_names = ("minute", "hour", "day-of-month", "month", "day-of-week")
+        for index, field_expr in enumerate(self._fields):
+            for tok in field_expr.split(","):
+                if "/" not in tok:
+                    continue
+                base, step = tok.split("/", 1)
+                try:
+                    step_val = int(step)
+                except ValueError as exc:
+                    raise TriggerError(
+                        f"Invalid non-integer cron step '{step}' in "
+                        f"{field_names[index]} field '{field_expr}'."
+                    ) from exc
+                if step_val <= 0:
+                    raise TriggerError(
+                        f"Invalid cron step '{step}' in {field_names[index]} "
+                        f"field '{field_expr}': step must be a positive integer "
+                        f"(e.g. '*/5'; '*/{step}' is not allowed)."
+                    )
+                if base != "*":
+                    try:
+                        int(base)
+                    except ValueError as exc:
+                        raise TriggerError(
+                            f"Invalid non-integer cron base '{base}' in "
+                            f"{field_names[index]} field '{field_expr}'."
+                        ) from exc
 
     def _field_matches(self, field_expr: str, current_value: int, max_val: int) -> bool:
         """Match a single cron field (e.g. '*/2', '1-5', '0', '*')."""
@@ -482,6 +519,23 @@ def _render_template(text: str, ctx: TriggerContext) -> str:
     return text
 
 
+# Token names rendered by _render_template that require the Mayor task-queue.
+# Opening the TaskQueue (connect + WAL commit) every tick is wasteful unless at
+# least one action template actually references these counts.
+_TASK_COUNT_TOKENS = ("{task_pending}", "{task_in_progress}")
+
+
+def _actions_need_task_counts(actions: list[dict]) -> bool:
+    """Return True when any action template references a task count token."""
+    for action in actions:
+        for value in action.values():
+            if isinstance(value, str) and any(
+                tok in value for tok in _TASK_COUNT_TOKENS
+            ):
+                return True
+    return False
+
+
 # ── TriggerEngine ────────────────────────────────────────────────────────────
 
 class TriggerEngine:
@@ -498,6 +552,11 @@ class TriggerEngine:
         self._events: dict[str, dict] = {}   # event_name -> {fired_at: iso, ...}
         self._events_lock = threading.Lock()
         self.logger = logging.getLogger("jarvis.triggers.engine")
+        # Only open the Mayor TaskQueue (connect + WAL round-trip) when some
+        # action template actually references task counts.
+        self._needs_task_counts = any(
+            _actions_need_task_counts(t.actions) for t in self.triggers
+        )
 
     def raise_event(self, event_name: str, payload: dict | None = None) -> None:
         """Mark an event as fired. Thread-safe."""
@@ -528,18 +587,21 @@ class TriggerEngine:
         except Exception as exc:           # noqa: BLE001
             self.logger.debug("Could not read store stats: %s", exc)
 
-        # Mayor task-queue counts (best-effort; missing -> 0)
+        # Mayor task-queue counts (best-effort; missing -> 0). Only open the
+        # queue (connect + WAL round-trip) when some action template references
+        # task counts; otherwise skip it entirely.
         task_pending = task_in_progress = 0
-        try:
-            from jarvis.task_queue import TaskQueue
-            tq = TaskQueue()
+        if self._needs_task_counts:
             try:
-                task_pending = len(tq.list_tasks(status="pending_review"))
-                task_in_progress = len(tq.list_tasks(status="in_progress"))
-            finally:
-                tq.close()
-        except Exception:
-            pass
+                from jarvis.task_queue import TaskQueue
+                tq = TaskQueue()
+                try:
+                    task_pending = len(tq.list_tasks(status="pending_review"))
+                    task_in_progress = len(tq.list_tasks(status="in_progress"))
+                finally:
+                    tq.close()
+            except Exception:            # noqa: BLE001, S110 - task counts best-effort
+                pass
 
         ctx = TriggerContext(
             now=now,
