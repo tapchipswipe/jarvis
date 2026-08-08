@@ -534,6 +534,72 @@ class TestBrowserCollector:
         count = read_browser_history(mock_store, days_back=1)
         assert isinstance(count, int)
 
+    def test_read_chrome_days_back_window(self, mock_store, tmp_path):
+        """Chrome last_visit_time is microseconds since 1601-01-01; rows older
+        than the days-back window must be excluded, recent rows included."""
+        import sqlite3
+        from datetime import datetime, timezone
+
+        from jarvis.collectors.browser import _read_chrome
+
+        now = datetime.now(timezone.utc).timestamp()
+        recent = now - 3600          # 1 hour ago -> inside 7-day window
+        old = now - 30 * 86400       # 30 days ago -> outside 7-day window
+
+        db = tmp_path / "History"
+        conn = sqlite3.connect(db)
+        conn.execute("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT, last_visit_time INTEGER)")
+        conn.execute(
+            "INSERT INTO urls (url, title, last_visit_time) VALUES (?, ?, ?)",
+            ("https://recent.example", "Recent", int((recent + 11644473600) * 1_000_000)),
+        )
+        conn.execute(
+            "INSERT INTO urls (url, title, last_visit_time) VALUES (?, ?, ?)",
+            ("https://old.example", "Old", int((old + 11644473600) * 1_000_000)),
+        )
+        conn.commit()
+        conn.close()
+
+        count = _read_chrome(mock_store, db, days_back=7)
+        assert count == 1
+        assert len(mock_store.added) == 1
+        assert "recent.example" in mock_store.added[0]["source_id"]
+
+    def test_read_safari_days_back_window(self, mock_store, tmp_path):
+        """Safari visit_time is microseconds since 1601-01-01 (as mirrored in
+        the SELECT); rows older than the days-back window must be excluded,
+        recent rows included."""
+        import sqlite3
+        from datetime import datetime, timezone
+
+        from jarvis.collectors.browser import _read_safari
+
+        now = datetime.now(timezone.utc).timestamp()
+        recent = now - 3600          # inside 7-day window
+        old = now - 30 * 86400       # outside 7-day window
+
+        db = tmp_path / "History.db"
+        conn = sqlite3.connect(db)
+        conn.execute("CREATE TABLE history_items (id INTEGER PRIMARY KEY, url TEXT, title TEXT)")
+        conn.execute("CREATE TABLE history_views (history_id INTEGER, visit_time INTEGER)")
+        conn.execute("INSERT INTO history_items (id, url, title) VALUES (1, 'https://recent.example', 'Recent')")
+        conn.execute("INSERT INTO history_items (id, url, title) VALUES (2, 'https://old.example', 'Old')")
+        conn.execute(
+            "INSERT INTO history_views (history_id, visit_time) VALUES (1, ?)",
+            (int((recent + 11644473600) * 1_000_000),),
+        )
+        conn.execute(
+            "INSERT INTO history_views (history_id, visit_time) VALUES (2, ?)",
+            (int((old + 11644473600) * 1_000_000),),
+        )
+        conn.commit()
+        conn.close()
+
+        count = _read_safari(mock_store, db, days_back=7)
+        assert count == 1
+        assert len(mock_store.added) == 1
+        assert "recent.example" in mock_store.added[0]["source_id"]
+
 
 # ---------------------------------------------------------------------------
 # reminders collector

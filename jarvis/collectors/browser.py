@@ -18,13 +18,16 @@ def _read_chrome(store, db_path: Path, days_back: int):
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
+        # last_visit_time is microseconds since 1601-01-01 (Windows FILETIME).
+        # Mirror the SELECT conversion: (unix cutoff + 11644473600) * 1e6.
+        cutoff = (datetime.now(timezone.utc).timestamp() - days_back * 86400 + 11644473600) * 1000000
         cur = conn.execute("""
             SELECT url, title, datetime(last_visit_time/1000000-11644473600, 'unixepoch', 'localtime') as ts
             FROM urls
             WHERE last_visit_time > ?
             ORDER BY last_visit_time DESC
             LIMIT 2000
-        """, (datetime.now(timezone.utc).timestamp() - days_back * 86400,))
+        """, (cutoff,))
         rows = cur.fetchall()
         conn.close()
         for row in rows:
@@ -55,6 +58,9 @@ def _read_safari(store, db_path: Path, days_back: int):
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
+        # visit_time is microseconds since 1601-01-01 in this codebase (mirrors
+        # the SELECT conversion). Same epoch correction as Chrome.
+        cutoff = (datetime.now(timezone.utc).timestamp() - days_back * 86400 + 11644473600) * 1000000
         cur = conn.execute("""
             SELECT url, title, datetime(visit_time/1000000-11644473600, 'unixepoch', 'localtime') as ts
             FROM history_views, history_items
@@ -62,7 +68,7 @@ def _read_safari(store, db_path: Path, days_back: int):
             AND visit_time > ?
             ORDER BY visit_time DESC
             LIMIT 2000
-        """, (datetime.now(timezone.utc).timestamp() - days_back * 86400,))
+        """, (cutoff,))
         rows = cur.fetchall()
         conn.close()
         for row in rows:
