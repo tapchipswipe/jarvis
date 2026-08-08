@@ -209,6 +209,50 @@ class TestSystemCollector:
         assert first > 0, "first run should add system snapshot memories"
         assert second == 0, "second run with unchanged snapshot must be skipped"
 
+    @patch("jarvis.collectors.system.subprocess.run")
+    def test_unified_log_timestamped_at_window_start_and_dedups(self, mock_run):
+        """task_0030: the unified-log-24h memory must be timestamped at the log
+        window start (now - 24h), not 1970, while keeping a stable content-based
+        fingerprint so re-running the same log content still dedups."""
+        from jarvis.collectors import system
+
+        # No apps installed; only the unified-log snapshot is produced.
+        mock_run.return_value.stdout = '{"_items": []}'
+        mock_run.return_value.returncode = 0
+
+        added = []
+        store = MagicMock()
+
+        def fake_add(fid, source, source_id, timestamp, content, tags, metadata, embedding, **kwargs):
+            added.append({"fid": fid, "source_id": source_id, "timestamp": timestamp})
+            return True
+
+        store.add.side_effect = fake_add
+        store.exists.side_effect = lambda fid: any(a["fid"] == fid for a in added)
+
+        with patch("jarvis.collectors.system.get_embedding", return_value=[0.1, 0.2]):
+            first = system.sync_system(store)
+            second = system.sync_system(store)
+
+        # First run added the unified-log snapshot; the second deduped it away.
+        assert first > 0, "first run should add the unified-log snapshot"
+        assert second == 0, "re-running the same log content must dedup"
+
+        log_memories = [a for a in added if a["source_id"] == "unified-log-24h"]
+        assert log_memories, "unified-log-24h memory should have been added"
+
+        # The timing must be recent (window start), definitely not 1970.
+        assert all(ts != system._SNAPSHOT_TS for ts in (a["timestamp"] for a in log_memories))
+
+        window_start = system._log_window_start()
+        assert all(a["timestamp"] == window_start for a in log_memories)
+
+        # The fingerprint used for dedup must be content-stable (based on the
+        # fixed snapshot ts), otherwise the second run could not have skipped.
+        log_text = mock_run.return_value.stdout
+        stable_fid = system.fingerprint("system", "unified-log-24h", log_text, system._SNAPSHOT_TS)
+        assert any(a["fid"] == stable_fid for a in log_memories)
+
 
 # ---------------------------------------------------------------------------
 # deep collector
