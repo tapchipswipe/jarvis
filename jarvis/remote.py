@@ -142,7 +142,11 @@ def memories(limit: int = 50, source: str | None = None, tier: str | None = None
 
 
 def remember_batch(memories: list[dict]) -> dict:
-    return _request("POST", "/api/remember", {"memories": memories})
+    # The box embeds each item (~5s/item on its Ollama), so a large batch can
+    # take minutes. Use a timeout scaled to the batch size (min 10 min) rather
+    # than the 60s default, which would abort an in-flight batch mid-embed.
+    timeout = max(600, 10 * len(memories))
+    return _request("POST", "/api/remember", {"memories": memories}, timeout=timeout)
 
 
 def backfill_batch(memories: list[dict]) -> dict:

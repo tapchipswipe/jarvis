@@ -26,6 +26,24 @@ _mem_cache: dict[str, list[float]] = {}
 def _ollama_embed(model: str, texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
+    # Prefer the batched /api/embed endpoint (one HTTP round-trip for all texts,
+    # which Ollama batches internally instead of N serial calls). The older
+    # /api/embeddings endpoint only accepts a single prompt, so fall back to it
+    # when the batch endpoint is unavailable (older Ollama builds / transient).
+    try:
+        payload = json.dumps({"model": model, "input": texts, "stream": False}).encode()
+        req = urllib.request.Request(
+            f"http://{_OLLAMA_HOST}:{_OLLAMA_PORT}/api/embed",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+            if isinstance(data.get("embeddings"), list):
+                return data["embeddings"]
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
+        pass
+    # Fallback: single-input endpoint, one request per text.
     results: list[list[float]] = []
     for text in texts:
         payload = json.dumps({"model": model, "prompt": text, "stream": False}).encode()
@@ -40,7 +58,6 @@ def _ollama_embed(model: str, texts: list[str]) -> list[list[float]]:
                 if "embedding" in data:
                     results.append(data["embedding"])
                 elif "embeddings" in data:
-                    # API may return multiple; we sent one prompt, take first
                     embeddings = data["embeddings"]
                     results.append(embeddings[0] if embeddings else [])
                 else:

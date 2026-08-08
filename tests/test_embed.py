@@ -45,11 +45,10 @@ def test_get_embeddings_single_text():
 
 
 def test_get_embeddings_multi_text():
-    response1 = {"embedding": [0.1, 0.2]}
-    response2 = {"embedding": [0.3, 0.4]}
-    cm1 = _make_fake_urlopen(response1)
-    cm2 = _make_fake_urlopen(response2)
-    with patch("jarvis.embed.urllib.request.urlopen", side_effect=[cm1, cm2]):
+    # Batched /api/embed returns all embeddings in one response.
+    response = {"embeddings": [[0.1, 0.2], [0.3, 0.4]]}
+    cm = _make_fake_urlopen(response)
+    with patch("jarvis.embed.urllib.request.urlopen", return_value=cm):
         results = get_embeddings(["hello", "world"])
 
     assert results == [[0.1, 0.2], [0.3, 0.4]]
@@ -149,7 +148,7 @@ def test_get_embedding_uses_default_model():
 
 def test_embedding_cache_hit_avoids_network():
     """A repeated text should be served from the cache without calling Ollama."""
-    cm = _make_fake_urlopen({"embedding": [0.1, 0.2, 0.3]})
+    cm = _make_fake_urlopen({"embeddings": [[0.1, 0.2, 0.3]]})
     with patch("jarvis.embed.urllib.request.urlopen", return_value=cm) as mock_urlopen:
         first = get_embeddings(["hello"])
         second = get_embeddings(["hello"])
