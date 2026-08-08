@@ -114,6 +114,73 @@ def test_log_notification_records_failure_channel(tmp_path, monkeypatch):
     assert "terminal-notifier" not in log
 
 
+def test_escape_osascript_handles_quotes_backslash_newlines():
+    """Quotes/backslashes are escaped and newlines collapsed to a space so the
+    generated AppleScript string literal stays on one compilable line."""
+    raw = 'He said "hi" with a backslash \\\nand a newline'
+    escaped = notify._escape_osascript(raw)
+    # No raw double quote, backslash, or newline may survive unescaped.
+    assert '"' not in escaped.replace('\\"', "")
+    assert "\n" not in escaped
+    assert "\\" in escaped  # escaping still present
+    # Reconstructing the literal (\" -> ") must yield the original minus newlines.
+    import ast
+
+    assert ast.literal_eval(f'"{escaped}"') == raw.replace("\n", " ")
+
+
+def test_send_osascript_uses_escaped_body(tmp_path, monkeypatch):
+    """A body with quotes and newlines must produce an escaped osascript call
+    that closes over the double-quoted literal instead of breaking it."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    with patch.object(notify, "_run", return_value=True) as run:
+        ok = notify._send_osascript(
+            'Lunch', 'Meet at "The Spot"\\ for 2\nBring files'
+        )
+    assert ok is True
+    script = run.call_args.args[0][-1]
+    # The raw body must never appear unescaped inside the script.
+    assert '\n' not in script
+    assert 'display notification "' in script
+    assert 'with title "Lunch"' in script
+    # The escaped body literal, when parsed, must round-trip to the body with
+    # newlines collapsed to spaces.
+    import ast
+
+    body = script.split('display notification "', 1)[1].split('" with title', 1)[0]
+    assert ast.literal_eval(f'"{body}"') == 'Meet at "The Spot"\\ for 2 Bring files'
+
+
+def test_send_notification_popup_succeeds_with_tricky_body(tmp_path, monkeypatch):
+    """With terminal-notifier unavailable, osascript must still succeed for a
+    body containing quotes/newlines/backslash — the popup must NOT silently
+    fall back to log-only."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    tricky = 'Call "Mom" at 5\\pm\nRe: report'
+    with (
+        patch.object(notify, "_send_terminal_notifier", return_value=False),
+        patch.object(notify, "_send_osascript", return_value=True) as osa,
+    ):
+        notify.send_notification("Reminder", tricky)
+    osa.assert_called_once()
+    log = (tmp_path / "config" / "notifications.log").read_text()
+    assert "osascript" in log  # delivered via osascript, not log-only
+
+
+def test_send_terminal_notifier_collapses_newlines(tmp_path, monkeypatch):
+    """terminal-notifier argv must not contain a raw newline in the message."""
+    _patch_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "SYSTEM", "Darwin")
+    with patch.object(notify, "_run", return_value=True) as run:
+        ok = notify._send_terminal_notifier("t", "line1\nline2", category="g")
+    assert ok is True
+    cmd = run.call_args.args[0]
+    assert cmd[cmd.index("-message") + 1] == "line1 line2"
+    assert "\n" not in cmd[cmd.index("-message") + 1]
+
+
 def test_write_briefing_creates_file(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
     path = notify.write_briefing("Morning", "Lots of content")

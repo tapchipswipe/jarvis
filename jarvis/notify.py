@@ -74,10 +74,26 @@ def _run(cmd: list[str], timeout: int = 8) -> bool:
 
 # ── Desktop notification backends ────────────────────────────────────────────
 
+def _escape_osascript(text: str) -> str:
+    """Escape text for use inside a double-quoted AppleScript string literal.
+
+    AppleScript string literals are delimited by double quotes; a literal
+    double quote is written as ``\\"`` and a backslash as ``\\\\``. Newlines
+    must be removed because a physical line break inside a ``-e`` script
+    terminates the current statement (and AppleScript has no ``\\n`` escape),
+    so we collapse them to a space to keep the popup readable.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
 def _send_terminal_notifier(title: str, body: str, category: str | None) -> bool:
     if SYSTEM != "Darwin":
         return False
-    cmd = ["terminal-notifier", "-title", title, "-message", body]
+    # terminal-notifier takes the message as a single argv element, so quotes
+    # and backslashes are safe, but a literal newline is not rendered — drop
+    # them so the one-line popup stays tidy.
+    safe_body = body.replace("\r", " ").replace("\n", " ")
+    cmd = ["terminal-notifier", "-title", title, "-message", safe_body]
     if category:
         cmd += ["-group", category]
     return _run(cmd)
@@ -87,8 +103,8 @@ def _send_osascript(title: str, body: str) -> bool:
     if SYSTEM != "Darwin":
         return False
     script = (
-        f'display notification "{body}" '
-        f'with title "{title}" '
+        f'display notification "{_escape_osascript(body)}" '
+        f'with title "{_escape_osascript(title)}" '
         f'sound name "default"'
     )
     return _run(["osascript", "-e", script])
