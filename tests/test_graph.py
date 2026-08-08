@@ -159,6 +159,36 @@ def test_get_related_returns_related(store):
     assert result[0]["entity_name"] == "jane smith"
 
 
+def test_get_related_depth_honored(store):
+    """depth=1 returns only direct neighbors; higher depths walk multiple hops."""
+    a = upsert_entity(store, "Alice", entity_type="person")
+    b = upsert_entity(store, "Bob", entity_type="person")
+    c = upsert_entity(store, "Carol", entity_type="person")
+    store.add_relationship(a, b, "co_participant", "mem1", 0.55)
+    store.add_relationship(b, c, "co_participant", "mem2", 0.55)
+
+    # depth=1: only direct neighbor (unchanged behaviour)
+    direct = get_related(store, a, depth=1)
+    assert {r["entity_id"] for r in direct} == {b}
+
+    # depth=2: direct + 2-hop neighbor Carol via Bob
+    two = get_related(store, a, depth=2)
+    assert {r["entity_id"] for r in two} == {b, c}
+
+    # depth=3: same reachable set (nothing further), no duplicates
+    three = get_related(store, a, depth=3)
+    assert {r["entity_id"] for r in three} == {b, c}
+    assert len(three) == 2
+
+
+def test_get_related_depth_zero_returns_empty(store):
+    a = upsert_entity(store, "Alice", entity_type="person")
+    b = upsert_entity(store, "Bob", entity_type="person")
+    store.add_relationship(a, b, "co_participant", "mem1", 0.55)
+    assert get_related(store, a, depth=0) == []
+    assert get_related(store, a, depth=-1) == []
+
+
 # ── get_entity_timeline ───────────────────────────────────────────────────────
 
 def test_get_entity_timeline_empty(store):
@@ -241,6 +271,38 @@ def test_infer_relationships_collapses_reversed_pair(store):
     related2 = get_related(store, eid2)
     assert len(related2) == 1
     assert related2[0]["entity_name"] == "alice"
+
+
+def test_infer_relationships_skips_person_domain_org_edge(store):
+    """No co_participant edge when an endpoint is a domain/org entity.
+
+    A person attending the same memory as a domain/org isn't a meaningful
+    participant link.  person<->person edges are still created.
+    """
+    from datetime import datetime, timezone
+    now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    alice = upsert_entity(store, "Alice", entity_type="person")
+    bob = upsert_entity(store, "Bob", entity_type="person")
+    org = upsert_entity(store, "Acme Corp", entity_type="organization")
+    domain = upsert_entity(store, "example.com", entity_type="domain")
+    from jarvis.store import fingerprint
+    fid = fingerprint("test", "1", "Alice and Bob use example.com at Acme", now_ts)
+    store.conn.execute(
+        "INSERT INTO memories (id, source, source_id, timestamp, content, content_hash, tags, metadata, tier, weight, route, expires_at, consolidated_from, superseded, embedded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (fid, "test", "1", now_ts, "Alice and Bob use example.com at Acme", "hash", "[]", "{}", "raw", 0.3, "unclassified", None, None, 0, now_ts)
+    )
+    for eid in (alice, bob, org, domain):
+        store.link_memory_entity(fid, eid)
+
+    infer_relationships(store, limit_hours=24, max_memories=500)
+
+    rows = store.conn.execute("SELECT * FROM relationships").fetchall()
+    # Only the person<->person pair becomes a co_participant edge; any pair
+    # touching a domain/org is suppressed (4 entities -> 6 pairs, 5 suppressed).
+    assert len(rows) == 1
+    assert rows[0]["relation_type"] == "co_participant"
+    assert rows[0]["source_entity"] in (alice, bob)
+    assert rows[0]["target_entity"] in (alice, bob)
 
 
 # ── Knowledge Graph HTTP API (dashboard endpoints) ─────────────────────────────
@@ -347,7 +409,7 @@ def test_api_entities_empty(api_client):
 
 
 def test_api_entity_relationships(api_client):
-    e1, e2, e3 = _seed_graph(api_client)
+    e1, _e2, _e3 = _seed_graph(api_client)
     resp = api_client.client.get(f"/api/entities/{e1}/relationships")
     assert resp.status_code == 200
     body = resp.json()

@@ -123,43 +123,62 @@ def resolve_entity(store, name: str) -> str | None:
 
 
 def get_related(store, entity_id: str, depth: int = 1) -> list[dict]:
-    """Return entities directly connected to *entity_id*."""
+    """Return entities connected to *entity_id* within *depth* hops.
+
+    A BFS over the relationships table, walking up to *depth* hops so
+    multi-hop recall works.  ``depth=1`` returns exactly the direct
+    neighbors (unchanged behaviour).  Returns entities reachable in
+    ``1..depth`` hops, de-duplicated across levels.
+    """
     if depth < 1:
         return []
-    rows = store.conn.execute(
-        """
-        SELECT r.relation_type, r.confidence, r.created_at,
-               e1.canonical_name AS source_name,
-               e2.canonical_name AS target_name,
-               e2.entity_type AS target_type,
-               e2.id AS target_id
-        FROM relationships r
-        JOIN entities e1 ON r.source_entity = e1.id
-        JOIN entities e2 ON r.target_entity = e2.id
-        WHERE r.source_entity = ?
-        UNION ALL
-        SELECT r.relation_type, r.confidence, r.created_at,
-               e2.canonical_name AS source_name,
-               e1.canonical_name AS target_name,
-               e1.entity_type AS target_type,
-               e1.id AS target_id
-        FROM relationships r
-        JOIN entities e1 ON r.source_entity = e1.id
-        JOIN entities e2 ON r.target_entity = e2.id
-        WHERE r.target_entity = ? AND r.source_entity != ?
-        """,
-        (entity_id, entity_id, entity_id)
-    ).fetchall()
-    results = []
-    for r in rows:
-        results.append({
-            "relation": r["relation_type"],
-            "confidence": r["confidence"],
-            "created_at": r["created_at"],
-            "entity_id": r["target_id"],
-            "entity_name": r["target_name"],
-            "entity_type": r["target_type"],
-        })
+    frontier = [entity_id]
+    visited = {entity_id}
+    results: list[dict] = []
+    for _ in range(depth):
+        next_frontier: list[str] = []
+        for node in frontier:
+            rows = store.conn.execute(
+                """
+                SELECT r.relation_type, r.confidence, r.created_at,
+                       e1.canonical_name AS source_name,
+                       e2.canonical_name AS target_name,
+                       e2.entity_type AS target_type,
+                       e2.id AS target_id
+                FROM relationships r
+                JOIN entities e1 ON r.source_entity = e1.id
+                JOIN entities e2 ON r.target_entity = e2.id
+                WHERE r.source_entity = ?
+                UNION ALL
+                SELECT r.relation_type, r.confidence, r.created_at,
+                       e2.canonical_name AS source_name,
+                       e1.canonical_name AS target_name,
+                       e1.entity_type AS target_type,
+                       e1.id AS target_id
+                FROM relationships r
+                JOIN entities e1 ON r.source_entity = e1.id
+                JOIN entities e2 ON r.target_entity = e2.id
+                WHERE r.target_entity = ? AND r.source_entity != ?
+                """,
+                (node, node, node)
+            ).fetchall()
+            for r in rows:
+                tid = r["target_id"]
+                if tid in visited:
+                    continue
+                visited.add(tid)
+                next_frontier.append(tid)
+                results.append({
+                    "relation": r["relation_type"],
+                    "confidence": r["confidence"],
+                    "created_at": r["created_at"],
+                    "entity_id": tid,
+                    "entity_name": r["target_name"],
+                    "entity_type": r["target_type"],
+                })
+        frontier = next_frontier
+        if not frontier:
+            break
     return results
 
 
@@ -188,6 +207,12 @@ _RELATION_HEURISTICS = [
     ("co_participant", lambda ents, src: True),  # any list of >= 2 entities
 ]
 
+# Entity types that are NOT meaningful "participants".  A person attending the
+# same memory as a domain / org isn't a participant link — it's just co-venue
+# noise — so we skip co_participant edges touching these.  (covers the
+# extract_entities vocabulary: "domain", "org", plus the "organization" alias)
+_NON_PARTICIPANT_TYPES = frozenset({"domain", "org", "organization"})
+
 
 def _extract_entities_from_memory(store, memory_id: str) -> list[str]:
     rows = store.conn.execute(
@@ -214,9 +239,23 @@ def infer_relationships(store, limit_hours: int = 24, max_memories: int = 500) -
         entity_ids = _extract_entities_from_memory(store, mid)
         if len(entity_ids) < 2:
             continue
+        # Resolve entity types once so we can suppress noisy person<->domain/org
+        # co_participant edges (a person attending the same memory as a domain
+        # isn't a meaningful "participant" link).
+        placeholders = ",".join("?" * len(entity_ids))
+        type_rows = store.conn.execute(
+            f"SELECT id, entity_type FROM entities WHERE id IN ({placeholders})",
+            entity_ids,
+        ).fetchall()
+        types = {tr["id"]: tr["entity_type"] for tr in type_rows}
         # For each pair, create a co_participant edge
         for i in range(len(entity_ids)):
             for j in range(i + 1, len(entity_ids)):
+                if (
+                    types.get(entity_ids[i]) in _NON_PARTICIPANT_TYPES
+                    or types.get(entity_ids[j]) in _NON_PARTICIPANT_TYPES
+                ):
+                    continue
                 store.add_relationship(
                     source_entity=entity_ids[i],
                     target_entity=entity_ids[j],
