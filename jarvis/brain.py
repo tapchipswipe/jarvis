@@ -450,6 +450,53 @@ class Brain:
                 classify_existing(self.store, {"id": primary_id, "content": row["content"], "source_id": row["source_id"]})
         return added
 
+    def remember_many(self, records: list[tuple[str, str, list[str]]], classify: bool = False) -> int:
+        """Batch-remember many (text, source, tags) records.
+
+        Prepares every chunk + embedding up front, then writes them all through
+        ``Store.add_many`` (one SQLite commit + a single batched Chroma add) —
+        instead of a per-item ``get_embedding`` + ``collection.add``. At scale this
+        turns ~4 s/item (HNSW rerank per add) into near-batch cost, which is the
+        dominant ingest speedup for thin-client flushes and inbox drains.
+
+        Returns the number of memories written.
+        """
+        from jarvis.extract import extract_metadata
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        items: list[dict] = []
+        for text, source, tags in records:
+            fid = fingerprint(source, "manual", text, now)
+            metadata = {"tags": tags or []}
+            chunks = chunk_document(text, metadata=metadata)
+            extraction = extract_metadata(text) if not tags else {"tags": tags, "entities": []}
+            auto_tags = extraction.get("tags", [])
+            all_tags = list(dict.fromkeys((tags or []) + auto_tags))[:10]
+            for i, chunk in enumerate(chunks):
+                cid = f"{fid}-{i}"
+                emb = get_embedding(chunk["text"])
+                items.append({
+                    "fid": cid, "source": source, "source_id": "manual",
+                    "timestamp": now, "content": chunk["text"], "tags": all_tags,
+                    "metadata": {**metadata, "entities": extraction.get("entities", [])},
+                    "embedding": emb, "tier": "raw", "route": "unclassified",
+                })
+        added = self.store.add_many(items)
+        if added > 0 and classify:
+            # Route the first chunk of each record (best-effort, non-fatal).
+            for text, source, tags in records:
+                try:
+                    fid = fingerprint(source, "manual", text, now)
+                    primary_id = f"{fid}-0"
+                    row = self.store.conn.execute(
+                        "SELECT content, source_id FROM memories WHERE id = ?", (primary_id,)).fetchone()
+                    if row:
+                        from jarvis.routes import classify_existing
+                        classify_existing(self.store, {
+                            "id": primary_id, "content": row["content"], "source_id": row["source_id"]})
+                except Exception:  # noqa: BLE001 - classification is best-effort
+                    continue
+        return added
+
     def classify_memory(self, memory_id: str) -> dict:
         row = self.store.conn.execute("SELECT * FROM memories WHERE id = ? AND superseded = 0", (memory_id,)).fetchone()
         if not row:

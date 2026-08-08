@@ -673,21 +673,20 @@ def api_remember(request: Request, payload: dict):
     skipped = 0
     try:
         brain = Brain(store)
+        # Batch the whole request through remember_many (one SQLite commit + one
+        # batched Chroma add) instead of a per-item store.add — the dominant
+        # ingest speedup for thin-client flushes.
+        records = []
         for it in items:
             if not isinstance(it, dict):
-                skipped += 1
                 continue
             content = it.get("content") or ""
             if not content.strip():
-                skipped += 1
                 continue
-            try:
-                if brain.remember(content, source=it.get("source", "device"), tags=list(it.get("tags") or []), classify=False):
-                    added += 1
-                else:
-                    skipped += 1
-            except Exception:
-                skipped += 1
+            records.append((content, it.get("source", "device"), list(it.get("tags") or [])))
+        if records:
+            added = brain.remember_many(records, classify=False)
+        skipped = len(items) - added
     finally:
         store.close()
     return {"added": added, "skipped": skipped}

@@ -117,6 +117,49 @@ def test_add_with_valid_embedding_sets_embedded_at(store):
     assert store.get_unembedded() == []
 
 
+def test_add_many_batches_insert_and_chroma(store):
+    """add_many inserts all rows in one commit and issues a single batched
+    Chroma add (the HNSW append is the dominant per-item ingest cost)."""
+    store.collection.add.reset_mock()
+    items = [
+        {"fid": fingerprint("t", "a", "one", "2025-06-01"), "source": "t", "source_id": "a",
+         "timestamp": "2025-06-01T10:00:00", "content": "one", "tags": ["x"], "metadata": {}, "embedding": [0.1] * 768},
+        {"fid": fingerprint("t", "b", "two", "2025-06-01"), "source": "t", "source_id": "b",
+         "timestamp": "2025-06-01T10:00:00", "content": "two", "tags": ["x"], "metadata": {}, "embedding": [0.2] * 768},
+        {"fid": fingerprint("t", "c", "three", "2025-06-01"), "source": "t", "source_id": "c",
+         "timestamp": "2025-06-01T10:00:00", "content": "three", "tags": ["x"], "metadata": {}, "embedding": [0.3] * 768},
+    ]
+    added = store.add_many(items)
+    assert added == 3
+    # Single batched Chroma call with all 3 ids.
+    store.collection.add.assert_called_once()
+    kwargs = store.collection.add.call_args.kwargs
+    assert len(kwargs["ids"]) == 3
+    rows = store.conn.execute("SELECT COUNT(*) c FROM memories").fetchone()["c"]
+    assert rows == 3
+
+
+def test_add_many_dedups_existing(store):
+    """Items whose content already exists are skipped (and their tags merged),
+    counted as not-added, with no extra Chroma call."""
+    content = "already here"
+    fid = fingerprint("t", "a", content, "2025-06-01")
+    store.add(fid, "t", "a", "2025-06-01T10:00:00", content, ["x"], {}, [0.1] * 768, tier="raw")
+    store.collection.add.reset_mock()
+    items = [
+        {"fid": fid, "source": "t", "source_id": "a", "timestamp": "2025-06-01T10:00:00",
+         "content": content, "tags": ["y"], "metadata": {}, "embedding": [0.1] * 768},
+        {"fid": fingerprint("t", "b", "brand new", "2025-06-01"), "source": "t", "source_id": "b",
+         "timestamp": "2025-06-01T10:00:00", "content": "brand new", "tags": [], "metadata": {}, "embedding": [0.2] * 768},
+    ]
+    added = store.add_many(items)
+    assert added == 1  # only "brand new"
+    store.collection.add.assert_called_once()
+    # Existing memory had its tags merged with the new "y".
+    row = store.conn.execute("SELECT tags FROM memories WHERE id = ?", (fid,)).fetchone()
+    assert "y" in __import__("json").loads(row["tags"])
+
+
 def test_exists_false_for_unknown(store):
     assert store.exists("nonexistent_id_12345") is False
 

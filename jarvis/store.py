@@ -355,6 +355,66 @@ class Store:
             self.collection.add(ids=[fid], embeddings=[embedding], documents=[content], metadatas=[chroma_meta])
         return True
 
+    def add_many(self, items: list[dict]) -> int:
+        """Batch-add many memories in one SQLite commit + a single Chroma add.
+
+        Each ``items`` entry matches the ``add()`` kwargs (fid, source, source_id,
+        timestamp, content, tags, metadata, embedding, tier, ...). The HNSW Chroma
+        rerank on every single-item ``collection.add`` dominates ingestion time
+        (~seconds/item at scale), so bulk ingestion calls this to amortise the
+        vector index append across a whole batch — the single biggest ingest speedup
+        for backfills, inbox drains and thin-client flushes.
+
+        Returns the number of memories actually added (deduped ones excluded).
+        """
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        sql_rows: list[tuple] = []
+        chroma_ids: list[str] = []
+        chroma_embs: list[list[float]] = []
+        chroma_docs: list[str] = []
+        chroma_meta: list[dict] = []
+        added = 0
+        for it in items:
+            fid = it["fid"]
+            content = it["content"]
+            content_hash = self._content_hash(content)
+            if self.exists_by_content(content_hash):
+                self.merge_device_tags(content_hash, list(it.get("tags") or []))
+                continue
+            if self.exists(fid):
+                continue
+            tier = it.get("tier", "raw")
+            weight = self._tier_weight(tier)
+            embedded_at = now if it.get("embedding") else None
+            sql_rows.append((
+                fid, it.get("source", "manual"), it.get("source_id", "manual"),
+                it.get("timestamp"), content, content_hash,
+                json.dumps(list(it.get("tags") or [])),
+                json.dumps(it.get("metadata") or {}),
+                tier, weight, it.get("route", "unclassified"),
+                it.get("expires_at"), it.get("consolidated_from"),
+                1 if it.get("superseded") else 0, embedded_at,
+            ))
+            if it.get("embedding"):
+                chroma_ids.append(fid)
+                chroma_embs.append(it["embedding"])
+                chroma_docs.append(content)
+                chroma_meta.append({
+                    "source": it.get("source", "manual"), "timestamp": it.get("timestamp"),
+                    "tier": tier, "weight": weight, "route": it.get("route", "unclassified"),
+                })
+            added += 1
+        if sql_rows:
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO memories (id, source, source_id, timestamp, content, content_hash, tags, metadata, tier, weight, route, expires_at, consolidated_from, superseded, embedded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                sql_rows,
+            )
+            self.conn.commit()
+        # All vectors in one dedicated call — the expensive HNSW append.
+        if chroma_ids:
+            self.collection.add(ids=chroma_ids, embeddings=chroma_embs, documents=chroma_docs, metadatas=chroma_meta)
+        return added
+
     def search(self, query_embedding: list[float] | None, n_results: int = 10, source_filter: str | None = None, re_rank: bool = True, recency_boost: bool = True):
         # get_embedding returns None on Ollama failure; callers pass that straight
         # through. Drop the query immediately instead of handing a falsy embedding
