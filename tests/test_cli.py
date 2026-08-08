@@ -1021,3 +1021,70 @@ def test_greeting_facts_render_gracefully_with_none():
         {"task_pending": 0, "calendar_today": 0, "last_memory_ts": None}
     ) == []
     assert _fmt_ago("not-a-timestamp") == "a while ago"
+
+
+def test_console_model_override_selects_requested_model(monkeypatch):
+    """`/model <tier|id>` must set the console model override so the next grounded
+    question is answered with that model (passed through to `_ask_grounded`), not
+    silently left to auto-tier."""
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    class _FakeSDB:
+        def __init__(self): self.msgs = []
+        def close(self): pass
+        def get_messages(self, sid, limit=100): return []
+        def create_session(self, title=""): return "c1"
+        def append_message(self, sid, role, content, tool_calls=None):
+            self.msgs.append((role, content))
+
+    seen = {}
+    monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: _FakeSDB())
+    monkeypatch.setattr(
+        "jarvis.cli._ask_grounded",
+        lambda question, history=None, model=None:
+        seen.update(model=model) or ("chosen-model answer", [], {}),
+    )
+    monkeypatch.setattr("jarvis.cli._save_ask", lambda q, a: None)
+    monkeypatch.setattr("jarvis.cli._render_grounded", lambda *a, **k: None)
+
+    result = CliRunner().invoke(cli, ["console", "--no-save"],
+                                input="/model big\nquick question\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert "(model set to big)" in result.output
+    # The override is passed to the grounded asker — not dropped to auto-tier.
+    assert seen.get("model") == "big"
+
+
+def test_console_model_override_bare_shows_current(monkeypatch):
+    """Bare `/model` (no arg) reports the current override, or 'auto' when unset."""
+    from click.testing import CliRunner
+
+    from jarvis.cli import cli
+
+    class _FakeSDB:
+        def __init__(self): self.msgs = []
+        def close(self): pass
+        def get_messages(self, sid, limit=100): return []
+        def create_session(self, title=""): return "c1"
+        def append_message(self, sid, role, content, tool_calls=None):
+            self.msgs.append((role, content))
+
+    monkeypatch.setattr("jarvis.sessions.SessionDB", lambda *a, **k: _FakeSDB())
+    monkeypatch.setattr("jarvis.cli._ask_grounded",
+                        lambda question, history=None, model=None: ("a", [], {}))
+    monkeypatch.setattr("jarvis.cli._save_ask", lambda q, a: None)
+    monkeypatch.setattr("jarvis.cli._render_grounded", lambda *a, **k: None)
+
+    # Unset → auto.
+    result = CliRunner().invoke(cli, ["console", "--no-save"],
+                                input="/model\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert "(model tier: auto)" in result.output
+
+    # After an override, bare `/model` reports it.
+    result = CliRunner().invoke(cli, ["console", "--no-save"],
+                                input="/model medium\n/model\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert "(model tier: medium)" in result.output

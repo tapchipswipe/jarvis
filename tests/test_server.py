@@ -383,3 +383,117 @@ def test_server_run_forwards_tls_args(monkeypatch):
     assert calls["ssl_cert"] == "/tmp/c.pem"
     assert calls["ssl_key"] == "/tmp/k.pem"
 
+
+# ── /api/query: model + history params ────────────────────────────────────────
+def test_api_query_model_param_resolves_force(client, monkeypatch):
+    """GET /api/query?model=<tier> must push the override into select_model_for
+    (as `force`) and surface the resolved model in the response."""
+    seen = {}
+    monkeypatch.setattr(
+        "jarvis.brain.select_model_for",
+        lambda question, force=None: seen.update(force=force) or "resolved-big",
+    )
+
+    class _FakeBrain:
+        def __init__(self, store, model=None):
+            self.model = model
+        def query(self, user_query, n_results=8, source_filter=None,
+                  verbose=False, history=None):
+            return "grounded answer", []
+
+    monkeypatch.setattr("jarvis.brain.Brain", _FakeBrain)
+
+    r = client.get("/api/query", params={"q": "hard question", "model": "big"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert seen.get("force") == "big"
+    assert body["model"] == "resolved-big"
+
+
+def test_api_query_history_param_is_threaded(client, monkeypatch):
+    """GET /api/query with a `history` JSON array must forward it to
+    Brain.query(history=...) so follow-ups stay coherent."""
+    calls = {}
+    monkeypatch.setattr(
+        "jarvis.brain.select_model_for",
+        lambda question, force=None: "m",
+    )
+
+    class _FakeBrain:
+        def __init__(self, store, model=None):
+            self.model = model
+        def query(self, user_query, n_results=8, source_filter=None,
+                  verbose=False, history=None):
+            calls.update(q=user_query, history=history)
+            return "grounded answer", []
+
+    monkeypatch.setattr("jarvis.brain.Brain", _FakeBrain)
+
+    hist = [{"role": "user", "content": "prior turn"}]
+    r = client.get("/api/query", params={"q": "follow up",
+                                         "history": str(hist).replace("'", '"')})
+    assert r.status_code == 200, r.text
+    assert calls.get("history") == hist
+
+
+def test_api_query_malformed_history_falls_back_to_empty(client, monkeypatch):
+    """Malformed `history` JSON must NOT 4xx — the handler degrades to an empty
+    history list and still answers (graceful fallback, not a hard error)."""
+    calls = {}
+    monkeypatch.setattr(
+        "jarvis.brain.select_model_for",
+        lambda question, force=None: "m",
+    )
+
+    class _FakeBrain:
+        def __init__(self, store, model=None):
+            self.model = model
+        def query(self, user_query, n_results=8, source_filter=None,
+                  verbose=False, history=None):
+            calls.update(history=history)
+            return "still answered", []
+
+    monkeypatch.setattr("jarvis.brain.Brain", _FakeBrain)
+
+    r = client.get("/api/query", params={"q": "question",
+                                         "history": "not-json{{{"})
+    assert r.status_code == 200, r.text
+    assert calls.get("history") == []
+
+
+# ── /api/chat: model param ────────────────────────────────────────────────────
+def test_api_chat_model_param_honored(client, monkeypatch):
+    """POST /api/chat with a `model` must forward it to run_turn (not drop it)."""
+    seen = {}
+    monkeypatch.setattr(
+        "jarvis.agent.run_turn",
+        lambda message, session_id, max_steps=8, session_db=None,
+        store_db=None, verbose=False, model=None:
+        seen.update(message=message, session_id=session_id, model=model)
+        or ("chat reply", ["tool step"]),
+    )
+
+    r = client.post("/api/chat", json={"message": "hello", "model": "big",
+                                       "session_id": "abc"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert seen.get("model") == "big"
+    assert seen.get("session_id") == "abc"
+    assert body["answer"] == "chat reply"
+    assert body["tool_log"] == ["tool step"]
+
+
+def test_api_chat_omits_model_by_default(client, monkeypatch):
+    """Without a `model`, run_turn receives model=None (auto-tier)."""
+    seen = {}
+    monkeypatch.setattr(
+        "jarvis.agent.run_turn",
+        lambda message, session_id, max_steps=8, session_db=None,
+        store_db=None, verbose=False, model=None:
+        seen.update(model=model) or ("chat reply", []),
+    )
+
+    r = client.post("/api/chat", json={"message": "hello", "session_id": "abc"})
+    assert r.status_code == 200, r.text
+    assert seen.get("model") is None
+
