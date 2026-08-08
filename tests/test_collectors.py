@@ -1,6 +1,7 @@
 """Tests for all jarvis collectors (Phase 3: Collector Audit & Fix)."""
 from __future__ import annotations
 
+import datetime as _dt
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -171,8 +172,11 @@ class TestSystemCollector:
         assert hasattr(system, "sync_system")
 
     @patch("jarvis.collectors.system.subprocess.run")
-    def test_sync_system_mocked(self, mock_run, mock_store):
+    def test_sync_system_mocked(self, mock_run, mock_store, tmp_path, monkeypatch):
         from jarvis.collectors.system import sync_system
+        # Isolate the throttle marker and disable throttling for this unit test.
+        monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("JARVIS_SYSTEM_THROTTLE_HOURS", "0")
         # Mock both subprocess.run calls (system_profiler + log show)
         mock_run.return_value.stdout = '{"_items": []}'
         mock_run.return_value.returncode = 0
@@ -180,10 +184,14 @@ class TestSystemCollector:
         assert isinstance(count, int)
 
     @patch("jarvis.collectors.system.subprocess.run")
-    def test_sync_system_idempotent_stable_ts(self, mock_run):
+    def test_sync_system_idempotent_stable_ts(self, mock_run, tmp_path, monkeypatch):
         """A fixed snapshot ts keeps the fingerprint stable: the first run adds
         memories, the second run (same snapshot content) is skipped entirely."""
         from jarvis.collectors import system
+        # Isolate the throttle marker and disable throttling so this test exercises
+        # the content-dedup path (not the throttle short-circuit).
+        monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("JARVIS_SYSTEM_THROTTLE_HOURS", "0")
 
         payload = '{"_items": [{"_name": "Safari", "version": "17.0", "path": "/Applications/Safari.app"}]}'
         mock_run.return_value.stdout = payload
@@ -210,11 +218,14 @@ class TestSystemCollector:
         assert second == 0, "second run with unchanged snapshot must be skipped"
 
     @patch("jarvis.collectors.system.subprocess.run")
-    def test_unified_log_timestamped_at_window_start_and_dedups(self, mock_run):
+    def test_unified_log_timestamped_at_window_start_and_dedups(self, mock_run, tmp_path, monkeypatch):
         """task_0030: the unified-log-24h memory must be timestamped at the log
         window start (now - 24h), not 1970, while keeping a stable content-based
         fingerprint so re-running the same log content still dedups."""
         from jarvis.collectors import system
+        # Isolate the throttle marker and disable throttling for the dedup check.
+        monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("JARVIS_SYSTEM_THROTTLE_HOURS", "0")
 
         # No apps installed; only the unified-log snapshot is produced.
         mock_run.return_value.stdout = '{"_items": []}'
@@ -252,6 +263,52 @@ class TestSystemCollector:
         log_text = mock_run.return_value.stdout
         stable_fid = system.fingerprint("system", "unified-log-24h", log_text, system._SNAPSHOT_TS)
         assert any(a["fid"] == stable_fid for a in log_memories)
+
+    @patch("jarvis.collectors.system.subprocess.run")
+    def test_sync_system_throttled_within_window(self, mock_run, mock_store, tmp_path, monkeypatch):
+        """task_0043: the first sync runs the probes; a second sync within the
+        throttle window does NOT re-run the subprocess and returns 0 quickly."""
+        from jarvis.collectors import system
+        # Isolate the marker file into a tmp dir; keep the default 1h interval.
+        monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+
+        mock_run.return_value.stdout = '{"_items": []}'
+        mock_run.return_value.returncode = 0
+
+        with patch("jarvis.collectors.system.get_embedding", return_value=[0.1, 0.2]):
+            first = system.sync_system(mock_store)
+            # Within the throttle window (default 1h) the probes must NOT re-run.
+            second = system.sync_system(mock_store)
+
+        # First run probed (system_profiler + log show = two subprocess calls).
+        assert mock_run.call_count >= 2
+        assert first >= 0
+        # Second run within the window must not spawn any new subprocess.
+        assert second == 0
+        before = mock_run.call_count
+        with patch("jarvis.collectors.system.get_embedding", return_value=[0.1, 0.2]):
+            system.sync_system(mock_store)
+        assert mock_run.call_count == before, "throttled sync must not re-run the probes"
+
+    def test_sync_system_throttle_window_elapsed_runs_again(self, mock_store, tmp_path, monkeypatch):
+        """task_0043: once the throttle window elapses, the probes run again."""
+        from jarvis.collectors import system
+        monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+
+        # Simulate a marker written just over an hour ago.
+        marker = system._marker_path()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        old = _dt.datetime.now(_dt.timezone.utc).timestamp() - 2 * 3600
+        marker.write_text(str(old))
+
+        with patch("jarvis.collectors.system.subprocess.run") as mock_run, \
+             patch("jarvis.collectors.system.get_embedding", return_value=[0.1, 0.2]):
+            mock_run.return_value.stdout = '{"_items": []}'
+            mock_run.return_value.returncode = 0
+            count = system.sync_system(mock_store)
+
+        assert mock_run.call_count >= 2, "elapsed window should re-run the probes"
+        assert count >= 0
 
 
 # ---------------------------------------------------------------------------

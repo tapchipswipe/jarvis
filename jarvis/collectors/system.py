@@ -1,9 +1,11 @@
 import datetime as _dt
 import json
+import os
 import subprocess
 
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
+from jarvis.paths import data_dir, ensure_private_dir
 from jarvis.store import fingerprint
 
 # Stable timestamp for the whole system snapshot batch. Using a fixed value (not
@@ -19,6 +21,56 @@ _SNAPSHOT_TS = "1970-01-01T00:00:00"
 # re-runs still dedup.
 _LOG_WINDOW_HOURS = 24
 
+# Throttle for the expensive system probes (system_profiler + `log show`). Those
+# subprocesses are slow (up to ~120s) and the log output changes every cycle, so
+# the stable-ts dedup only saves the *post-process* work: on an idle Mac every
+# sync still pays the full subprocess cost. We gate both probes behind a stored
+# last-run timestamp so the probes run at most once per interval (default 1h),
+# not once per sync. First-run behavior is unchanged (no marker yet => run).
+_THROTTLE_DEFAULT_HOURS = 1.0
+_THROTTLE_ENV = "JARVIS_SYSTEM_THROTTLE_HOURS"
+# Marker file name lives under data_dir("data", "state") so it is per-profile and
+# persists across syncs. Per-source: both probes share the "system" source marker.
+_MARKER_REL = ("data", "state", "system_probed_at.json")
+
+
+def _throttle_hours() -> float:
+    """Configured throttle window in hours (env-overridable, default 1h)."""
+    try:
+        return float(os.environ.get(_THROTTLE_ENV, _THROTTLE_DEFAULT_HOURS))
+    except (TypeError, ValueError):
+        return _THROTTLE_DEFAULT_HOURS
+
+
+def _marker_path():
+    return data_dir(*_MARKER_REL)
+
+
+def _last_probe_ts() -> float | None:
+    """Epoch seconds of the last successful throttle-marking, or None if never."""
+    try:
+        return float(_marker_path().read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _within_throttle(now: float | None = None) -> bool:
+    """True if the last probe ran within the configured interval (skip this sync)."""
+    if _throttle_hours() <= 0:
+        return False  # disabled
+    last = _last_probe_ts()
+    if last is None:
+        return False  # first run => not throttled
+    now = _dt.datetime.now(_dt.timezone.utc).timestamp() if now is None else now
+    return (now - last) < _throttle_hours() * 3600.0
+
+
+def _mark_probed() -> None:
+    """Persist 'now' as the last probe time so the next sync within the window skips."""
+    path = _marker_path()
+    ensure_private_dir(path.parent)
+    path.write_text(str(_dt.datetime.now(_dt.timezone.utc).timestamp()))
+
 
 def _log_window_start() -> str:
     """ISO timestamp marking the start of the current unified-log window (now - 24h)."""
@@ -27,6 +79,11 @@ def _log_window_start() -> str:
 
 
 def sync_system(store):
+    # Throttle before any subprocess: if we probed within the interval, skip the
+    # expensive system_profiler/log-show entirely and emit no new memories.
+    if _within_throttle():
+        return 0
+
     count = 0
     try:
         result = subprocess.run(["system_profiler", "SPApplicationsDataType", "-json"], capture_output=True, text=True, timeout=60, check=False)
@@ -78,5 +135,9 @@ def sync_system(store):
                     count += 1
     except Exception as e:
         print(f"system log error: {e}")
+    # The probes ran (or attempted); record the time so the next sync within the
+    # throttle window skips them. Marking even on a failed probe avoids a retry
+    # storm hammering the expensive subprocesses every sync cycle.
+    _mark_probed()
     return count
 
