@@ -919,3 +919,59 @@ def test_chat_sources_lists_tool_messages_remote(monkeypatch):
     assert "tool: {\"ok\": true}" in result.output
     assert "  system:" not in result.output
 
+
+def test_followup_suggestions_picked_from_entities():
+    """Proactive follow-ups are derived from grounding entities (no LLM call):
+    the most-referenced names win, and entity_type shapes the phrase."""
+    from jarvis.cli import _build_followup_suggestions
+
+    entities = {
+        "m1": [{"name": "Ada Lovelace", "entity_type": "person"},
+               {"name": "Analytical Engine", "entity_type": "device"}],
+        "m2": [{"name": "Ada Lovelace", "entity_type": "person"}],
+        "m3": [{"name": "London", "entity_type": "location"}],
+    }
+    suggestions = _build_followup_suggestions(entities)
+    # Ada appears twice → top pick; person type → "what have I said about …"
+    assert suggestions[0] == "what have I said about Ada Lovelace?"
+    # At most 3, and the default template appears for a non-person/place entity.
+    assert len(suggestions) <= 3
+    assert "what do I know about London?" in suggestions
+    assert "tell me more about Analytical Engine" in suggestions
+
+
+def test_render_grounded_prints_try_line(capsys):
+    """A grounded answer with entities renders a single, low-key ``→ try:`` line."""
+    from jarvis.cli import _render_grounded
+
+    entities = {"m1": [{"name": "JARVIS", "entity_type": "system"}]}
+    _render_grounded("Here is the answer.", [], entities,
+                     show_entities=False, show_sources=False)
+    out = capsys.readouterr().out
+    assert "Here is the answer." in out
+    assert "→ try: " in out
+    assert '"tell me more about JARVIS"' in out
+
+
+def test_render_grounded_no_entities_clean_output(capsys):
+    """No entities → no bogus suggestion line, and no crash."""
+    from jarvis.cli import _render_grounded
+
+    _render_grounded("Nothing grounded.", [], {},
+                     show_entities=True, show_sources=False)
+    out = capsys.readouterr().out
+    assert "Nothing grounded." in out
+    assert "→ try:" not in out
+    assert "-- related entities" not in out
+
+
+def test_render_grounded_suggest_opt_out(capsys):
+    """suggest=False suppresses the proactive line entirely."""
+    from jarvis.cli import _render_grounded
+
+    entities = {"m1": [{"name": "JARVIS", "entity_type": "system"}]}
+    _render_grounded("Answer.", [], entities, show_entities=False,
+                     show_sources=False, suggest=False)
+    out = capsys.readouterr().out
+    assert "→ try:" not in out
+

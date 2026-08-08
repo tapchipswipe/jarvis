@@ -922,12 +922,57 @@ def _ask_grounded(question, n_results=8, source=None, model=None, history=None):
         store.close()
 
 
+def _build_followup_suggestions(entities, limit=3):
+    """Derive 2-3 subtle, proactive next-step prompts from grounding entities.
+
+    No LLM call: picks the most-referenced entity names and turns each into a
+    short, low-key follow-up the user can ignore. Returns a list of phrase
+    strings (without surrounding quotes). Empty when there are no entities.
+    """
+    counts = {}
+    types = {}
+    for ents in entities.values():
+        for e in ents:
+            name = (e.get("name") or "").strip()
+            if not name:
+                continue
+            counts[name] = counts.get(name, 0) + 1
+            if name not in types:
+                types[name] = e.get("entity_type") or ""
+    ordered = sorted(counts, key=lambda n: (-counts[n], n.lower()))
+    suggestions = []
+    for name in ordered:
+        if len(suggestions) >= limit:
+            break
+        t = (types.get(name) or "").lower()
+        if "person" in t:
+            phrase = f"what have I said about {name}?"
+        elif "place" in t or "location" in t:
+            phrase = f"what do I know about {name}?"
+        else:
+            phrase = f"tell me more about {name}"
+        suggestions.append(phrase)
+    return suggestions
+
+
+def _render_followup_suggestions(entities):
+    """Print a single low-key ``→ try: "…"`` line derived from grounding entities."""
+    suggestions = _build_followup_suggestions(entities)
+    if not suggestions:
+        return
+    quoted = "  ·  ".join(f'"{s}"' for s in suggestions)
+    click.echo(f"\n→ try: {quoted}")
+
+
 def _render_grounded(answer, memories, entities, show_entities=True, session_id=None,
-                     show_sources=True):
+                     show_sources=True, suggest=True):
     """Shared human-readable output for ask/console.
 
     show_sources=False hides the grounded-memory dump for natural chat; sources
-    show when the user asks (/sources) or the question is a recall request."""
+    show when the user asks (/sources) or the question is a recall request.
+    suggest=True appends a single, low-key proactive follow-up line derived from
+    the grounding entities (no LLM call); it is silently skipped when there are
+    no entities to build suggestions from."""
     if session_id:
         click.echo(f"(session {session_id})")
     click.echo(answer or "(no answer returned)")
@@ -944,6 +989,8 @@ def _render_grounded(answer, memories, entities, show_entities=True, session_id=
         names = sorted({e["name"] for ents in entities.values() for e in ents})
         if names:
             click.echo(f"\n-- related entities: {', '.join(names)}")
+    if suggest:
+        _render_followup_suggestions(entities)
 
 
 @cli.command()
