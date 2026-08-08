@@ -93,6 +93,38 @@ class TestThinCollector:
         second = thin.scan_once(roots=[d], max_files=100)
         assert second["skipped_seen"] == 1
 
+    def test_scan_skips_file_larger_than_cap_but_collects_small(self, tmp_path, monkeypatch):
+        """A file over ``max_scan_bytes`` is skipped outright (never read/enqueued)
+        while a small file in the same scan is still collected — the happy path is
+        unchanged."""
+        from jarvis.collectors import thin
+
+        monkeypatch.setenv("JARVIS_CACHE", str(tmp_path / "cache.db"))
+        d = tmp_path / "docs"
+        _write_file(d / "small.md", "A small note under the cap that should be enqueued.")
+        _write_file(d / "huge.log", "x" * 10_000)  # well above a 512-byte cap
+
+        # Prove the large file is *not read*: if scan_once tried to read it, this
+        # guard raises and the scan would record it as an error.
+        real_read_text = Path.read_text
+
+        def guarded_read(path, *args, **kwargs):
+            if path.name == "huge.log":
+                raise AssertionError("large file must never be read")
+            return real_read_text(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", guarded_read):
+            stats = thin.scan_once(roots=[d], max_files=100, max_scan_bytes=512)
+
+        # Huge file skipped without reading; small file still collected.
+        assert stats["skipped_large"] == 1
+        assert stats["enqueued"] == 1
+        assert stats["errors"] == 0
+
+        # With no cap, both files are collected normally (happy path intact).
+        stats2 = thin.scan_once(roots=[d], max_files=100, max_scan_bytes=None)
+        assert stats2["enqueued"] >= 1
+
 
 # ---------------------------------------------------------------------------
 # files collector

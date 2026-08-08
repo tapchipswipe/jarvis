@@ -28,6 +28,11 @@ COLLECT_EXTENSIONS = {".md", ".txt", ".json", ".csv", ".xml", ".html", ".log",
                       ".yaml", ".yml", ".toml", ".rst", ".org"}
 COLLECT_EXCLUDE_DIRS = {".git", "node_modules", "__pycache__", "venv", ".venv",
                         "Cache", "Caches", "tmp", "VirtualBox VMs", ".Trash"}
+# A hard cap on how large a single file may be before it is skipped outright.
+# A multi-GB .json/.csv/.log would otherwise be read fully into memory via
+# path.read_text() and stored in the outbox, risking OOM and backlog bloat.
+# Files above this size are skipped during the walk without being read.
+DEFAULT_MAX_SCAN_BYTES = 1_048_576  # 1 MiB
 
 
 def _should_exclude(path: Path) -> bool:
@@ -76,24 +81,31 @@ def _walk(roots, extensions, max_files):
             continue
 
 
-def scan_once(roots=None, extensions=None, max_files: int = 2000, marker_prefix: str = "seen") -> dict:
+def scan_once(roots=None, extensions=None, max_files: int = 2000, marker_prefix: str = "seen",
+              max_scan_bytes: int = DEFAULT_MAX_SCAN_BYTES) -> dict:
     """Walk eligible files and enqueue their text into the outbox (client mode).
 
-    Returns stats: {files, enqueued, dups, blank, skipped_seen, errors}. Idempotent:
-    unchanged files are skipped via the fingerprint marker, and equal content is not
-    re-enqueued. Opens the disposable cache only — never a Store.
+    Returns stats: {files, enqueued, dups, blank, skipped_seen, skipped_large, errors}.
+    Idempotent: unchanged files are skipped via the fingerprint marker, and equal
+    content is not re-enqueued. Files larger than ``max_scan_bytes`` are skipped
+    outright (never read), so a multi-GB .json/.csv/.log can't OOM the client or
+    bloat the outbox. Opens the disposable cache only — never a Store.
     """
     from jarvis.cache import Cache
 
     roots = [Path(r) for r in roots] if roots else COLLECT_DIRS
     extensions = set(extensions) if extensions else COLLECT_EXTENSIONS
     stats = {"files": 0, "enqueued": 0, "dups": 0, "blank": 0,
-             "skipped_seen": 0, "errors": 0}
+             "skipped_seen": 0, "skipped_large": 0, "errors": 0}
     cache = Cache()
     try:
         for path in _walk(roots, extensions, max_files):
             stats["files"] += 1
             try:
+                # Bound the read: skip oversized files before touching their bytes.
+                if max_scan_bytes is not None and path.stat().st_size > max_scan_bytes:
+                    stats["skipped_large"] += 1
+                    continue
                 fp_key = f"{marker_prefix}:{_fingerprint(path)}"
                 if cache.get_kv(fp_key):
                     stats["skipped_seen"] += 1
