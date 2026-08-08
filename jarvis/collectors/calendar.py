@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -5,6 +6,8 @@ from pathlib import Path
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
 from jarvis.store import fingerprint
+
+logger = logging.getLogger(__name__)
 
 CALENDAR_PATHS = [
     Path.home() / "Library" / "Calendars",
@@ -20,13 +23,17 @@ def sync_calendar(store):
             try:
                 conn = sqlite3.connect(f"file:{cal_db}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
-                cur = conn.execute("SELECT summary, start_date, end_date, location FROM events WHERE start_date IS NOT NULL ORDER BY start_date DESC LIMIT 200")
+                cur = conn.execute("SELECT uid, summary, start_date, end_date, location FROM events WHERE start_date IS NOT NULL ORDER BY start_date DESC LIMIT 200")
                 rows = cur.fetchall()
                 conn.close()
                 for row in rows:
                     text = f"{row['summary'] or ''}\n{row['start_date'] or ''} → {row['end_date'] or ''}\n{row['location'] or ''}"
                     source = "calendar"
-                    source_id = f"{cal_db}:{row['summary']}"
+                    # Key the source_id on the event's native UID so two distinct
+                    # events that share the same summary don't collide on the
+                    # fingerprint and silently drop one of them.
+                    uid = row["uid"] or row["summary"]
+                    source_id = f"{cal_db}:{uid}"
                     ts = row["start_date"] or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     fid = fingerprint(source, source_id, text, ts)
                     if store.exists(fid):
@@ -38,6 +45,6 @@ def sync_calendar(store):
                         store.add(cid, source, source_id, ts, chunk["text"], ["calendar"], {"path": str(cal_db)}, emb)
                         count += 1
             except Exception:
-                pass
+                logger.exception("calendar sync failed for %s", cal_db)
     return count
 

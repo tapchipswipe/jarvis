@@ -408,6 +408,37 @@ class TestCalendarCollector:
         count = sync_calendar(mock_store)
         assert isinstance(count, int)
 
+    @patch("jarvis.collectors.calendar.chunk_document")
+    @patch("jarvis.collectors.calendar.get_embedding")
+    @patch("jarvis.collectors.calendar.sqlite3.connect")
+    def test_sync_calendar_same_summary_distinct_uids(self, mock_conn, mock_emb, mock_chunk, mock_store, tmp_path):
+        """Two events with the same summary but different native UIDs must both be
+        collected (distinct source_ids), not collapsed into one fingerprint."""
+        from jarvis.collectors import calendar
+
+        mock_chunk.return_value = [{"text": "chunk"}]
+        mock_emb.return_value = [0.1, 0.2]
+
+        # Point the collector at a fake cal_db matching its rglob pattern.
+        cal_db = tmp_path / "sub.caldav" / "calendar-data" / "events.sqlite"
+        cal_db.parent.mkdir(parents=True, exist_ok=True)
+        cal_db.touch()
+        with patch.object(calendar, "CALENDAR_PATHS", [tmp_path]):
+            # Emulate a single cal_db with two events that share a summary.
+            mock_conn.return_value.execute.return_value.fetchall.return_value = [
+                {"uid": "evt-AAA", "summary": "Standup", "start_date": "2024-01-01 09:00:00",
+                 "end_date": "2024-01-01 09:30:00", "location": "Zoom"},
+                {"uid": "evt-BBB", "summary": "Standup", "start_date": "2024-01-02 09:00:00",
+                 "end_date": "2024-01-02 09:30:00", "location": "HQ"},
+            ]
+            count = calendar.sync_calendar(mock_store)
+
+        assert count == 2
+        source_ids = {item["source_id"] for item in mock_store.added}
+        assert len(source_ids) == 2
+        assert any("evt-AAA" in sid for sid in source_ids)
+        assert any("evt-BBB" in sid for sid in source_ids)
+
 
 # ---------------------------------------------------------------------------
 # contacts collector
@@ -614,6 +645,36 @@ class TestEmailCollector:
         mock_conn.return_value.execute.return_value = mock_cursor
         count = sync_email(mock_store)
         assert isinstance(count, int)
+
+    @patch("jarvis.collectors.email.chunk_document")
+    @patch("jarvis.collectors.email.get_embedding")
+    @patch("jarvis.collectors.email.sqlite3.connect")
+    def test_sync_email_same_subject_distinct_message_ids(self, mock_conn, mock_emb, mock_chunk, mock_store, tmp_path):
+        """Two emails with the same subject but different native message ids must
+        both be collected (distinct source_ids), not collapsed into one fingerprint."""
+        from jarvis.collectors import email
+
+        mock_chunk.return_value = [{"text": "chunk"}]
+        mock_emb.return_value = [0.1, 0.2]
+
+        # Point the collector at a fake mail_db matching its rglob pattern.
+        mail_db = tmp_path / "Mail1.sqlite"
+        mail_db.touch()
+        with patch.object(email, "MAIL_PATHS", [tmp_path]):
+            # Emulate a single mail_db with two emails that share a subject.
+            mock_conn.return_value.execute.return_value.fetchall.return_value = [
+                {"message_id": "msg-111", "subject": "Re: deploy", "sender": "alice",
+                 "date_received": "2024-01-01 10:00:00", "body": "ok"},
+                {"message_id": "msg-222", "subject": "Re: deploy", "sender": "bob",
+                 "date_received": "2024-01-01 11:00:00", "body": "on it"},
+            ]
+            count = email.sync_email(mock_store)
+
+        assert count == 2
+        source_ids = {item["source_id"] for item in mock_store.added}
+        assert len(source_ids) == 2
+        assert any("msg-111" in sid for sid in source_ids)
+        assert any("msg-222" in sid for sid in source_ids)
 
 
 # ---------------------------------------------------------------------------

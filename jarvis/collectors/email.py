@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -5,6 +6,8 @@ from pathlib import Path
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
 from jarvis.store import fingerprint
+
+logger = logging.getLogger(__name__)
 
 MAIL_PATHS = [
     Path.home() / "Library" / "Mail",
@@ -20,13 +23,17 @@ def sync_email(store):
             try:
                 conn = sqlite3.connect(f"file:{mail_db}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
-                cur = conn.execute("SELECT subject, sender, date_received, body FROM messages WHERE date_received IS NOT NULL ORDER BY date_received DESC LIMIT 200")
+                cur = conn.execute("SELECT message_id, subject, sender, date_received, body FROM messages WHERE date_received IS NOT NULL ORDER BY date_received DESC LIMIT 200")
                 rows = cur.fetchall()
                 conn.close()
                 for row in rows:
                     text = f"Subject: {row['subject'] or ''}\nFrom: {row['sender'] or ''}\nDate: {row['date_received'] or ''}\n\n{row['body'] or ''}"
                     source = "email"
-                    source_id = f"{mail_db}:{row['subject']}"
+                    # Key the source_id on the message's native id so two distinct
+                    # emails that share the same subject don't collide on the
+                    # fingerprint and silently drop one of them.
+                    msg_id = row["message_id"] or row["subject"]
+                    source_id = f"{mail_db}:{msg_id}"
                     ts = row["date_received"] or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                     fid = fingerprint(source, source_id, text, ts)
                     if store.exists(fid):
@@ -38,6 +45,6 @@ def sync_email(store):
                         store.add(cid, source, source_id, ts, chunk["text"], ["email"], {"path": str(mail_db)}, emb)
                         count += 1
             except Exception:
-                pass
+                logger.exception("email sync failed for %s", mail_db)
     return count
 
