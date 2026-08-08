@@ -759,6 +759,59 @@ class TestKiloCollector:
         from jarvis.collectors.kilo import ingest_kilo_sessions
         count = ingest_kilo_sessions(mock_store)
         assert count == 0
+
+    def test_ingest_kilo_sessions_idempotent_uses_file_mtime(self, tmp_path):
+        """First run with a kilo session file adds memories; a second run against
+        the same file (unchanged mtime) produces the same fingerprint so the skip
+        fires and no new memories are added."""
+        from jarvis.collectors import kilo
+
+        session_file = tmp_path / "session.json"
+        session_file.write_text('{"messages": [{"role": "user", "content": "hi"}]}', encoding="utf-8")
+
+        # Track added fids so store.exists() reflects prior inserts.
+        added = set()
+
+        def fake_add(fid, source, source_id, timestamp, content, tags, metadata, embedding, **kwargs):
+            added.add(fid)
+            return True
+
+        def fake_exists(fid):
+            return fid in added
+
+        store = MagicMock()
+        store.add.side_effect = fake_add
+        store.exists.side_effect = fake_exists
+
+        with patch("jarvis.collectors.kilo.KILO_SESSION_DIR", tmp_path), \
+             patch("jarvis.collectors.kilo.get_embedding", return_value=[0.1, 0.2]), \
+             patch("jarvis.extract.extract_metadata", return_value={"tags": [], "entities": []}):
+            first = kilo.ingest_kilo_sessions(store)
+            second = kilo.ingest_kilo_sessions(store)
+
+        assert first > 0, "first run should add kilo session memories"
+        assert second == 0, "second run with unchanged mtime must not re-add memories"
+
+    def test_ingest_kilo_sessions_ts_stable_across_runs(self, tmp_path):
+        """The per-file mtime yields a stable batch ts so the fingerprint is not
+        recomputed from datetime.now() on every run."""
+        from datetime import datetime, timezone
+
+        session_file = tmp_path / "session.json"
+        session_file.write_text('{"messages": [{"role": "user", "content": "hi"}]}', encoding="utf-8")
+
+        from jarvis.collectors import kilo
+        from jarvis.store import fingerprint
+
+        data = session_file.read_text(errors="ignore")
+        source = "ai_kilo"
+        source_id = str(session_file)
+        mtime_ts = session_file.stat().st_mtime
+        stable_ts = datetime.fromtimestamp(mtime_ts, tz=timezone.utc).replace(tzinfo=None).isoformat()
+        fid = fingerprint(source, source_id, data, stable_ts)
+        # Same mtime -> identical ts -> identical fingerprint across runs.
+        assert kilo._file_mtime_ts(session_file) == stable_ts
+        assert fingerprint(source, source_id, data, kilo._file_mtime_ts(session_file)) == fid
 # rss collector
 # ---------------------------------------------------------------------------
 
