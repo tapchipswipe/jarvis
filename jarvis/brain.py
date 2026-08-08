@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from jarvis.embed import get_embedding
 from jarvis.ingest import chunk_document
-from jarvis.store import fingerprint
+from jarvis.store import fingerprint, memory_age_hours
 
 DEFAULT_CHAT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 CHAT_TIERS = ("fast", "medium", "big")
@@ -229,6 +229,14 @@ class Brain:
             return "low"
         weights = [m.get("weight", 0.3) for m in memories[:3]]
         avg = sum(weights) / len(weights)
+        # Freshness consideration: freshly-captured evidence (<= 24h old) is
+        # less likely to be stale or already contradicted, so give it a small,
+        # capped nudge. It is a modest bonus only — it cannot flip a strong
+        # stale answer, it only lifts borderline freshness. Memories without a
+        # usable timestamp (age == inf) are treated as not-fresh, so ranking by
+        # weight alone is preserved for legacy rows.
+        if any(memory_age_hours(m.get("timestamp")) <= 24 for m in memories[:3]):
+            avg += 0.1
         if avg >= 1.0:
             return "high"
         if avg >= 0.6:

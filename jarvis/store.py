@@ -38,6 +38,29 @@ def fingerprint(source: str, source_id: str, content: str, date: str) -> str:
     return hashlib.sha256(f"{source}:{source_id}:{content[:256]}:{date}".encode()).hexdigest()
 
 
+def memory_age_hours(timestamp: str | None) -> float:
+    """Age of a memory in hours relative to now (smaller == more recent).
+
+    Returns ``float("inf")`` for missing or unparseable timestamps so those
+    memories sort last behind any memory with a usable timestamp instead of
+    crashing the ranking. Naive timestamps (no tz) are treated as UTC, matching
+    how the rest of the codebase writes them.
+    """
+    if not timestamp:
+        return float("inf")
+    try:
+        dt = datetime.fromisoformat(str(timestamp))
+    except (ValueError, TypeError):
+        return float("inf")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        delta = datetime.now(timezone.utc) - dt
+    except (OverflowError, OSError, ValueError):
+        return float("inf")
+    return max(0.0, delta.total_seconds() / 3600.0)
+
+
 class Store:
     def __init__(self, chroma_dir: Path | None = None, db_path: Path | None = None):
         # Resolve at construction time so JARVIS_DATA_DIR / JARVIS_USER set
@@ -332,7 +355,7 @@ class Store:
             self.collection.add(ids=[fid], embeddings=[embedding], documents=[content], metadatas=[chroma_meta])
         return True
 
-    def search(self, query_embedding: list[float], n_results: int = 10, source_filter: str | None = None, re_rank: bool = True):
+    def search(self, query_embedding: list[float], n_results: int = 10, source_filter: str | None = None, re_rank: bool = True, recency_boost: bool = True):
         where = {"source": source_filter} if source_filter else None
         results = self.collection.query(query_embeddings=[query_embedding], n_results=n_results * 3, where=where)
         docs = results.get("documents", [[]])[0]
@@ -353,10 +376,16 @@ class Store:
                 rows.append((dist, dict(row)))
         if re_rank and rows:
             # Re-rank by tier weight (descending) then vector similarity
-            # (ascending distance == descending similarity). The stable sort
-            # keeps Chroma's returned order as the final tie-break, so within a
-            # tier the exact memory the user asked about is not dropped.
-            rows.sort(key=lambda pair: (-(pair[1].get("weight", 0.3)), pair[0]))
+            # (ascending distance == descending similarity). Recency is only a
+            # *tertiary* tiebreak: it never overrides relevance, it just breaks
+            # exact ties so a freshly-captured memory surfaces before an older
+            # one of identical weight and similarity. The stable sort keeps
+            # Chroma's returned order as the final tie-break, so within a tier
+            # the exact memory the user asked about is not dropped.
+            if recency_boost:
+                rows.sort(key=lambda pair: (-(pair[1].get("weight", 0.3)), pair[0], memory_age_hours(pair[1].get("timestamp"))))
+            else:
+                rows.sort(key=lambda pair: (-(pair[1].get("weight", 0.3)), pair[0]))
             rows = rows[:n_results]
         return [row for _, row in rows]
 

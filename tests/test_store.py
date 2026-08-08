@@ -204,6 +204,52 @@ def test_search_re_rank_tiebreak_falls_back_to_vector_order(store):
     assert ids == [raw_a, raw_b]
 
 
+def test_search_recency_tiebreak_newest_wins(store):
+    """task_0039: among memories of equal weight and equal similarity (same
+    distance), the more recent one must rank first — 'what did I do this
+    morning' should surface the fresh memory over an identical-quality old one."""
+    emb = [0.1] * 3
+    old_fid = fingerprint("s", "old", "same topic memory one", "2025-01-01")
+    new_fid = fingerprint("s", "new", "same topic memory two", "2025-06-01")
+    old_ts = "2025-01-01T10:00:00"
+    new_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    store.add(old_fid, "s", "old", old_ts, "same topic memory one", [], {}, emb, tier="raw")
+    store.add(new_fid, "s", "new", new_ts, "same topic memory two", [], {}, emb, tier="raw")
+    # Chroma returns old first, both with identical weight & distance so only
+    # recency can break the tie.
+    store.collection.query.return_value = {
+        "documents": [["same topic memory one", "same topic memory two"]],
+        "ids": [[old_fid, new_fid]],
+        "metadatas": [[{"source": "s"}, {"source": "s"}]],
+        "distances": [[0.5, 0.5]],
+    }
+    results = store.search(emb, n_results=2)
+    ids = [r["id"] for r in results]
+    assert ids == [new_fid, old_fid]
+
+
+def test_search_recency_boost_does_not_override_relevance(store):
+    """task_0039: recency is only a tertiary tiebreak — a highly-relevant older
+    memory must still outrank a barely-relevant newer one."""
+    emb = [0.1] * 3
+    old_relevant = fingerprint("s", "old-rel", "highly relevant", "2025-01-01")
+    new_irrelevant = fingerprint("s", "new-irr", "barely relevant", "2025-06-01")
+    old_ts = "2025-01-01T10:00:00"
+    new_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    # reflection tier carries weight 1.0, raw tier 0.3.
+    store.add(old_relevant, "s", "old-rel", old_ts, "highly relevant", [], {}, emb, tier="reflection")
+    store.add(new_irrelevant, "s", "new-irr", new_ts, "barely relevant", [], {}, emb, tier="raw")
+    store.collection.query.return_value = {
+        "documents": [["highly relevant", "barely relevant"]],
+        "ids": [[old_relevant, new_irrelevant]],
+        "metadatas": [[{"source": "s"}, {"source": "s"}]],
+        "distances": [[0.5, 0.5]],
+    }
+    results = store.search(emb, n_results=2)
+    ids = [r["id"] for r in results]
+    assert ids == [old_relevant, new_irrelevant]
+
+
 # ── Tier / route queries ──────────────────────────────────────────────────────
 
 def test_get_by_tier(store):

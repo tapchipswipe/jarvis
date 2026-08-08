@@ -329,6 +329,22 @@ def test_confidence_levels(store):
     assert b._confidence([{"weight": 0.3}]) == "low"
 
 
+def test_confidence_freshness_boosts_borderline(store):
+    """A barely-medium memory that is freshly captured earns a modest boost,
+    while an identical stale one does not. Memories without a usable timestamp
+    are treated as stale, so legacy rows keep weight-only confidence."""
+    from datetime import datetime, timezone
+    b = _brain(store)
+    fresh_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    stale_ts = "2025-01-01T10:00:00"
+    # weight 0.55 is below the 0.6 medium threshold; the +0.1 freshness nudge
+    # lifts a fresh memory to medium while the stale one stays low.
+    fresh = b._confidence([{"weight": 0.55, "timestamp": fresh_ts}])
+    stale = b._confidence([{"weight": 0.55, "timestamp": stale_ts}])
+    assert fresh == "medium"
+    assert stale == "low"
+
+
 def test_chat_substantive_path(store, monkeypatch):
     import jarvis.brain as B
     with patch("jarvis.brain.get_embedding", return_value=[0.1] * 8), \
