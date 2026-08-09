@@ -60,6 +60,19 @@ box working tree now at `aee3f1d`). Suite **632 passed / 1 skipped** (hermetic).
 - Outbox drained from **~900+ junk items → ~27 legitimate** (daemon finishing the rest); the oversized
   mypy-cache junk was purged from the disposable outbox.
 
+## Post-session addendum — memory "upgrade" assessment (2026-08-08, later)
+User asked to "upgrade all of jarvis memory / push everything it can find". Ran the full upgrade
+pipeline against the box store and recorded the honest result:
+- **Embedding: fully done.** `reindex` confirmed **0 unembedded** of 6,622 — every memory has a Chroma
+  vector. Nothing to re-embed.
+- **Promotion: nothing to do.** 0 raw memories older than 7 days (all raw are recent).
+- **Classification: 6,622 unclassified** (`route='unclassified'`). Running `classify-recent` is slow
+  (~6 s/memory via the local Ollama LLM ≈ 11 h for all) and low-confidence (the ones processed all fell
+  back to `escalate`). Doing it as a burst of separate box processes caused Chroma lock contention that
+  stalled the live server — so I killed the extra processes (kept only the server PID 30164) and re-verified
+  health. **Recommendation:** let the Mayor classify incrementally rather than bulk-running 6,622 in one shot.
+- **State after:** box healthy, 6,622 memories, single server python process, temp diagnostic files cleaned.
+
 ## State / how to resume
 - Repo: `bot`==`main`==`origin/bot`==`origin/main`=`aee3f1d`, working tree clean. Box working tree at
   `aee3f1d`; running `JarvisServer` already loaded the core perf fixes. Post-quantum SSH warning is
